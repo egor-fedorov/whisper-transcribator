@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whisper-transcribator"
+version = "0.1.0"
+description = "Docker-friendly CLI for transcribing media files via faster-whisper."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "faster-whisper==1.2.1",
+]
+
+[project.scripts]
+whisper-transcribator = "whisper_transcribator.cli:main"
+
+[tool.setuptools]
+packages = ["whisper_transcribator"]
