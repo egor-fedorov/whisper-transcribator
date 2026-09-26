@@ -358,7 +358,7 @@ int main() {
         Options o;
         o.download_root = (root / "absent").string();
         auto items = list_models(o);
-        require(items.size() == 7 && !fs::exists(o.download_root));
+        require(items.size() == 9 && !fs::exists(o.download_root));
         for (const auto& model : model_catalog())
             require(model.hash.size() == 64 && model.bytes > 0);
     });

@@ -74,12 +74,14 @@ struct Model {
 };
 std::vector<Model> model_catalog();
 fs::path model_root(const Options& options);
-using Fetch = std::function<void(const std::string&, const fs::path&)>;
+using Fetch = std::function<void(const Model&, const fs::path&)>;
 struct PreparedModel {
     fs::path path;
     std::string hash;
 };
-void fetch_https(const std::string& url, const fs::path& target);
+void fetch_https(const Model& model, const fs::path& target);
+fs::path partial_model_path(const Model& model, const fs::path& root);
+int open_partial_model(const fs::path& path);
 PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offline,
                             const Fetch& fetch = fetch_https);
 PreparedModel prepare_model(const std::string& name, const Options& options);

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Resume interrupted HTTPS model downloads with byte progress, validated ranges, private hash-specific partial files and final SHA-256 checks; add pinned turbo Q5_0/Q8_0 model entries without changing defaults.
 - Default TXT/JSON text to pause- and sentence-based paragraphs, with `--text-layout single-line` compatibility and a configurable paragraph pause; preserve raw recognition segments.
 - Add escaped WebVTT captions and include VTT in `--format all`, complete-set checks, mappings and interrupted publication recovery; detect old three-format saved progress rather than silently starting again.
 - Retain uncommitted audio tails across bounded windows, detect automatic language per window, select the best audio stream or an explicit `--audio-stream`, and show file-level progress/ETA.

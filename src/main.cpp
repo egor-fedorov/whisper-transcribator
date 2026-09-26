@@ -8,8 +8,10 @@ int main(int argc, char** argv) {
         wt::finish_progress();
         return status;
     } catch (const wt::Cancelled&) {
-        wt::log_message(wt::LogLevel::warning,
-                        "Interrupted; committed progress is preserved. Repeat with --resume.");
+        wt::log_message(
+            wt::LogLevel::warning,
+            "Interrupted; committed progress and partial downloads are preserved. "
+            "Repeat transcription with --resume; model downloads resume automatically.");
         return 128 + wt::stop_signal;
     } catch (const wt::UsageError& error) {
         wt::log_message(wt::LogLevel::error, error.what());
