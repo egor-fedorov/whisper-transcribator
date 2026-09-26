@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from whisper_transcribator import cli
+from whisper_transcribator import engine
 from whisper_transcribator.cli import (
     atomic_write,
     build_parser,
@@ -85,13 +85,15 @@ class SafetyTests(unittest.TestCase):
     def test_empty_text_does_not_publish_output(self):
         output = self.root / "result.txt"
         with self.assertRaisesRegex(SystemExit, "No transcript"):
-            write_output(self.source, output, "text", "small", None,
-                         [SimpleNamespace(text="  ")])
+            write_output(self.source, output, "text", "small", None, [SimpleNamespace(text="  ")])
         self.assertFalse(output.exists())
 
     def test_rejects_invalid_all_and_batch_combinations(self):
-        for extra in (("--format", "all"), ("--format", "all", "-o", "out.txt"),
-                      ("--batch-size", "8", "--no-vad")):
+        for extra in (
+            ("--format", "all"),
+            ("--format", "all", "-o", "out.txt"),
+            ("--batch-size", "8", "--no-vad"),
+        ):
             with self.subTest(extra=extra), self.assertRaises(SystemExit):
                 validate_args(self.args(*extra))
 
@@ -101,12 +103,26 @@ class SafetyTests(unittest.TestCase):
             stack.enter_context(patch("whisper_transcribator.cli.load_faster_whisper"))
             stack.enter_context(patch("whisper_transcribator.cli.ensure_model_is_available"))
             stack.enter_context(patch("whisper_transcribator.cli.build_transcriber"))
-            transcribe = stack.enter_context(patch(
-                "whisper_transcribator.cli.transcribe_file",
-                return_value=([segment], SimpleNamespace(duration=1.0)),
-            ))
-            self.assertEqual(main([str(self.source), "--device", "cpu", "--format", "all",
-                                   "--output-dir", str(self.root / "out")]), 0)
+            transcribe = stack.enter_context(
+                patch(
+                    "whisper_transcribator.cli.transcribe_file",
+                    return_value=([segment], SimpleNamespace(duration=1.0)),
+                )
+            )
+            self.assertEqual(
+                main(
+                    [
+                        str(self.source),
+                        "--device",
+                        "cpu",
+                        "--format",
+                        "all",
+                        "--output-dir",
+                        str(self.root / "out"),
+                    ]
+                ),
+                0,
+            )
             transcribe.assert_called_once()
         for extension in ("txt", "srt", "json"):
             self.assertTrue((self.root / "out" / f"lecture.{extension}").is_file())
@@ -123,14 +139,20 @@ class SafetyTests(unittest.TestCase):
         with ExitStack() as stack:
             stack.enter_context(patch("whisper_transcribator.cli.load_faster_whisper"))
             stack.enter_context(patch("whisper_transcribator.cli.ensure_model_is_available"))
-            stack.enter_context(patch("whisper_transcribator.cli.build_transcriber", return_value=transcriber))
+            stack.enter_context(
+                patch("whisper_transcribator.cli.build_transcriber", return_value=transcriber)
+            )
             with self.assertRaisesRegex(SystemExit, r"lecture.mp4.*decoder failed"):
                 main([str(self.source), "--device", "cpu"])
         self.assertFalse(self.source.with_suffix(".txt").exists())
 
     def test_srt_numbers_ignore_empty_segments(self):
-        result = render_srt([SimpleNamespace(start=0, end=1, text=""),
-                             SimpleNamespace(start=1, end=2, text="Hello")])
+        result = render_srt(
+            [
+                SimpleNamespace(start=0, end=1, text=""),
+                SimpleNamespace(start=1, end=2, text="Hello"),
+            ]
+        )
         self.assertTrue(result.startswith("1\n"))
 
 
@@ -143,8 +165,11 @@ class ModelCacheTests(unittest.TestCase):
         self.legacy.mkdir()
         self.snapshot = self.root / "snapshot"
         self.snapshot.mkdir()
-        for name, content in (("model.bin", b"model"), ("config.json", b"{}"),
-                              ("tokenizer.json", b"{}")):
+        for name, content in (
+            ("model.bin", b"model"),
+            ("config.json", b"{}"),
+            ("tokenizer.json", b"{}"),
+        ):
             (self.snapshot / name).write_bytes(content)
 
     def test_empty_legacy_cache_downloads_snapshot(self):
@@ -153,8 +178,9 @@ class ModelCacheTests(unittest.TestCase):
         with patch("whisper_transcribator.cli.importlib.import_module", return_value=utils):
             path = ensure_model_is_available(None, "small", str(self.root), False)
         self.assertEqual(path, str(self.snapshot))
-        utils.download_model.assert_called_once_with("small", cache_dir=str(self.root),
-                                                     local_files_only=False)
+        utils.download_model.assert_called_once_with(
+            "small", cache_dir=str(self.root), local_files_only=False
+        )
 
     def test_offline_failure_identifies_missing_files(self):
         utils = Mock()
@@ -175,16 +201,20 @@ class ModelCacheTests(unittest.TestCase):
         for file in self.snapshot.iterdir():
             (self.legacy / file.name).write_bytes(file.read_bytes())
         with patch("whisper_transcribator.cli.importlib.import_module") as imports:
-            self.assertEqual(ensure_model_is_available(None, "small", str(self.root), True),
-                             str(self.legacy))
+            self.assertEqual(
+                ensure_model_is_available(None, "small", str(self.root), True), str(self.legacy)
+            )
             imports.assert_not_called()
 
     def test_list_does_not_report_empty_directory_as_cached(self):
         utils = Mock()
         utils.download_model.side_effect = RuntimeError("not cached")
         with patch("whisper_transcribator.cli.importlib.import_module", return_value=utils):
-            line = next(line for line in list_models(str(self.root)).splitlines()
-                        if line.startswith("small "))
+            line = next(
+                line
+                for line in list_models(str(self.root)).splitlines()
+                if line.startswith("small ")
+            )
         self.assertIn("incomplete", line)
         for call in utils.download_model.call_args_list:
             self.assertTrue(call.kwargs["local_files_only"])
@@ -202,8 +232,10 @@ class DeviceTests(unittest.TestCase):
     def test_missing_cuda_libraries_are_reported(self):
         runtime = Mock()
         runtime.get_cuda_device_count.return_value = 1
-        with patch("whisper_transcribator.cli.importlib.import_module", return_value=runtime), \
-             patch.object(cli.ctypes, "CDLL", side_effect=OSError("missing cuDNN")):
+        with (
+            patch("whisper_transcribator.cli.importlib.import_module", return_value=runtime),
+            patch.object(engine.ctypes, "CDLL", side_effect=OSError("missing cuDNN")),
+        ):
             self.assertEqual(choose_device("auto"), "cpu")
             with self.assertRaisesRegex(SystemExit, "missing cuDNN"):
                 choose_device("cuda")
@@ -211,8 +243,10 @@ class DeviceTests(unittest.TestCase):
     def test_working_cuda_is_selected(self):
         runtime = Mock()
         runtime.get_cuda_device_count.return_value = 1
-        with patch("whisper_transcribator.cli.importlib.import_module", return_value=runtime), \
-             patch.object(cli.ctypes, "CDLL"):
+        with (
+            patch("whisper_transcribator.cli.importlib.import_module", return_value=runtime),
+            patch.object(engine.ctypes, "CDLL"),
+        ):
             self.assertEqual(choose_device("auto"), "cuda")
 
 

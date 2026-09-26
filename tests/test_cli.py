@@ -152,8 +152,12 @@ class MainSmokeTests(unittest.TestCase):
             )
 
             with patch("whisper_transcribator.cli.load_faster_whisper", return_value=object()):
-                with patch("whisper_transcribator.cli.ensure_model_is_available", return_value="small"):
-                    with patch("whisper_transcribator.cli.build_transcriber", return_value=object()):
+                with patch(
+                    "whisper_transcribator.cli.ensure_model_is_available", return_value="small"
+                ):
+                    with patch(
+                        "whisper_transcribator.cli.build_transcriber", return_value=object()
+                    ):
                         with patch(
                             "whisper_transcribator.cli.transcribe_file",
                             return_value=(fake_segments, fake_info),
