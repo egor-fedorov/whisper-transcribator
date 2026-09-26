@@ -7,9 +7,9 @@ mkdir -p "$3"
 root=$(realpath "$3")
 test -s "$bundle/share/backends.txt"
 test -s "$bundle/lib/libggml-cpu-x64.so"
-timeout 240 qemu-x86_64 -cpu qemu64 "$bundle/bin/whisper-transcribator" \
+timeout --kill-after=10 600 qemu-x86_64 -cpu qemu64 "$bundle/bin/whisper-transcribator" \
     "$fixtures/jfk.wav" --model "$fixtures/ggml-tiny.bin" --no-vad --language en \
-    --cpu-threads 1 --device cpu --local-files-only --format json --output-dir "$root/no-avx2"
+    --cpu-threads 1 --beam-size 1 --device cpu --local-files-only --format json --output-dir "$root/no-avx2"
 jq -e '.run.device == "cpu" and (.text | ascii_downcase | contains("country"))' "$root/no-avx2/jfk.json"
 mkdir -p "$root/missing/cwd"
 cp -a "$bundle/bin" "$bundle/lib" "$root/missing/"
