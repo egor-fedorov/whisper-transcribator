@@ -132,7 +132,7 @@ struct AudioReader::Impl {
         }
     }
 };
-AudioReader::AudioReader(const fs::path& path) : impl(std::make_unique<Impl>()) {
+AudioReader::AudioReader(const fs::path& path, int stream) : impl(std::make_unique<Impl>()) {
     check_cancelled();
     auto& d = *impl;
     if (!d.frame || !d.packet)
@@ -144,11 +144,14 @@ AudioReader::AudioReader(const fs::path& path) : impl(std::make_unique<Impl>()) 
     check(av_dict_set(&d.options, "protocol_whitelist", "file", 0), "restrict media protocols");
     check(avformat_open_input(&d.format, path.c_str(), nullptr, &d.options), "open media");
     check(avformat_find_stream_info(d.format, nullptr), "read streams");
-    for (unsigned int i = 0; i < d.format->nb_streams; ++i)
-        if (d.format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-            d.stream = static_cast<int>(i);
-            break;
-        }
+    if (stream >= 0) {
+        if (static_cast<unsigned>(stream) >= d.format->nb_streams ||
+            d.format->streams[stream]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
+            throw UsageError("--audio-stream does not select an audio stream: " +
+                             std::to_string(stream));
+        d.stream = stream;
+    } else
+        d.stream = av_find_best_stream(d.format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
     if (d.stream < 0)
         throw std::runtime_error("No audio stream in media file: " + path.string());
     const auto* parameters = d.format->streams[d.stream]->codecpar;
@@ -162,6 +165,15 @@ AudioReader::AudioReader(const fs::path& path) : impl(std::make_unique<Impl>()) 
     check(avcodec_open2(d.codec, codec, nullptr), "open codec");
 }
 AudioReader::~AudioReader() = default;
+int AudioReader::stream_index() const { return impl->stream; }
+double AudioReader::duration() const {
+    auto* stream = impl->format->streams[impl->stream];
+    if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
+        return stream->duration * av_q2d(stream->time_base);
+    if (impl->format->duration != AV_NOPTS_VALUE && impl->format->duration > 0)
+        return impl->format->duration / double(AV_TIME_BASE);
+    return 0;
+}
 std::vector<float> AudioReader::read(size_t limit) {
     if (!limit || limit > 600 * 16000)
         throw std::runtime_error("Invalid audio read size");

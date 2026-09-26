@@ -30,6 +30,7 @@ struct Options {
     int cpu_threads = 0, beam_size = 5, vad_min_silence_ms = 2000;
     int chunk_seconds = 120;
     int chunk_min_silence_ms = 200;
+    int audio_stream = -1;
     bool resume = false;
     bool overwrite = false, skip_existing = false, continue_on_error = false;
     bool local_files_only = false, no_vad = false, json = false;
@@ -43,6 +44,7 @@ struct Segment {
     double start, end;
     std::string text;
     double no_speech_probability;
+    std::string language = "";
 };
 struct Transcript {
     std::string language;
@@ -85,9 +87,11 @@ class AudioReader {
     std::unique_ptr<Impl> impl;
 
   public:
-    explicit AudioReader(const fs::path& path);
+    explicit AudioReader(const fs::path& path, int stream = -1);
     ~AudioReader();
     std::vector<float> read(size_t limit);
+    int stream_index() const;
+    double duration() const;
 };
 std::string audio_backend_version();
 std::string select_device(const std::string& requested);

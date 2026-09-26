@@ -132,23 +132,28 @@ int transcribe(Options options) {
         return pause_cut(pcm.size(), speech, options.chunk_min_silence_ms);
     };
     bool failed = false;
+    size_t job_index = 0;
     for (const auto& job : jobs) {
+        ++job_index;
         check_cancelled();
         auto start = std::chrono::steady_clock::now();
         log_message(LogLevel::info, "Transcribing " + job.source.string());
         try {
             auto modified = fs::last_write_time(job.source);
             auto size = fs::file_size(job.source);
-            auto fingerprint = job_fingerprint(job, options, backend);
-            Journal journal(job, options, fingerprint);
-            std::unique_ptr<AudioReader> reader;
-            auto read = [&](size_t limit) {
-                if (!reader)
-                    reader = std::make_unique<AudioReader>(job.source);
-                return reader->read(limit);
-            };
-            auto recognize = [&](const std::vector<float>& pcm, const std::string& detected) {
+            report_progress("Reading audio streams", job.source.filename().string());
+            AudioReader reader(job.source, options.audio_stream);
+            auto job_options = options;
+            job_options.audio_stream = reader.stream_index();
+            log_message(LogLevel::info, "Audio stream: " + std::to_string(reader.stream_index()));
+            auto fingerprint = job_fingerprint(job, job_options, backend);
+            Journal journal(job, job_options, fingerprint);
+            FileProgress progress(std::to_string(job_index) + "/" + std::to_string(jobs.size()),
+                                  reader.duration());
+            auto read = [&](size_t limit) { return reader.read(limit); };
+            auto recognize = [&](const std::vector<float>& pcm, const std::string&) {
                 if (!context) {
+                    report_progress("Loading model", model.path.filename().string());
                     auto params = whisper_context_default_params();
                     params.use_gpu = options.device == "cuda";
                     params.flash_attn = true;
@@ -162,7 +167,7 @@ int transcribe(Options options) {
                 if (options.cpu_threads > 0)
                     inference.n_threads = options.cpu_threads;
                 inference.beam_search.beam_size = options.beam_size;
-                inference.language = detected.empty() ? options.language.c_str() : detected.c_str();
+                inference.language = options.language.c_str();
                 inference.no_context = true;
                 inference.print_progress = inference.print_realtime = inference.print_timestamps =
                     false;
@@ -173,14 +178,13 @@ int transcribe(Options options) {
                 inference.encoder_begin_callback = [](whisper_context*, whisper_state*, void*) {
                     return stop_signal == 0;
                 };
-                int progress = -1;
+                progress.begin_window(journal.samples(), pcm.size());
                 inference.progress_callback_user_data = &progress;
                 inference.progress_callback = [](whisper_context*, whisper_state*, int value,
                                                  void* data) {
-                    auto& last = *static_cast<int*>(data);
-                    if (value / 10 != last) {
-                        last = value / 10;
-                        report_progress("Recognizing window", std::to_string(value) + "%");
+                    try {
+                        static_cast<FileProgress*>(data)->update(value);
+                    } catch (...) {
                     }
                 };
                 auto status = whisper_full(context.get(), inference, pcm.data(),
@@ -209,10 +213,15 @@ int transcribe(Options options) {
                 }
                 return result;
             };
-            run_chunks(journal, size_t(options.chunk_seconds) * sample_rate, read, recognize, cut);
+            run_chunks(journal, size_t(options.chunk_seconds) * sample_rate, read, recognize, cut,
+                       [&](int64_t samples, size_t, bool committed) {
+                           if (committed)
+                               progress.commit(samples);
+                       });
             if (size != fs::file_size(job.source) || modified != fs::last_write_time(job.source))
                 throw std::runtime_error("Input changed during transcription");
-            journal.publish(job, options);
+            report_progress("Publishing", job.source.filename().string());
+            journal.publish(job, job_options);
             log_message(LogLevel::info,
                         "Done: " + job.source.filename().string() + "; elapsed " +
                             std::to_string(std::chrono::duration<double>(

@@ -12,6 +12,7 @@ Json run_metadata(const Options& options) {
             {"device", options.device},
             {"beam_size", options.beam_size},
             {"cpu_threads", options.cpu_threads},
+            {"audio_stream", options.audio_stream},
             {"vad", !options.no_vad},
             {"vad_min_silence_ms", options.vad_min_silence_ms},
             {"flash_attention", true},
@@ -25,13 +26,15 @@ void render_stream(std::ostream& stream, const std::string& format, const Job& j
     if (format == "text" || format == "json") {
         if (format == "json") {
             double duration = journal.samples() / double(sample_rate);
-            Json header = {{"schema_version", 1},
-                           {"source", job.source.string()},
-                           {"model", options.model},
-                           {"language", journal.language()},
-                           {"language_probability", nullptr},
-                           {"duration", duration},
-                           {"duration_after_vad", options.no_vad ? Json(duration) : Json(nullptr)}};
+            Json header = {
+                {"schema_version", 2},
+                {"source", job.source.string()},
+                {"model", options.model},
+                {"language", journal.language().empty() ? Json(nullptr) : Json(journal.language())},
+                {"languages", journal.languages()},
+                {"language_probability", nullptr},
+                {"duration", duration},
+                {"duration_after_vad", options.no_vad ? Json(duration) : Json(nullptr)}};
             auto text = header.dump();
             text.pop_back();
             stream << text << ",\"text\":\"";
@@ -63,6 +66,7 @@ void render_stream(std::ostream& stream, const std::string& format, const Job& j
                                 {"start", segment.start},
                                 {"end", segment.end},
                                 {"text", segment.text},
+                                {"language", segment.language},
                                 {"avg_logprob", nullptr},
                                 {"compression_ratio", nullptr},
                                 {"no_speech_prob", segment.no_speech_probability}})
