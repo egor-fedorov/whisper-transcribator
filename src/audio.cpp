@@ -1,22 +1,35 @@
 #include "app.hpp"
+#include <algorithm>
 #include <memory>
-#include <stdexcept>
-#include <string>
-#include <vector>
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswresample/swresample.h>
 }
 
-struct Decoder {
+namespace wt {
+namespace {
+void check(int code, const char* operation) {
+    check_cancelled();
+    if (code < 0) {
+        char message[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(code, message, sizeof(message));
+        throw std::runtime_error(std::string(operation) + ": " + message);
+    }
+}
+} // namespace
+struct AudioReader::Impl {
     AVFormatContext* format = nullptr;
     AVDictionary* options = nullptr;
     AVCodecContext* codec = nullptr;
     SwrContext* resampler = nullptr;
     AVPacket* packet = av_packet_alloc();
     AVFrame* frame = av_frame_alloc();
-    ~Decoder() {
+    int stream = -1;
+    bool flushing = false, decoded = false, finished = false;
+    std::vector<float> pending;
+    size_t offset = 0;
+    ~Impl() {
         av_dict_free(&options);
         av_frame_free(&frame);
         av_packet_free(&packet);
@@ -24,21 +37,59 @@ struct Decoder {
         avcodec_free_context(&codec);
         avformat_close_input(&format);
     }
-};
-
-static void check(int code, const char* operation) {
-    wt::check_cancelled();
-    if (code < 0) {
-        char message[AV_ERROR_MAX_STRING_SIZE];
-        av_strerror(code, message, sizeof(message));
-        throw std::runtime_error(std::string(operation) + ": " + message);
+    void convert(const uint8_t** data, int count) {
+        int capacity = swr_get_out_samples(resampler, count);
+        check(capacity, "resample capacity");
+        pending.resize(static_cast<size_t>(std::max(1, capacity)));
+        uint8_t* output = reinterpret_cast<uint8_t*>(pending.data());
+        int size = swr_convert(resampler, &output, capacity, data, count);
+        check(size, "resample");
+        pending.resize(static_cast<size_t>(size));
+        offset = 0;
     }
-}
-
-namespace wt {
-std::vector<float> decode_audio(const fs::path& path) {
+    void next() {
+        pending.clear();
+        offset = 0;
+        while (!finished && pending.empty()) {
+            check_cancelled();
+            if (decoded) {
+                convert(nullptr, 0);
+                finished = pending.empty();
+                continue;
+            }
+            int code = avcodec_receive_frame(codec, frame);
+            if (code >= 0) {
+                convert(const_cast<const uint8_t**>(frame->extended_data), frame->nb_samples);
+                av_frame_unref(frame);
+                continue;
+            }
+            if (code == AVERROR_EOF) {
+                decoded = true;
+                continue;
+            }
+            if (code != AVERROR(EAGAIN))
+                check(code, "decode frame");
+            if (flushing)
+                throw std::runtime_error("Decoder requested input after EOF");
+            do {
+                av_packet_unref(packet);
+                code = av_read_frame(format, packet);
+                check_cancelled();
+            } while (code >= 0 && packet->stream_index != stream);
+            if (code == AVERROR_EOF) {
+                flushing = true;
+                check(avcodec_send_packet(codec, nullptr), "flush decoder");
+            } else {
+                check(code, "read packet");
+                check(avcodec_send_packet(codec, packet), "decode packet");
+                av_packet_unref(packet);
+            }
+        }
+    }
+};
+AudioReader::AudioReader(const fs::path& path) : impl(std::make_unique<Impl>()) {
     check_cancelled();
-    Decoder d;
+    auto& d = *impl;
     if (!d.frame || !d.packet)
         throw std::bad_alloc();
     d.format = avformat_alloc_context();
@@ -48,16 +99,14 @@ std::vector<float> decode_audio(const fs::path& path) {
     check(av_dict_set(&d.options, "protocol_whitelist", "file", 0), "restrict media protocols");
     check(avformat_open_input(&d.format, path.c_str(), nullptr, &d.options), "open media");
     check(avformat_find_stream_info(d.format, nullptr), "read streams");
-    int stream = -1;
-    for (unsigned int i = 0; i < d.format->nb_streams; ++i) {
+    for (unsigned int i = 0; i < d.format->nb_streams; ++i)
         if (d.format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-            stream = static_cast<int>(i);
+            d.stream = static_cast<int>(i);
             break;
         }
-    }
-    if (stream < 0)
+    if (d.stream < 0)
         throw std::runtime_error("No audio stream in media file: " + path.string());
-    const auto* parameters = d.format->streams[stream]->codecpar;
+    const auto* parameters = d.format->streams[d.stream]->codecpar;
     const AVCodec* codec = avcodec_find_decoder(parameters->codec_id);
     if (!codec)
         throw std::runtime_error("unsupported audio codec");
@@ -71,45 +120,29 @@ std::vector<float> decode_audio(const fs::path& path) {
                               d.codec->sample_fmt, d.codec->sample_rate, 0, nullptr),
           "create resampler");
     check(swr_init(d.resampler), "initialize resampler");
-    std::vector<float> pcm;
-    auto convert = [&](const uint8_t** data, int count) {
-        int capacity = swr_get_out_samples(d.resampler, count);
-        check(capacity, "resample capacity");
-        std::vector<float> buffer(static_cast<size_t>(capacity));
-        uint8_t* output = reinterpret_cast<uint8_t*>(buffer.data());
-        int size = swr_convert(d.resampler, &output, capacity, data, count);
-        check(size, "resample");
-        pcm.insert(pcm.end(), buffer.begin(), buffer.begin() + size);
-        return size;
-    };
-    auto receive = [&]() {
-        int code;
-        while ((code = avcodec_receive_frame(d.codec, d.frame)) >= 0) {
-            check_cancelled();
-            convert(const_cast<const uint8_t**>(d.frame->extended_data), d.frame->nb_samples);
-            av_frame_unref(d.frame);
-        }
-        if (code != AVERROR(EAGAIN) && code != AVERROR_EOF)
-            check(code, "decode frame");
-    };
-    int code;
-    while ((code = av_read_frame(d.format, d.packet)) >= 0) {
-        check_cancelled();
-        if (d.packet->stream_index == stream) {
-            check(avcodec_send_packet(d.codec, d.packet), "decode packet");
-            receive();
-        }
-        av_packet_unref(d.packet);
-    }
-    if (code != AVERROR_EOF)
-        check(code, "read packet");
-    check(avcodec_send_packet(d.codec, nullptr), "flush decoder");
-    receive();
-    while (convert(nullptr, 0) > 0) {
-    }
-    if (pcm.empty())
-        throw std::runtime_error("empty audio stream");
-    return pcm;
 }
-
+AudioReader::~AudioReader() = default;
+std::vector<float> AudioReader::read(size_t limit) {
+    if (!limit || limit > 600 * 16000)
+        throw std::runtime_error("Invalid audio read size");
+    check_cancelled();
+    std::vector<float> output;
+    output.reserve(limit);
+    auto& d = *impl;
+    while (output.size() < limit) {
+        if (d.offset == d.pending.size())
+            d.next();
+        if (d.pending.empty())
+            break;
+        auto count = std::min(limit - output.size(), d.pending.size() - d.offset);
+        output.insert(output.end(), d.pending.begin() + d.offset,
+                      d.pending.begin() + d.offset + count);
+        d.offset += count;
+    }
+    return output;
+}
+std::string audio_backend_version() {
+    return std::to_string(avformat_version()) + "/" + std::to_string(avcodec_version()) + "/" +
+           std::to_string(swresample_version()) + "/" + std::to_string(avutil_version());
+}
 } // namespace wt

@@ -1,4 +1,4 @@
-#include "app.hpp"
+#include "pipeline.hpp"
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
@@ -85,7 +85,8 @@ std::vector<Job> prepare_jobs(const Options& o) {
         }
         for (const auto& [format, path] : job.outputs) {
             if ((fs::exists(path) || fs::is_symlink(path)) &&
-                (!o.overwrite || !fs::is_regular_file(path)))
+                ((!o.overwrite && !(o.resume && has_checkpoint(job))) ||
+                 !fs::is_regular_file(path)))
                 throw std::runtime_error("Output exists; use --overwrite: " + path.string());
         }
         pending.push_back(job);

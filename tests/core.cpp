@@ -1,4 +1,4 @@
-#include "app.hpp"
+#include "pipeline.hpp"
 #include <cmath>
 #include <fcntl.h>
 #include <iostream>
@@ -55,6 +55,12 @@ Options input(const fs::path& root, const std::string& name = "a.mp4") {
 Model fixture() {
     return {"fixture", "fixture.bin", "https://example.invalid/model",
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", 3};
+}
+void write_outputs(const Job& job, const Options& options, const Transcript& result) {
+    Journal journal(job, options, job_fingerprint(job, options, Json::object()));
+    journal.append(static_cast<int64_t>(std::llround(result.duration * sample_rate)), result);
+    journal.finish();
+    journal.publish(job, options);
 }
 } // namespace
 int main() {
@@ -252,7 +258,7 @@ int main() {
     test("invalid timestamps", [](auto root) {
         auto o = input(root);
         auto job = prepare_jobs(o)[0];
-        rejects([&] { render_json(job, o, {"en", 2, {{2, 1, "bad", 0}}}); });
+        rejects([&] { write_outputs(job, o, {"en", 2, {{2, 1, "bad", 0}}}); });
         rejects([&] { timestamp(std::numeric_limits<double>::infinity()); });
         require(timestamp(3661.234) == "01:01:01,234");
     });

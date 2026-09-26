@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <unistd.h>
@@ -32,8 +33,48 @@ void require(bool value, const std::string& message = "audio assertion failed") 
     if (!value)
         throw std::runtime_error(message);
 }
+std::vector<float> decode_audio(const fs::path& path) {
+    AudioReader reader(path);
+    std::vector<float> result;
+    while (true) {
+        auto block = reader.read(113);
+        require(block.size() <= 113);
+        if (block.empty())
+            return result;
+        result.insert(result.end(), block.begin(), block.end());
+    }
+}
 } // namespace
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 4 && std::string(argv[1]) == "--repeat") {
+        AudioReader reader(argv[2]);
+        auto pcm = reader.read(30 * 16000);
+        require(!pcm.empty() && reader.read(1).empty(), "fixture must be under 30 seconds");
+        unsigned count = static_cast<unsigned>(pcm.size()) * 3 + 8 * 16000;
+        std::string bytes = "RIFF";
+        little(bytes, 36 + count * 2, 4);
+        bytes += "WAVEfmt ";
+        little(bytes, 16, 4);
+        little(bytes, 1, 2);
+        little(bytes, 1, 2);
+        little(bytes, 16000, 4);
+        little(bytes, 32000, 4);
+        little(bytes, 2, 2);
+        little(bytes, 16, 2);
+        bytes += "data";
+        little(bytes, count * 2, 4);
+        for (int i = 0; i < 3; ++i) {
+            if (i == 2)
+                bytes.append(8 * 16000 * 2, '\0');
+            for (float sample : pcm)
+                little(
+                    bytes,
+                    static_cast<unsigned>(std::clamp(std::lround(sample * 32768), -32768L, 32767L)),
+                    2);
+        }
+        atomic_write(argv[3], bytes);
+        return 0;
+    }
     char pattern[] = "/tmp/whisper-audio-XXXXXX";
     auto created = mkdtemp(pattern);
     if (!created)

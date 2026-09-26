@@ -1,11 +1,10 @@
-#include "app.hpp"
 #include "ggml-backend.h"
+#include "pipeline.hpp"
 #include "version.hpp"
 #include "whisper.h"
 #include <algorithm>
 #include <chrono>
 #include <iostream>
-#include <limits>
 #include <memory>
 
 namespace wt {
@@ -57,69 +56,131 @@ int transcribe(Options options) {
             prepare_model(options.vad_model.empty() ? "silero-v6.2.0" : options.vad_model, options);
     check_cancelled();
     std::cerr << "Model: " << model << "; device: " << options.device << '\n';
-    auto params = whisper_context_default_params();
-    params.use_gpu = options.device == "cuda";
-    params.flash_attn = true;
-    std::unique_ptr<whisper_context, decltype(&whisper_free)> context(
-        whisper_init_from_file_with_params(model.c_str(), params), whisper_free);
-    check_cancelled();
-    if (!context)
-        throw std::runtime_error("Cannot initialize GGML model: " + model.string());
+    Json backend = {{"model_sha256", sha256(model)},
+                    {"vad_sha256", vad.empty() ? "" : sha256(vad)},
+                    {"ffmpeg", audio_backend_version()}};
+    std::unique_ptr<whisper_context, decltype(&whisper_free)> context(nullptr, whisper_free);
+    std::unique_ptr<whisper_vad_context, decltype(&whisper_vad_free)> splitter(nullptr,
+                                                                               whisper_vad_free);
+    auto cut = [&](const std::vector<float>& pcm) -> size_t {
+        if (options.no_vad)
+            return pcm.size();
+        if (!splitter) {
+            auto params = whisper_vad_default_context_params();
+            params.use_gpu = false;
+            if (options.cpu_threads > 0)
+                params.n_threads = options.cpu_threads;
+            splitter.reset(whisper_vad_init_from_file_with_params(vad.c_str(), params));
+            if (!splitter)
+                throw std::runtime_error("Cannot initialize VAD splitter");
+        }
+        auto params = whisper_vad_default_params();
+        params.min_silence_duration_ms = options.vad_min_silence_ms;
+        params.speech_pad_ms = 0;
+        std::unique_ptr<whisper_vad_segments, decltype(&whisper_vad_free_segments)> segments(
+            whisper_vad_segments_from_samples(splitter.get(), params, pcm.data(),
+                                              static_cast<int>(pcm.size())),
+            whisper_vad_free_segments);
+        check_cancelled();
+        if (!segments)
+            throw std::runtime_error("VAD splitting failed");
+        std::vector<std::pair<int64_t, int64_t>> speech;
+        for (int i = 0; i < whisper_vad_segments_n_segments(segments.get()); ++i) {
+            // The VAD API returns centiseconds, not seconds.
+            auto from = int64_t(whisper_vad_segments_get_segment_t0(segments.get(), i) * 160);
+            auto to = int64_t(whisper_vad_segments_get_segment_t1(segments.get(), i) * 160);
+            from = std::clamp<int64_t>(from, 0, pcm.size());
+            speech.emplace_back(from, std::clamp<int64_t>(to, from, pcm.size()));
+        }
+        return pause_cut(pcm.size(), speech, options.vad_min_silence_ms);
+    };
     bool failed = false;
     for (const auto& job : jobs) {
         check_cancelled();
         auto start = std::chrono::steady_clock::now();
         std::cerr << "Transcribing " << job.source << '\n';
         try {
-            auto pcm = decode_audio(job.source);
-            if (pcm.size() > static_cast<size_t>(std::numeric_limits<int>::max()))
-                throw std::runtime_error("Audio too long for whisper_full");
-            auto inference = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
-            if (options.cpu_threads > 0)
-                inference.n_threads = options.cpu_threads;
-            inference.beam_search.beam_size = options.beam_size;
-            inference.language = options.language.c_str();
-            inference.print_progress = inference.print_realtime = inference.print_timestamps =
-                false;
-            inference.vad = !options.no_vad;
-            inference.vad_model_path = vad.c_str();
-            inference.vad_params.min_silence_duration_ms = options.vad_min_silence_ms;
-            inference.abort_callback = [](void*) { return stop_signal != 0; };
-            inference.encoder_begin_callback = [](whisper_context*, whisper_state*, void*) {
-                return stop_signal == 0;
+            auto modified = fs::last_write_time(job.source);
+            auto size = fs::file_size(job.source);
+            auto fingerprint = job_fingerprint(job, options, backend);
+            Journal journal(job, options, fingerprint);
+            std::unique_ptr<AudioReader> reader;
+            auto read = [&](size_t limit) {
+                if (!reader)
+                    reader = std::make_unique<AudioReader>(job.source);
+                return reader->read(limit);
             };
-            int progress = -1;
-            inference.progress_callback_user_data = &progress;
-            inference.progress_callback = [](whisper_context*, whisper_state*, int value,
-                                             void* data) {
-                auto& last = *static_cast<int*>(data);
-                if (value / 10 != last) {
-                    last = value / 10;
-                    std::cerr << "Progress: " << value << "%\n";
+            auto recognize = [&](const std::vector<float>& pcm, const std::string& detected) {
+                if (!context) {
+                    auto params = whisper_context_default_params();
+                    params.use_gpu = options.device == "cuda";
+                    params.flash_attn = true;
+                    context.reset(whisper_init_from_file_with_params(model.c_str(), params));
+                    check_cancelled();
+                    if (!context)
+                        throw std::runtime_error("Cannot initialize GGML model: " + model.string());
                 }
+                auto inference = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
+                if (options.cpu_threads > 0)
+                    inference.n_threads = options.cpu_threads;
+                inference.beam_search.beam_size = options.beam_size;
+                inference.language = detected.empty() ? options.language.c_str() : detected.c_str();
+                inference.no_context = true;
+                inference.print_progress = inference.print_realtime = inference.print_timestamps =
+                    false;
+                inference.vad = !options.no_vad;
+                inference.vad_model_path = vad.c_str();
+                inference.vad_params.min_silence_duration_ms = options.vad_min_silence_ms;
+                inference.abort_callback = [](void*) { return stop_signal != 0; };
+                inference.encoder_begin_callback = [](whisper_context*, whisper_state*, void*) {
+                    return stop_signal == 0;
+                };
+                int progress = -1;
+                inference.progress_callback_user_data = &progress;
+                inference.progress_callback = [](whisper_context*, whisper_state*, int value,
+                                                 void* data) {
+                    auto& last = *static_cast<int*>(data);
+                    if (value / 10 != last) {
+                        last = value / 10;
+                        std::cerr << "Progress: " << value << "%\n";
+                    }
+                };
+                auto status = whisper_full(context.get(), inference, pcm.data(),
+                                           static_cast<int>(pcm.size()));
+                check_cancelled();
+                if (status != 0)
+                    throw std::runtime_error("Inference failed");
+                Transcript result{"", pcm.size() / 16000.0, {}};
+                for (int i = 0; i < whisper_full_n_segments(context.get()); ++i) {
+                    auto from = std::clamp(whisper_full_get_segment_t0(context.get(), i) / 100.0,
+                                           0.0, result.duration);
+                    auto to = std::clamp(whisper_full_get_segment_t1(context.get(), i) / 100.0,
+                                         from, result.duration);
+                    result.segments.push_back(
+                        {from, to, whisper_full_get_segment_text(context.get(), i),
+                         whisper_full_get_segment_no_speech_prob(context.get(), i)});
+                }
+                bool has_text =
+                    std::any_of(result.segments.begin(), result.segments.end(),
+                                [](const auto& segment) { return !trim(segment.text).empty(); });
+                if (has_text) {
+                    auto language = whisper_lang_str(whisper_full_lang_id(context.get()));
+                    if (!language)
+                        throw std::runtime_error("Cannot determine transcript language");
+                    result.language = language;
+                }
+                return result;
             };
-            auto status =
-                whisper_full(context.get(), inference, pcm.data(), static_cast<int>(pcm.size()));
-            check_cancelled();
-            if (status != 0)
-                throw std::runtime_error("Inference failed");
-            Transcript result{
-                whisper_lang_str(whisper_full_lang_id(context.get())), pcm.size() / 16000.0, {}};
-            for (int i = 0; i < whisper_full_n_segments(context.get()); ++i) {
-                auto from = std::clamp(whisper_full_get_segment_t0(context.get(), i) / 100.0, 0.0,
-                                       result.duration);
-                auto to = std::clamp(whisper_full_get_segment_t1(context.get(), i) / 100.0, from,
-                                     result.duration);
-                result.segments.push_back(
-                    {from, to, whisper_full_get_segment_text(context.get(), i),
-                     whisper_full_get_segment_no_speech_prob(context.get(), i)});
-            }
-            write_outputs(job, options, result);
+            run_chunks(journal, size_t(options.chunk_seconds) * sample_rate, read, recognize, cut);
+            if (size != fs::file_size(job.source) || modified != fs::last_write_time(job.source))
+                throw std::runtime_error("Input changed during transcription");
+            journal.publish(job, options);
             std::cerr
                 << "Done: " << job.source.filename() << "; elapsed "
                 << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
                 << "s\n";
         } catch (const std::exception& error) {
+            check_cancelled();
             std::cerr << "Failed: " << job.source << ": " << error.what() << '\n';
             if (!options.continue_on_error)
                 return 1;

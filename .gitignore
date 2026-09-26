@@ -1,4 +1,5 @@
 /.build/
+.whisper-transcribator/
 /models/
 /transcripts/
 /benchmark-results/

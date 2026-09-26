@@ -1,9 +1,12 @@
 #pragma once
 #include "json.hpp"
 #include <csignal>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <memory>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -24,6 +27,8 @@ struct Options {
     std::string format = "text", naming = "source", prefix = "result";
     std::string model = "small", download_root, language = "ru", device = "auto", vad_model;
     int cpu_threads = 0, beam_size = 5, vad_min_silence_ms = 2000;
+    int chunk_seconds = 120;
+    bool resume = false;
     bool overwrite = false, skip_existing = false, continue_on_error = false;
     bool local_files_only = false, no_vad = false, json = false;
 };
@@ -45,13 +50,16 @@ fs::path resolve_path(const fs::path& path);
 bool same_file(const fs::path& a, const fs::path& b);
 void probe_directory(const fs::path& path);
 void atomic_write(const fs::path& path, const std::string& content, bool overwrite = false);
+void atomic_write_stream(const fs::path& path, const std::function<void(std::ostream&)>& write,
+                         bool overwrite = false, bool private_file = false);
+void sync_directory(const fs::path& path);
+void publish_file(const fs::path& temporary, const fs::path& target, bool overwrite);
 std::string read_text(const fs::path& path);
 std::string sha256(const fs::path& path);
+std::string sha256_text(const std::string& text);
 std::string trim(const std::string& value);
 std::string env(const char* key);
 std::vector<Job> prepare_jobs(const Options& options);
-Json render_json(const Job& job, const Options& options, const Transcript& result);
-void write_outputs(const Job& job, const Options& options, const Transcript& result);
 std::string timestamp(double seconds);
 struct Model {
     std::string name, file, url, hash;
@@ -65,7 +73,16 @@ fs::path ensure_cached(const Model& model, const fs::path& root, bool offline,
                        const Fetch& fetch = fetch_https);
 fs::path prepare_model(const std::string& name, const Options& options);
 Json list_models(const Options& options);
-std::vector<float> decode_audio(const fs::path& path);
+class AudioReader {
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+
+  public:
+    explicit AudioReader(const fs::path& path);
+    ~AudioReader();
+    std::vector<float> read(size_t limit);
+};
+std::string audio_backend_version();
 std::string select_device(const std::string& requested);
 Json doctor(const Options& options);
 int transcribe(Options options);
