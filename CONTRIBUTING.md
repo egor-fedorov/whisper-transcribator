@@ -15,6 +15,7 @@ cmake --build --preset cpu -j4
 ctest --preset cpu
 clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
 shellcheck tests/*.sh packaging/*.sh
+bash tests/release.sh
 cmake --preset asan
 cmake --build --preset asan -j4
 ctest --preset asan
@@ -50,3 +51,7 @@ Add regressions for output safety, error codes and interrupted operations.
 Keep manual GPU tests on a trusted machine; never execute untrusted PR code on
 a personal GPU runner. Logical commits should separate behavior, tests,
 packaging and documentation. Do not publish releases automatically.
+
+Open a PR against `main`; required CI checks must pass on an up-to-date branch.
+Force pushes and deletion of `main` are disabled. Use squash merges for focused
+changes. Release preparation is documented in [releasing](docs/releasing.md).

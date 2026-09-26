@@ -1,6 +1,7 @@
 name: CI
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -16,6 +17,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -32,6 +34,7 @@ jobs:
           sudo apt-get install -y ninja-build clang-18 clang-format-18 libomp-18-dev libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck
       - run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
       - run: shellcheck tests/*.sh packaging/*.sh
+      - run: bash tests/release.sh
       - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_SANITIZERS=${{ matrix.sanitize }}
         env:
           CC: ${{ matrix.cc }}
@@ -45,6 +48,7 @@ jobs:
             "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline"
   package:
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: docker build -f packaging/Dockerfile --target archive --output type=local,dest=.build/artifacts/cpu .
@@ -59,7 +63,7 @@ jobs:
           docker run --rm --network none --user "$(id -u):$(id -g)" \
             -v "$PWD/.build/artifacts/cpu/unpacked:/app:ro" \
             -v "$PWD/.build/fixtures:/fixtures:ro" -v "$PWD/.build/clean-output:/output" \
-            ubuntu:22.04 /app/bin/whisper-transcribator /fixtures/jfk.wav \
+            ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02 /app/bin/whisper-transcribator /fixtures/jfk.wav \
             --model /fixtures/ggml-tiny.bin --vad-model /fixtures/ggml-silero-v6.2.0.bin \
             --language en --device cpu --local-files-only --output-dir /output --format all
           jq -e '.run.backend == "whisper.cpp" and (.text | ascii_downcase | contains("country"))' .build/clean-output/jfk.json
@@ -79,9 +83,11 @@ jobs:
             .build/artifacts/cpu/*.tar.gz
             .build/artifacts/cpu/SHA256SUMS
           retention-days: 7
+          if-no-files-found: error
   cuda:
     if: github.event_name == 'workflow_dispatch' && inputs.build_cuda
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: |
@@ -93,8 +99,10 @@ jobs:
           name: native-cuda-unverified-hardware
           path: .build/artifacts/cuda/*
           retention-days: 7
+          if-no-files-found: error
   secrets:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
