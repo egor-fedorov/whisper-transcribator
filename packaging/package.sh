@@ -4,6 +4,19 @@ set -euo pipefail
 build=$1
 destination=$2
 mkdir -p "$destination"/{bin,lib,licenses,sources,share}
+roots=("$build/whisper-transcribator")
+while IFS= read -r -d '' plugin; do
+    roots+=("$plugin")
+    cp "$plugin" "$destination/lib/"
+    basename "$plugin" >>"$destination/share/backends.txt"
+done < <(find "$build/bin" -maxdepth 1 -type f -name 'libggml-*.so' -print0)
+dependencies() {
+    local root
+    for root in "${roots[@]}"; do
+        printf '# %s\n' "$root"
+        ldd "$root"
+    done
+}
 owner_of() {
     local path owner
     for path in "$1" "$(readlink -f "$1")" "${1/#\/lib\//\/usr\/lib\/}"; do
@@ -23,14 +36,14 @@ mapfile -t upgrades < <(
         source=$(dpkg-query -W -f='${source:Package}' "$owner")
         case "$source" in glibc|gcc-*|cuda-*|libcublas*|libnccl*|nccl*) continue ;; esac
         printf '%s\n' "$owner"
-    done < <(ldd "$build/whisper-transcribator" | awk '/=> \// { print $3 }')
+    done < <(dependencies | awk '/=> \// { print $3 }' | sort -u)
 )
 if ((${#upgrades[@]})); then
     apt-get install -y --only-upgrade --no-install-recommends "${upgrades[@]}"
 fi
 cp "$build/whisper-transcribator" "$destination/bin/"
 cp "$build/generated/package.env" "$destination/share/build-metadata.env"
-ldd "$build/whisper-transcribator" >"$destination/share/linked-libraries.txt"
+dependencies >"$destination/share/linked-libraries.txt"
 if grep -q 'not found' "$destination/share/linked-libraries.txt"; then
     echo 'Unresolved runtime dependency' >&2
     exit 1
@@ -56,7 +69,7 @@ while IFS= read -r library; do
         dpkg-query -W -f='${source:Package}\t${source:Version}\n' "$owner" >>"$destination/share/system-sources.tsv"
     else
         case "$(basename "$library")" in
-            libav*.so.*|libswresample.so.*|libwhisper.so.*|libggml*.so.*) ;;
+            libav*.so.*|libswresample.so.*|libwhisper.so.*|libggml*.so.*|libggml*.so) ;;
             *) echo "Missing package/license owner: $library" >&2; exit 1 ;;
         esac
     fi

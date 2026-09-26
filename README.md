@@ -1,11 +1,13 @@
 # whisper-transcribator
 
-A local C++17 CLI that turns an audio stream in a media file into TXT, SRT or JSON.
+A local C++17 CLI that turns an audio stream in a media file into TXT, SRT, WebVTT or JSON.
 Inference uses whisper.cpp; decoding and resampling use FFmpeg libraries.
 No Python runtime, external ffmpeg executable or web service is required.
 
-Streaming transcription and `--resume` on `main` are unreleased. The published
-0.3.0 archives do not include these features yet; build from source to try them.
+This README describes `main`, including unreleased streaming/resume, paragraphs,
+WebVTT, resumable downloads and portable CPU backends. The published 0.3.0 archives
+do not include these additions; build from source to try them. See the
+[changelog](CHANGELOG.md) for the boundary between released and unreleased features.
 
 [Migration from 0.2](docs/migration.md) ·
 [Build and release](docs/releasing.md)
@@ -33,8 +35,12 @@ tar -xzf "$archive" -C whisper-transcribator
 
 Version 0.3 uses one native backend. CPU and CUDA archives contain the executable
 **and its shared libraries**: keep `bin/`, `lib/` and `share/` together.
-Archives target Linux x86_64, Ubuntu 22.04+ (glibc 2.35+), and a Haswell-class
-AVX2/FMA/F16C/BMI2 CPU. They are not universal static binaries.
+Archives target Linux x86_64 and Ubuntu 22.04+ (glibc 2.35+).
+Published 0.3.0 archives require a Haswell-class AVX2/FMA/F16C/BMI2 CPU.
+Archives built from `main` instead select a compatible CPU plugin, including a
+baseline x86_64 implementation without AVX2. Keep all bundled backend plugins;
+they are loaded from the installed library directory, not the working directory.
+These are not universal static binaries.
 Alternatively, [build an archive](docs/releasing.md) locally.
 
 ```bash
@@ -46,13 +52,18 @@ Alternatively, [build an archive](docs/releasing.md) locally.
 
 Files are processed **sequentially with one loaded model**. Directory discovery
 is non-recursive and sorted by filename bytes, independent of locale; explicit
-file arguments retain their order. The first audio stream is used. A video track
+file arguments retain their order. FFmpeg selects the best audio stream; use
+`--audio-stream N` to select an absolute container stream index. A video track
 is neither required nor decoded. Archive codecs/containers are listed in
 [packaging](packaging/Dockerfile); source builds use the installed FFmpeg.
 
 Defaults: `small`, Russian, TXT, device `auto`, beam size 5, VAD enabled,
-`--cpu-threads 0` (whisper.cpp's default, not all cores). Set
-`--cpu-threads 4` explicitly when needed. `--language auto` detects language.
+`--cpu-threads 0` (automatic). On Linux, auto counts physical cores within process
+affinity and caps that count by visible cgroup v1/v2 CPU quotas, including parent
+quotas. Missing topology falls back to allowed logical CPUs; the result is at
+least one. Fractional quotas round down. `doctor --json` reports the count.
+Set `--cpu-threads 4` for an explicit override, which is not clamped automatically.
+`--language auto` detects language separately in each recognition window.
 `--device cuda` errors when CUDA is unavailable; `auto` reports its CPU fallback.
 
 ## Models

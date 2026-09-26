@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Select CPU threads from physical cores, process affinity and visible hierarchical cgroup quotas; report the effective count in diagnostics and retain explicit overrides.
+- Build portable archives with dynamically selected CPU variants, including baseline x86_64 without AVX2; package plugin dependencies and test missing-plugin diagnostics and non-AVX2 inference.
 - Resume interrupted HTTPS model downloads with byte progress, validated ranges, private hash-specific partial files and final SHA-256 checks; add pinned turbo Q5_0/Q8_0 model entries without changing defaults.
 - Default TXT/JSON text to pause- and sentence-based paragraphs, with `--text-layout single-line` compatibility and a configurable paragraph pause; preserve raw recognition segments.
 - Add escaped WebVTT captions and include VTT in `--format all`, complete-set checks, mappings and interrupted publication recovery; detect old three-format saved progress rather than silently starting again.

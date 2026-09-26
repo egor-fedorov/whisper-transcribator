@@ -31,7 +31,7 @@ COPY tests/ tests/
 ARG WT_CUDA=OFF
 ARG CUDA_ARCHITECTURES=75;80;86;89;90
 RUN cmake -S . -B .build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_CUDA=${WT_CUDA} \
-    -DGGML_NATIVE=OFF -DWT_WERROR=ON \
+    -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DWT_WERROR=ON \
     -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
     && cmake --build .build/release -j4 \
     && ctest --test-dir .build/release --output-on-failure

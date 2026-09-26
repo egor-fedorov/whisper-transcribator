@@ -88,6 +88,10 @@ jobs:
           test "$(unpacked/bin/whisper-transcribator --version)" = "$WT_PACKAGE_VERSION"
       - run: bash tests/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
       - run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user
+          bash tests/portable.sh .build/artifacts/cpu/unpacked .build/fixtures .build/portable
+      - run: |
           mkdir -p .build/clean-output
           docker run --rm --network none --user "$(id -u):$(id -g)" \
             -v "$PWD/.build/artifacts/cpu/unpacked:/app:ro" \
