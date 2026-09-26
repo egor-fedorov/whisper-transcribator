@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Prefer model catalog names over same-named local directories, reuse verified model hashes and wait cancellably for concurrent downloads without locking ready weights.
 - Avoid saved-progress errors after early failures; safely restart verified zero-progress journals while preserving committed windows and unknown contents.
 - Index paths and file identities instead of comparing every output against every input; consistently reject output and mapping symlinks.
 - Handle mid-stream audio rate, format and channel layout changes without losing resampler tails or corrupting PCM.

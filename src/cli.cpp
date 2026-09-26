@@ -36,7 +36,7 @@ int run_cli(int argc, char** argv) {
         if (action == "download") {
             if (name.empty())
                 throw UsageError("models download requires a model name or GGML path");
-            std::cout << prepare_model(name, o).string() << '\n';
+            std::cout << prepare_model(name, o).path.string() << '\n';
         } else {
             if (!name.empty())
                 throw UsageError("models list does not accept a model name");

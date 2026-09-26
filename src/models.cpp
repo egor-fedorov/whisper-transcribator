@@ -1,11 +1,15 @@
 #include "app.hpp"
 #include "catalog.hpp"
+#include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <curl/curl.h>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
 #include <sys/file.h>
+#include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
 
 namespace wt {
@@ -86,38 +90,71 @@ void fetch_https(const std::string& url, const fs::path& target) {
     if (fflush(file.get()) || fsync(fileno(file.get())))
         throw std::runtime_error("Cannot flush downloaded model");
 }
+static std::string stable_hash(const fs::path& path) {
+    struct stat before {
+    }, after{};
+    if (stat(path.c_str(), &before) || !S_ISREG(before.st_mode))
+        throw std::runtime_error("Cannot inspect model: " + path.string());
+    auto hash = sha256(path);
+    if (stat(path.c_str(), &after) || before.st_dev != after.st_dev ||
+        before.st_ino != after.st_ino || before.st_size != after.st_size ||
+        before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
+        before.st_mtim.tv_nsec != after.st_mtim.tv_nsec ||
+        before.st_ctim.tv_sec != after.st_ctim.tv_sec ||
+        before.st_ctim.tv_nsec != after.st_ctim.tv_nsec)
+        throw std::runtime_error("Model changed while hashing: " + path.string());
+    return hash;
+}
 static bool valid_model(const Model& model, const fs::path& path) {
     return fs::is_regular_file(path) && fs::file_size(path) == model.bytes &&
-           sha256(path) == model.hash;
+           stable_hash(path) == model.hash;
 }
-fs::path ensure_cached(const Model& model, const fs::path& root, bool offline, const Fetch& fetch) {
+PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offline,
+                            const Fetch& fetch) {
     auto target = root / model.file;
-    if (offline) {
+    auto cached = [&]() -> PreparedModel {
         if (!valid_model(model, target))
-            throw std::runtime_error("Model missing or corrupt in offline mode: " +
-                                     target.string());
-        return target;
-    }
+            throw std::runtime_error(
+                "Corrupt model cache; remove or replace this file explicitly: " + target.string());
+        return {target, model.hash};
+    };
+    check_cancelled();
+    if (fs::exists(target) || fs::is_symlink(target))
+        return cached();
+    if (offline)
+        throw std::runtime_error("Model missing in offline mode: " + target.string());
     fs::create_directories(root);
     struct Lock {
         int fd;
         explicit Lock(const fs::path& path)
-            : fd(open(path.c_str(), O_CREAT | O_RDWR | O_NOFOLLOW, 0600)) {
+            : fd(open(path.c_str(), O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600)) {
             if (fd < 0)
                 throw std::runtime_error("Cannot open model lock");
-            if (flock(fd, LOCK_EX | LOCK_NB)) {
+            try {
+                struct stat st {};
+                if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1)
+                    throw std::runtime_error("Unsafe model lock");
+                bool announced = false;
+                while (flock(fd, LOCK_EX | LOCK_NB)) {
+                    if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR)
+                        throw std::runtime_error("Cannot acquire model lock");
+                    check_cancelled();
+                    if (!announced) {
+                        std::cerr << "Waiting for model preparation: " << path << '\n';
+                        announced = true;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                check_cancelled();
+            } catch (...) {
                 close(fd);
-                throw std::runtime_error("Another process is preparing this model");
+                throw;
             }
         }
         ~Lock() { close(fd); }
     } lock(root / (model.file + ".lock"));
-    if (fs::exists(target) || fs::is_symlink(target)) {
-        if (!valid_model(model, target))
-            throw std::runtime_error(
-                "Corrupt model cache; remove or replace this file explicitly: " + target.string());
-        return target;
-    }
+    if (fs::exists(target) || fs::is_symlink(target))
+        return cached();
     auto temporary = (root / ".download-XXXXXX").string();
     int fd = mkstemp(temporary.data());
     if (fd < 0)
@@ -131,28 +168,29 @@ fs::path ensure_cached(const Model& model, const fs::path& root, bool offline, c
             throw std::runtime_error("Model size/SHA-256 verification failed");
         if (link(temporary.c_str(), target.c_str()))
             throw std::runtime_error("Cannot publish downloaded model; target preserved");
+        sync_directory(root);
     } catch (...) {
         unlink(temporary.c_str());
         throw;
     }
     unlink(temporary.c_str());
-    return target;
+    return {target, model.hash};
 }
-fs::path prepare_model(const std::string& value, const Options& options) {
-    if (fs::exists(resolve_path(value)) || value.find('/') != std::string::npos ||
-        value.rfind("~", 0) == 0) {
-        auto path = resolve_path(value);
-        if (!fs::is_regular_file(path) || fs::file_size(path) == 0)
-            throw UsageError("Expected a nonempty local GGML file, not a CTranslate2 directory: " +
-                             path.string());
-        return path;
-    }
+PreparedModel prepare_model(const std::string& value, const Options& options) {
     std::string name = value == "large" ? "large-v3" : value == "turbo" ? "large-v3-turbo" : value;
     for (const auto& model : model_catalog())
         if (model.name == name) {
             std::cerr << "Preparing model: " << name << '\n';
             return ensure_cached(model, model_root(options), options.local_files_only);
         }
+    if (fs::exists(resolve_path(value)) || value.find('/') != std::string::npos ||
+        value.rfind("~", 0) == 0) {
+        auto path = resolve_path(value);
+        if (!fs::is_regular_file(path) || fs::file_size(path) == 0)
+            throw UsageError("Expected a nonempty local GGML file, not a CTranslate2 directory: " +
+                             path.string());
+        return {path, stable_hash(path)};
+    }
     throw UsageError("Unknown model: " + value + "; use models list or a local GGML file");
 }
 Json list_models(const Options& options) {

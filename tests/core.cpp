@@ -308,9 +308,9 @@ int main() {
             atomic_write(path, "abc", true);
         };
         auto path = ensure_cached(fixture(), root, false, fetch);
-        require(sha256(path) == fixture().hash && calls == 1);
-        require(ensure_cached(fixture(), root, true, fetch) == path && calls == 1);
-        require(ensure_cached(fixture(), root, false, fetch) == path && calls == 1);
+        require(path.hash == fixture().hash && sha256(path.path) == path.hash && calls == 1);
+        require(ensure_cached(fixture(), root, true, fetch).path == path.path && calls == 1);
+        require(ensure_cached(fixture(), root, false, fetch).path == path.path && calls == 1);
     });
     test("offline missing has no side effects", [](auto root) {
         auto absent = root / "absent";
@@ -335,10 +335,11 @@ int main() {
         rejects([&] { ensure_cached(fixture(), root, false); });
         require(read_text(root / fixture().file) == "bad");
     });
-    test("cache lock contention", [](auto root) {
+    test("cached model does not acquire download lock", [](auto root) {
         int fd = open((root / "fixture.bin.lock").c_str(), O_CREAT | O_RDWR, 0600);
         require(fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0);
-        rejects([&] { ensure_cached(fixture(), root, false); });
+        atomic_write(root / fixture().file, "abc");
+        require(ensure_cached(fixture(), root, false).hash == fixture().hash);
         close(fd);
     });
     test("local model and invalid names", [](auto root) {
@@ -346,7 +347,8 @@ int main() {
         o.local_files_only = true;
         o.download_root = root.string();
         atomic_write(root / "local.bin", "weights");
-        require(prepare_model((root / "local.bin").string(), o) == root / "local.bin");
+        auto prepared = prepare_model((root / "local.bin").string(), o);
+        require(prepared.path == root / "local.bin" && prepared.hash == sha256(prepared.path));
         rejects([&] { prepare_model(root.string(), o); });
         rejects([&] { prepare_model("unknown", o); });
     });

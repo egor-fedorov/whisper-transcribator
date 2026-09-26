@@ -69,13 +69,17 @@ The catalog contains `tiny`, `base`, `small`, `medium`, `large-v3` and
 `large-v3-turbo`; `large` and `turbo` are aliases. Silero VAD is a separate,
 small model. **No weights are embedded in an image or archive.** Only the selected
 model and, when enabled, VAD weights are downloaded on first use.
+Catalog names take precedence over files or directories in the current directory.
+Use an explicit path such as `./small` to select a local file with a catalog name.
 
 Cache precedence: `--download-root`, `WHISPER_DOWNLOAD_ROOT`, then
 `${XDG_CACHE_HOME:-$HOME/.cache}/whisper-transcribator/models`.
 `WHISPER_MODEL` overrides the default model. Downloads use pinned revisions,
 TLS verification, size/SHA-256 checks, an exclusive lock and atomic publication.
 Corrupt cached files are reported, not silently replaced. Remove a corrupt file
-explicitly and retry; a busy cache lock means another downloader is still running.
+explicitly and retry. Missing-model downloads wait for a busy cache lock and can
+be cancelled; verified existing weights do not take the download lock. Each
+prepared model is hashed once and its verified digest is reused for checkpoints.
 `models list --json` verifies existing catalog weights without downloading.
 
 `--local-files-only` forbids downloads, including VAD. Local models must be
