@@ -50,14 +50,14 @@ int transcribe(Options options) {
     }
     options.device = select_device(options.device);
     auto model = prepare_model(options.model, options);
-    fs::path vad;
+    PreparedModel vad;
     if (!options.no_vad)
         vad =
             prepare_model(options.vad_model.empty() ? "silero-v6.2.0" : options.vad_model, options);
     check_cancelled();
-    std::cerr << "Model: " << model << "; device: " << options.device << '\n';
-    Json backend = {{"model_sha256", sha256(model)},
-                    {"vad_sha256", vad.empty() ? "" : sha256(vad)},
+    std::cerr << "Model: " << model.path << "; device: " << options.device << '\n';
+    Json backend = {{"model_sha256", model.hash},
+                    {"vad_sha256", vad.hash},
                     {"ffmpeg", audio_backend_version()}};
     std::unique_ptr<whisper_context, decltype(&whisper_free)> context(nullptr, whisper_free);
     std::unique_ptr<whisper_vad_context, decltype(&whisper_vad_free)> splitter(nullptr,
@@ -70,7 +70,7 @@ int transcribe(Options options) {
             params.use_gpu = false;
             if (options.cpu_threads > 0)
                 params.n_threads = options.cpu_threads;
-            splitter.reset(whisper_vad_init_from_file_with_params(vad.c_str(), params));
+            splitter.reset(whisper_vad_init_from_file_with_params(vad.path.c_str(), params));
             if (!splitter)
                 throw std::runtime_error("Cannot initialize VAD splitter");
         }
@@ -115,10 +115,11 @@ int transcribe(Options options) {
                     auto params = whisper_context_default_params();
                     params.use_gpu = options.device == "cuda";
                     params.flash_attn = true;
-                    context.reset(whisper_init_from_file_with_params(model.c_str(), params));
+                    context.reset(whisper_init_from_file_with_params(model.path.c_str(), params));
                     check_cancelled();
                     if (!context)
-                        throw std::runtime_error("Cannot initialize GGML model: " + model.string());
+                        throw std::runtime_error("Cannot initialize GGML model: " +
+                                                 model.path.string());
                 }
                 auto inference = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
                 if (options.cpu_threads > 0)
@@ -129,7 +130,7 @@ int transcribe(Options options) {
                 inference.print_progress = inference.print_realtime = inference.print_timestamps =
                     false;
                 inference.vad = !options.no_vad;
-                inference.vad_model_path = vad.c_str();
+                inference.vad_model_path = vad.path.c_str();
                 inference.vad_params.min_silence_duration_ms = options.vad_min_silence_ms;
                 inference.abort_callback = [](void*) { return stop_signal != 0; };
                 inference.encoder_begin_callback = [](whisper_context*, whisper_state*, void*) {
