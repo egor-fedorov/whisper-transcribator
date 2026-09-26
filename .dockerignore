@@ -13,3 +13,12 @@ build/
 *.txt
 *.srt
 *.json
+.git/
+.agents/
+.codex
+transcripts/
+models/
+*.mp4
+*.mkv
+*.wav
+*.mp3
