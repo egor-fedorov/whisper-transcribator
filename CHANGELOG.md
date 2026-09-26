@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Require FFmpeg 5.1+, derive build metadata and artifact names from CMake, pin JSON independently, and enforce project warnings in CI while allowing explicit local CPU optimizations.
+- Default Docker runtime execution to UID/GID 10001; host bind mounts should still use the host user's explicit `--user`.
 - Prefer model catalog names over same-named local directories, reuse verified model hashes and wait cancellably for concurrent downloads without locking ready weights.
 - Avoid saved-progress errors after early failures; safely restart verified zero-progress journals while preserving committed windows and unknown contents.
 - Index paths and file identities instead of comparing every output against every input; consistently reject output and mapping symlinks.

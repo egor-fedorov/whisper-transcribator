@@ -31,6 +31,7 @@ Json doctor(const Options& options) {
     Json result = {{"version", WT_VERSION},
                    {"backend", "whisper.cpp"},
                    {"backend_version", whisper_version()},
+                   {"backend_revision", WT_WHISPER_REVISION},
                    {"model_cache", model_root(options).string()},
                    {"errors", Json::array()}};
     try {

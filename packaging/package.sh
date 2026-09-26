@@ -29,6 +29,7 @@ if ((${#upgrades[@]})); then
     apt-get install -y --only-upgrade --no-install-recommends "${upgrades[@]}"
 fi
 cp "$build/whisper-transcribator" "$destination/bin/"
+cp "$build/generated/package.env" "$destination/share/build-metadata.env"
 ldd "$build/whisper-transcribator" >"$destination/share/linked-libraries.txt"
 if grep -q 'not found' "$destination/share/linked-libraries.txt"; then
     echo 'Unresolved runtime dependency' >&2

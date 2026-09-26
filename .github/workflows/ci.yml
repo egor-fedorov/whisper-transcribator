@@ -31,17 +31,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build clang-18 clang-format-18 libomp-18-dev ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck
+          sudo apt-get install -y ninja-build clang-18 clang-format-18 libomp-18-dev ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck strace
       - run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
       - run: shellcheck tests/*.sh packaging/*.sh
       - run: bash tests/release.sh
-      - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_SANITIZERS=${{ matrix.sanitize }}
+      - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }}
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
       - run: cmake --build .build/ci -j2
       - run: ctest --test-dir .build/ci --output-on-failure
       - run: bash tests/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
+      - if: matrix.sanitize == 'OFF'
+        run: bash tests/model-hash.sh .build/ci/whisper-transcribator .build/fixtures .build/model-hash
       - run: |
           sudo unshare --net bash tests/smoke.sh "$PWD/.build/ci/whisper-transcribator" \
             "$PWD/.build/fixtures/jfk.wav" "$PWD/.build/fixtures/ggml-tiny.bin" \
@@ -60,7 +62,12 @@ jobs:
           cd .build/artifacts/cpu
           sha256sum -c SHA256SUMS
           mkdir unpacked
-          tar -xzf whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz -C unpacked
+          set -- whisper-transcribator-*-linux-x86_64-cpu.tar.gz
+          test "$#" = 1
+          tar -xzf "$1" -C unpacked
+          . unpacked/share/build-metadata.env
+          test "$1" = "whisper-transcribator-${WT_PACKAGE_VERSION}-linux-x86_64-cpu.tar.gz"
+          test "$(unpacked/bin/whisper-transcribator --version)" = "$WT_PACKAGE_VERSION"
       - run: bash tests/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
       - run: |
           mkdir -p .build/clean-output
@@ -72,6 +79,17 @@ jobs:
             --language en --device cpu --local-files-only --output-dir /output --format all
           jq -e '.run.backend == "whisper.cpp" and (.text | ascii_downcase | contains("country"))' .build/clean-output/jfk.json
       - run: docker build -f packaging/Dockerfile --target runtime -t whisper-transcribator:test .
+      - run: |
+          test "$(docker run --rm --entrypoint id whisper-transcribator:test -u)" = 10001
+          docker run --rm --network none --entrypoint /bin/bash \
+            -v "$PWD/.build/fixtures:/fixtures:ro" whisper-transcribator:test -euc '
+              /opt/whisper-transcribator/bin/whisper-transcribator /fixtures/jfk.wav \
+                --model /fixtures/ggml-tiny.bin --no-vad --language en --device cpu \
+                --local-files-only --output-dir /data/transcripts
+              test -s /data/transcripts/jfk.txt
+              test "$(stat -c %u /data/transcripts/.whisper-transcribator)" = 10001
+              test -w /models
+            '
       - run: |
           mkdir -p .build/docker-output
           docker run --rm --network none --user "$(id -u):$(id -g)" \
@@ -88,6 +106,23 @@ jobs:
             .build/artifacts/cpu/SHA256SUMS
           retention-days: 7
           if-no-files-found: error
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: |
+          docker run --rm -v "$PWD:/src:ro" -w /build \
+            debian:12-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 \
+            bash -euc '
+              apt-get update
+              apt-get install -y --no-install-recommends ca-certificates cmake ninja-build g++ pkg-config \
+                ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev
+              pkg-config --modversion libavformat | grep "^59\.27\."
+              cmake -S /src -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON
+              cmake --build /build -j2
+              ctest --test-dir /build --output-on-failure
+            '
   cuda:
     if: github.event_name == 'workflow_dispatch' && inputs.build_cuda
     runs-on: ubuntu-24.04

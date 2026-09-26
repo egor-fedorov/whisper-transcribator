@@ -1,11 +1,11 @@
 #pragma once
-#include "json.hpp"
 #include <csignal>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <ostream>
 #include <stdexcept>
 #include <string>

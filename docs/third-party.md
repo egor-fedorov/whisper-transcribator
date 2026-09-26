@@ -7,7 +7,7 @@ Model weights are downloaded separately and retain their upstream terms.
 | --- | --- | --- |
 | whisper.cpp / GGML | commit 927cfce34f31707e17f2bff35c349632fb9e2c3a | MIT, source archive |
 | CLI11 | 2.5.0 | BSD, source archive |
-| nlohmann JSON | header from pinned whisper.cpp | header with MIT notice |
+| nlohmann JSON | 3.11.2, independent hash-pinned dependency | MIT, source archive |
 | FFmpeg | 8.0.1, no GPL/nonfree components | LGPL-2.1, source and configure log |
 | libcurl, OpenSSL and transitive distro libraries | Ubuntu 22.04 security packages | package notices and source archives |
 | GCC runtimes | Ubuntu build compiler | GPL runtime exception notices |
