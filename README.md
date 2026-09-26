@@ -7,13 +7,32 @@ No Python runtime, external ffmpeg executable or web service is required.
 [Migration from 0.2](docs/migration.md) ·
 [Build and release](docs/releasing.md)
 
+## Install
+
+Download a Linux x86_64 archive from [Releases](https://github.com/egor-fedorov/whisper-transcribator/releases).
+Choose `cpu`, or `cuda` for an NVIDIA GPU with a compatible driver. CUDA runtime
+libraries are included; an installed CUDA toolkit is not required.
+
+```bash
+version=0.3.0
+flavor=cpu # or cuda
+archive="whisper-transcribator-${version}-linux-x86_64-${flavor}.tar.gz"
+url="https://github.com/egor-fedorov/whisper-transcribator/releases/download/v${version}"
+curl -fLO "$url/$archive"
+curl -fLO "$url/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+mkdir -p whisper-transcribator
+tar -xzf "$archive" -C whisper-transcribator
+./whisper-transcribator/bin/whisper-transcribator doctor --device "$flavor" --json
+```
+
 ## Run
 
 Version 0.3 uses one native backend. CPU and CUDA archives contain the executable
 **and its shared libraries**: keep `bin/`, `lib/` and `share/` together.
 Archives target Linux x86_64, Ubuntu 22.04+ (glibc 2.35+), and a Haswell-class
 AVX2/FMA/F16C/BMI2 CPU. They are not universal static binaries.
-No public release upload is assumed; [build an archive](docs/releasing.md) locally.
+Alternatively, [build an archive](docs/releasing.md) locally.
 
 ```bash
 ./bin/whisper-transcribator lecture.mp4 -o lecture.txt --model small --language ru

@@ -79,10 +79,43 @@ with narrowly scoped mounts once device permissions are configured.
    data/weights and generated artifacts remain ignored. Update release notes.
 7. Only after approval, tag and publish the verified artifacts and checksums.
 
+CI runs on pushes to `main` and pull requests, without duplicate push runs for
+PR branches. The protected `main` requires the GCC, Clang/sanitizer, package and
+secret checks; no second reviewer is required for this single-maintainer project.
 CI runs CPU/compiler/sanitizer/package checks; optional manual dispatch builds
 the CUDA archive but does not certify GPU inference. It does not publish assets
-or expose a personal GPU runner to pull requests. Configuring a workflow is not
-the same as having a successful remote Actions run.
+or expose a personal GPU runner to pull requests. The first remote checks passed;
+every release still needs a successful run for its exact source commit.
+
+## Prepare And Publish
+
+Keep the two archives and their original `SHA256SUMS` under
+`.build/artifacts/cpu/` and `.build/artifacts/cuda/`. Prepare from a clean checkout
+of the release commit after its `main` CI has passed. The helper verifies both
+checksums and every packaged project source against Git, then checks local and
+remote tag targets and CI. It never publishes automatically or overwrites assets.
+
+```bash
+bash packaging/release.sh 0.3.0 .build/artifacts
+git tag -a v0.3.0 -m 'Release 0.3.0'
+git push origin v0.3.0
+bash packaging/release.sh 0.3.0 .build/artifacts --draft
+gh release view v0.3.0
+```
+
+The draft contains CPU/CUDA archives, combined checksums, release notes and the
+source commit/CI link. This validates artifact integrity and source correspondence,
+not that CUDA inference ran: the short hardware smoke gate above remains mandatory
+for the exact archive to be published. After reviewing the draft and the GPU check:
+
+```bash
+gh release edit v0.3.0 --draft=false --latest
+```
+
+If an upload fails, inspect the draft before retrying; the helper deliberately
+does not delete releases or use `--clobber`. GitHub Actions artifacts expire and
+are not a substitute for release assets. Dependency updates arrive through
+Dependabot; merging workflow changes with `gh` requires the `workflow` token scope.
 
 Dependencies downloaded by CMake can be supplied offline via
 `FETCHCONTENT_SOURCE_DIR_WHISPER` and `FETCHCONTENT_SOURCE_DIR_CLI11`; those local
