@@ -8,7 +8,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: App version, OS, Python or Docker image, model, CPU/RAM, GPU/driver when relevant.
+      description: App version, OS, CPU/CUDA archive or Docker image, model, CPU/RAM, GPU/driver when relevant.
     validations:
       required: true
   - type: textarea

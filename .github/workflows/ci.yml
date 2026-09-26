@@ -3,70 +3,94 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      build_cuda:
+        description: Build CUDA archive (hardware inference is a separate manual gate)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  python:
+  test:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        python: ['3.10', '3.13']
+        include:
+          - cc: gcc
+            cxx: g++
+            sanitize: 'OFF'
+          - cc: clang-18
+            cxx: clang++-18
+            sanitize: 'ON'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
-        with:
-          python-version: ${{ matrix.python }}
-      - run: pip install ruff==0.16.9 build==1.6.1 coverage==7.16.1
-      - run: ruff check . && ruff format --check whisper_transcribator tests tools
-      - run: coverage run -m unittest discover -s tests && coverage report
-      - run: bash -n run_whisper.sh transcribe_dir.sh experiments/whisper_cpp/package.sh
-      - run: shellcheck run_whisper.sh transcribe_dir.sh experiments/whisper_cpp/package.sh
-      - run: python -m build
-      - if: matrix.python == '3.13'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: python-packages
-          path: |
-            dist/*.whl
-            dist/*.tar.gz
-          retention-days: 7
-      - run: pip install dist/*.whl && pip check
-      - run: cd /tmp && whisper-transcribator --version && whisper-transcribator doctor --device cpu --json
-      - if: matrix.python == '3.13'
-        run: python tools/smoke.py --prepare
-        env:
-          HF_HUB_DISABLE_XET: '1'
-      - if: matrix.python == '3.13'
-        run: cd /tmp && python "$GITHUB_WORKSPACE/tools/smoke.py" --root "$GITHUB_WORKSPACE/.cache/smoke"
-  docker:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      - run: docker build --target cpu -t whisper-transcribator:test .
-      - run: docker run --rm whisper-transcribator:test doctor --device cpu --json
-      - run: docker run --rm -e HF_HUB_DISABLE_XET=1 -v "$PWD/tools:/tools:ro" -v smoke:/smoke --entrypoint python whisper-transcribator:test /tools/smoke.py --prepare --root /smoke
-      - run: docker run --rm --network none -v "$PWD/tools:/tools:ro" -v smoke:/smoke --entrypoint python whisper-transcribator:test /tools/smoke.py --root /smoke
-  native:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
-      - run: sudo apt-get update && sudo apt-get install -y libavformat-dev libavcodec-dev libswresample-dev
-      - run: cmake -S experiments/whisper_cpp -B build/native -DNATIVE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug
-      - run: cmake --build build/native -j2
-      - run: ctest --test-dir build/native --output-on-failure
-        env:
-          ASAN_OPTIONS: detect_leaks=1
       - run: |
-          curl -fsSL https://raw.githubusercontent.com/ggml-org/whisper.cpp/927cfce34f31707e17f2bff35c349632fb9e2c3a/samples/jfk.wav -o /tmp/jfk.wav
-          curl -fsSL https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin -o /tmp/ggml-tiny.bin
-          echo '59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e  /tmp/jfk.wav' | sha256sum -c -
-          echo 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21  /tmp/ggml-tiny.bin' | sha256sum -c -
-          python tools/native_smoke.py build/native/whisper-transcribator-native /tmp/jfk.wav /tmp/ggml-tiny.bin
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang-18 clang-format-18 libomp-18-dev libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck
+      - run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
+      - run: shellcheck tests/*.sh packaging/*.sh
+      - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_SANITIZERS=${{ matrix.sanitize }}
         env:
-          ASAN_OPTIONS: detect_leaks=1
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+      - run: cmake --build .build/ci -j2
+      - run: ctest --test-dir .build/ci --output-on-failure
+      - run: bash tests/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
+      - run: |
+          sudo unshare --net bash tests/smoke.sh "$PWD/.build/ci/whisper-transcribator" \
+            "$PWD/.build/fixtures/jfk.wav" "$PWD/.build/fixtures/ggml-tiny.bin" \
+            "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline"
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - run: docker build -f packaging/Dockerfile --target archive --output type=local,dest=.build/artifacts/cpu .
+      - run: |
+          cd .build/artifacts/cpu
+          sha256sum -c SHA256SUMS
+          mkdir unpacked
+          tar -xzf whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz -C unpacked
+      - run: bash tests/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
+      - run: |
+          mkdir -p .build/clean-output
+          docker run --rm --network none --user "$(id -u):$(id -g)" \
+            -v "$PWD/.build/artifacts/cpu/unpacked:/app:ro" \
+            -v "$PWD/.build/fixtures:/fixtures:ro" -v "$PWD/.build/clean-output:/output" \
+            ubuntu:22.04 /app/bin/whisper-transcribator /fixtures/jfk.wav \
+            --model /fixtures/ggml-tiny.bin --vad-model /fixtures/ggml-silero-v6.2.0.bin \
+            --language en --device cpu --local-files-only --output-dir /output --format all
+          jq -e '.run.backend == "whisper.cpp" and (.text | ascii_downcase | contains("country"))' .build/clean-output/jfk.json
+      - run: docker build -f packaging/Dockerfile --target runtime -t whisper-transcribator:test .
+      - run: |
+          mkdir -p .build/docker-output
+          docker run --rm --network none --user "$(id -u):$(id -g)" \
+            -v "$PWD/.build/fixtures:/fixtures:ro" -v "$PWD/.build/docker-output:/output" \
+            whisper-transcribator:test /fixtures/jfk.wav \
+            --model /fixtures/ggml-tiny.bin --vad-model /fixtures/ggml-silero-v6.2.0.bin \
+            --language en --device cpu --local-files-only --output-dir /output --format all
+          jq -e '.run.backend == "whisper.cpp" and (.segments | length > 0)' .build/docker-output/jfk.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-cpu
+          path: .build/artifacts/cpu/*.*
+          retention-days: 7
+  cuda:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_cuda
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - run: |
+          docker build -f packaging/Dockerfile --target archive --build-arg WT_CUDA=ON \
+            --build-arg BUILD_IMAGE=nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97 \
+            --output type=local,dest=.build/artifacts/cuda .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-cuda-unverified-hardware
+          path: .build/artifacts/cuda/*
+          retention-days: 7
   secrets:
     runs-on: ubuntu-24.04
     steps:
