@@ -1,7 +1,7 @@
 # Local Backend Comparison
 
 Date: 2026-09-26. This is a small private-corpus experiment, not a general Whisper
-leaderboard. No reference transcripts or manual listening evaluation are available.
+leaderboard. An internal manual quality check is complete (see below).
 Raw recordings and transcripts are not included in the repository.
 
 ## Setup
@@ -27,9 +27,9 @@ versus unquantized GGML with mixed-precision weights. GPU: large-v3,
 CTranslate2 float16 versus unquantized GGML; native flash attention is enabled.
 Backend defaults/decoding and numeric precision are **not identical**. In
 particular this is not a benchmark of the production CPU int8 default or batching.
-The [parameter and feature audit](../../docs/backend-selection.md) documents concrete
-differences, including fallback candidate count and repetition detection. These
-numbers compare the current configurations, not language overhead or matched decoders.
+These numbers compare the current configurations, not language overhead or
+matched decoders. See [backend selection](../../docs/backend-selection.md) for
+the remaining feature and distribution considerations.
 
 Models are cached before timing. CTranslate2 snapshots: small
 `536b0662742c02347bc0e980a01041f333bce120`, large-v3
@@ -82,34 +82,27 @@ Full-file tests are optional memory/stability investigations, not a prerequisite
 for routine speed comparisons. Use short clips by default and agree the time
 budget before running a long recording.
 
-## Output Checks
+## Quality Check
 
-All first-run GPU clip outputs had nonempty matching TXT/JSON text, SRT output,
-and segment timestamps within the clip duration. Text inspection found different
-wording, segmentation and coverage: the four GPU clips contained 863 words with
-faster-whisper versus 904 with whisper.cpp. Both also produced questionable
-technical terms. Word count is not accuracy, and neither output is a reference.
-No WER/CER or claim of equal quality is reported. Before backend migration, use
-manually verified excerpts, including quiet speech and technical terminology.
-All 48 short-run output sets and both full-file sets passed format/timestamp
-sanity checks. The full outputs contained 17514 words / 2689 segments for Python
-and 17323 words / 3517 segments for native. These counts do not measure accuracy.
+An internal manual comparison of faster-whisper and whisper.cpp using large-v3
+on GPU was completed on three 30-second lecture excerpts. The project owner
+reviewed both outputs and confirmed that all transcriptions were correct and
+practically identical on these samples. Audio and transcripts are not included
+in the repository.
 
 ## Decision
 
 Keep Python/faster-whisper as the supported CLI and Docker distribution for now.
 The prototype has a meaningful measured GPU/RAM advantage on this machine, but
-not feature parity or a reference-based quality evaluation. Its CPU result also
+does not yet have feature parity. Its CPU result also
 does not justify a blanket rewrite. A Rust frontend would not by itself change
 the inference engine or these memory characteristics.
 
-Next useful experiment: reference-checked short excerpts and targeted native
-feature parity. Chunking/resume remains a separate project for either backend;
+The internal quality check is complete. Next: assess native feature parity and
+distribution before selecting the supported backend. Chunking/resume remains a
+separate project for either backend;
 neither current implementation guarantees RAM independent of recording length.
 Do not add automatic full-lecture benchmarks to CI or routine development.
-Three 30-second excerpts are prepared locally for blind human references; see the
-[review workflow](../../docs/quality.md). Product feature work is paused until this
-small migration check and a native capability review inform the backend choice.
 
 ## Packaging
 

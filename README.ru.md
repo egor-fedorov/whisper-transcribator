@@ -67,5 +67,6 @@ JOBS/THREADS/MODEL/DEVICE у первого сохранены; MAP_FILE уда�
 
 Новые функции, включая chunk/resume, отложены до [выбора backend](docs/backend-selection.md).
 Незавершённый Python-эксперимент сохранён в ветке `wip/python-chunk-resume`,
-не входит в `main` и `v0.2.0`. Следующий шаг: [три коротких ручных эталона](docs/quality.md),
-без повторных прогонов целых лекций. Docker остаётся опциональным при любом выборе.
+не входит в `main` и `v0.2.0`. Внутренняя проверка качества завершена:
+[краткий итог](experiments/whisper_cpp/BENCHMARK.md#quality-check).
+Docker остаётся опциональным при любом выборе.

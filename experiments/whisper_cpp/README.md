@@ -89,5 +89,6 @@ stay under ignored `benchmark-results/`; nothing is uploaded.
 The comparison disables VAD, uses beam size 5 and four CPU threads, and loads the
 model once per run. CPU uses small (CTranslate2 float32 vs unquantized GGML mixed
 precision), GPU uses large-v3 (CTranslate2 float16 vs GGML). These are comparable
-tasks, not bit-identical decoders. Without reference transcripts there is no WER
-measurement and no justified claim of equal recognition quality.
+tasks, not bit-identical decoders. The internal manual comparison found correct,
+practically identical transcriptions on the reviewed short samples; see the
+[quality check summary](BENCHMARK.md#quality-check).

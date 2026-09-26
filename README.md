@@ -117,7 +117,8 @@ useful for packaging; a decision to replace faster-whisper depends on measuremen
 New product features, including chunking/resume, are paused pending
 [backend selection](docs/backend-selection.md). The unfinished Python experiment
 is preserved on `wip/python-chunk-resume`, not included in main or `v0.2.0`.
-Next: [three short human-reviewed excerpts](docs/quality.md), not full-lecture runs.
+The internal quality check is complete; see the
+[comparison summary](experiments/whisper_cpp/BENCHMARK.md#quality-check).
 Docker remains optional: direct Python installation is supported, and the native
 prototype can run from its archive without Docker.
 
