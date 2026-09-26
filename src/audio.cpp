@@ -55,7 +55,8 @@ std::vector<float> decode_audio(const fs::path& path) {
             break;
         }
     }
-    check(stream, "find audio stream");
+    if (stream < 0)
+        throw std::runtime_error("No audio stream in media file: " + path.string());
     const auto* parameters = d.format->streams[stream]->codecpar;
     const AVCodec* codec = avcodec_find_decoder(parameters->codec_id);
     if (!codec)

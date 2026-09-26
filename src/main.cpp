@@ -2,7 +2,7 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
-    struct sigaction action{};
+    struct sigaction action {};
     action.sa_handler = [](int signal) { wt::stop_signal = signal; };
     sigemptyset(&action.sa_mask);
     sigaction(SIGINT, &action, nullptr);

@@ -60,7 +60,7 @@ void atomic_write(const fs::path& path, const std::string& content, bool overwri
     if (fd < 0)
         throw std::runtime_error("Cannot create temporary output: " + path.string());
     try {
-        struct stat status{};
+        struct stat status {};
         mode_t mask = umask(0);
         umask(mask);
         mode_t mode = 0666 & ~mask;

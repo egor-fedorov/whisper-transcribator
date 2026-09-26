@@ -75,7 +75,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: native-cpu
-          path: .build/artifacts/cpu/*.*
+          path: |
+            .build/artifacts/cpu/*.tar.gz
+            .build/artifacts/cpu/SHA256SUMS
           retention-days: 7
   cuda:
     if: github.event_name == 'workflow_dispatch' && inputs.build_cuda
