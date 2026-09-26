@@ -93,6 +93,9 @@ int run_cli(int argc, char** argv) {
         app.add_option("--model", o.model, "Catalog name or a local GGML model file")
             ->capture_default_str();
         app.add_option("--language", o.language, "Language code or auto")->capture_default_str();
+        app.add_option("--audio-stream", o.audio_stream,
+                       "Absolute container stream index; default selects the best audio stream")
+            ->check(CLI::NonNegativeNumber);
         app.add_option("--cpu-threads", o.cpu_threads, "0 uses whisper.cpp's default")
             ->check(CLI::NonNegativeNumber);
         app.add_option("--beam-size", o.beam_size, "Beam search width")

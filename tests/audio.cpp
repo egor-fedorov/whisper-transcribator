@@ -110,6 +110,21 @@ void frame_changes() {
 }
 } // namespace
 int main(int argc, char** argv) {
+    if (argc == 3 && std::string(argv[1]) == "--streams") {
+        AudioReader selected(argv[2]);
+        require(selected.stream_index() == 1 && selected.duration() > 0);
+        require(selected.read(3 * 16000).size() == 2 * 16000);
+        AudioReader first(argv[2], 0);
+        require(first.read(3 * 16000).size() == 16000);
+        bool rejected = false;
+        try {
+            AudioReader invalid(argv[2], 99);
+        } catch (const UsageError&) {
+            rejected = true;
+        }
+        require(rejected);
+        return 0;
+    }
     if (argc == 5 && std::string(argv[1]) == "--compare") {
         auto expected = decode_audio(argv[3]);
         auto boundary = expected.size();

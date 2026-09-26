@@ -29,6 +29,7 @@ expect 2 --chunk-seconds 0
 expect 2 --chunk-seconds 29
 expect 2 --chunk-seconds 601
 expect 2 --chunk-min-silence-ms -1
+expect 2 --audio-stream -1
 expect 2 --device magic
 expect 2 --quiet --verbose
 expect 2 models download

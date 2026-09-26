@@ -178,9 +178,13 @@ std::string sha256(const fs::path& path) {
     if (!ctx || EVP_DigestInit_ex(ctx.get(), EVP_sha256(), nullptr) != 1)
         throw std::runtime_error("SHA-256 initialization failed");
     char buffer[65536];
+    uint64_t hashed = 0;
     while (input) {
         check_cancelled();
         input.read(buffer, sizeof(buffer));
+        hashed += static_cast<uint64_t>(input.gcount());
+        report_progress("Verifying SHA-256", path.filename().string() + " | " +
+                                                 std::to_string(hashed / 1024 / 1024) + " MiB");
         if (EVP_DigestUpdate(ctx.get(), buffer, static_cast<size_t>(input.gcount())) != 1)
             throw std::runtime_error("SHA-256 update failed");
     }

@@ -56,8 +56,9 @@ void scenario(const fs::path& root, int seconds) {
             return result;
         },
         [](const auto& pcm) { return pcm.size(); });
-    if (processed != int64_t(seconds) * sample_rate)
-        throw std::runtime_error("Lost or duplicated decoded samples");
+    auto expected = int64_t(seconds) * sample_rate;
+    if (journal.samples() != expected || processed < expected || processed > expected * 2)
+        throw std::runtime_error("Lost committed samples or excessive tail reprocessing");
     journal.publish(job, options);
     fs::remove_all(root);
 }

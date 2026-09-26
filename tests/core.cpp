@@ -285,7 +285,7 @@ int main() {
                 "1\n00:00:00,000 --> 00:00:01,234\nHello.\n\n2\n00:00:01,234 --> "
                 "00:00:02,000\nWorld!\n\n");
         auto data = Json::parse(read_text(root / "a.json"));
-        require(data["schema_version"] == 1 && data["segments"].size() == 2);
+        require(data["schema_version"] == 2 && data["segments"].size() == 2);
         require(data["text"] == "Hello. World!" && data["run"]["backend"] == "whisper.cpp");
     });
     test("empty transcript never publishes output", [](auto root) {

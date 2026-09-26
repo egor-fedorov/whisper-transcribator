@@ -53,11 +53,14 @@ struct Audio {
             require(pcm[i] == pcm[i - 1] + 1, "non-contiguous PCM");
         peak = std::max(peak, pcm.size());
         recognized += static_cast<int64_t>(pcm.size());
-        require(language.empty() || language == "en");
+        require(language.empty(), "auto language must not be locked to a previous window");
         double duration = pcm.size() / double(sample_rate);
-        return {"en",
-                duration,
-                {{0, duration, "chunk \"" + std::to_string(int(pcm.front())) + "\" \\", 0.1}}};
+        Transcript result{"en", duration, {}};
+        for (size_t i = 0; i < pcm.size(); i += 4)
+            result.segments.push_back({i / double(sample_rate),
+                                       std::min(i + 4, pcm.size()) / double(sample_rate),
+                                       "chunk \"" + std::to_string(int(pcm[i])) + "\" \\", 0.1});
+        return result;
     }
 };
 void run(Fixture& f, Journal& journal, Audio& audio, int fail_at = -1) {
@@ -69,7 +72,7 @@ void run(Fixture& f, Journal& journal, Audio& audio, int fail_at = -1) {
                 throw std::runtime_error("injected inference failure");
             return audio.recognize(pcm, language);
         },
-        [](const auto& pcm) { return pcm.size() - 4; });
+        [](const auto& pcm) { return pcm.size() - 4; }, {}, 4);
     journal.publish(f.job, f.options);
 }
 void signal_test(Fixture& f, int signal) {
@@ -135,7 +138,7 @@ void signal_test(Fixture& f, int signal) {
     require(journal.samples() == 16);
     Audio audio;
     run(f, journal, audio);
-    require(audio.recognized == 19, "committed samples were recognized again");
+    require(audio.recognized == 23, "only uncommitted tail may be recognized again");
 }
 } // namespace
 int main(int argc, char** argv) {
@@ -173,7 +176,8 @@ int main(int argc, char** argv) {
         }
         auto zero_manifest = Json::parse(read_text(zero_path / "manifest.json"));
         zero_manifest["chunks"] = zero_manifest["samples"] = 0;
-        zero_manifest["language"] = zero_manifest["last_hash"] = "";
+        zero_manifest["languages"] = Json::array();
+        zero_manifest["last_hash"] = "";
         atomic_write(zero_path / "manifest.json", zero_manifest.dump(), true);
         atomic_write(zero_path / "unknown", "preserve");
         rejects([&] { Journal journal(zero.job, zero.options, zero.fingerprint()); });
@@ -197,7 +201,7 @@ int main(int argc, char** argv) {
             Journal journal(f.job, f.options, fingerprint);
             Audio audio;
             run(f, journal, audio);
-            require(audio.recognized == 35 && audio.peak <= 16);
+            require(audio.recognized == 43 && audio.peak <= 16);
             require(!has_checkpoint(f.job));
         }
         std::map<std::string, std::string> expected;
@@ -206,7 +210,7 @@ int main(int argc, char** argv) {
             fs::remove(path);
         }
         auto data = Json::parse(expected.at("json"));
-        require(data.at("segments").size() == 3 && data.at("duration") == 35 / 16000.0);
+        require(data.at("segments").size() == 9 && data.at("duration") == 35 / 16000.0);
         require(data.at("text").get<std::string>() + "\n" == expected.at("text"));
         {
             Journal journal(f.job, f.options, fingerprint);
@@ -221,12 +225,12 @@ int main(int argc, char** argv) {
             Journal journal(f.job, f.options, fingerprint);
             Audio audio;
             run(f, journal, audio);
-            require(audio.cursor == 35 && audio.recognized == 23);
+            require(audio.cursor == 35 && audio.recognized == 27);
         }
         for (const auto& [format, path] : f.job.outputs)
             require(read_text(path) == expected.at(format), "resumed output changed");
 
-        name = "silence and language locking";
+        name = "silence and per-window language";
         Fixture silent(root / "silent");
         {
             Journal journal(silent.job, silent.options, silent.fingerprint());
@@ -234,11 +238,15 @@ int main(int argc, char** argv) {
             require(journal.language().empty());
             journal.append(16, {"en", 0.001, {{0, 0.001, "Hello", 0}}});
             require(journal.language() == "en");
-            rejects([&] { journal.append(1, {"ru", 0.0, {{0, 0, "bad", 0}}}); });
+            journal.append(16, {"ru", 0.001, {{0, 0.001, "Other language", 0}}});
+            require(journal.language().empty() &&
+                    journal.languages() == std::vector<std::string>({"en", "ru"}));
             journal.append(16, {"", 0.001, {}});
             journal.finish();
             journal.publish(silent.job, silent.options);
-            require(read_text(silent.job.outputs.at("text")) == "Hello\n");
+            require(read_text(silent.job.outputs.at("text")) == "Hello Other language\n");
+            auto mixed = Json::parse(read_text(silent.job.outputs.at("json")));
+            require(mixed["language"].is_null() && mixed["segments"][1]["language"] == "ru");
         }
         Fixture empty(root / "empty");
         {
@@ -250,6 +258,13 @@ int main(int argc, char** argv) {
         }
 
         name = "pause selection";
+        Transcript boundary{"en", 30, {{0, 10, "one", 0}, {10, 25, "two", 0}, {25, 30, "tail", 0}}};
+        require(committed_cut(30 * sample_rate, 30 * sample_rate, boundary) == 25 * sample_rate);
+        require(committed_cut(30 * sample_rate, 24 * sample_rate, boundary) == 10 * sample_rate);
+        boundary.segments = {{0, 30, "unsplittable", 0}};
+        require(committed_cut(30 * sample_rate, 30 * sample_rate, boundary) == 30 * sample_rate);
+        boundary.segments.clear();
+        require(committed_cut(30 * sample_rate, 25 * sample_rate, boundary) == 30 * sample_rate);
         require(pause_cut(16000, {{0, 13000}, {15000, 16000}}, 100) == 14000);
         require(pause_cut(16000, {{0, 16000}}, 100) == 16000);
         require(pause_cut(16000, {}, 100) == 16000);
@@ -287,6 +302,14 @@ int main(int argc, char** argv) {
             require(shortened.recognized == 0);
         }
         auto chunk = checkpoint_path(corrupt.job) / "chunk-0.json";
+        auto manifest_path = checkpoint_path(corrupt.job) / "manifest.json";
+        auto manifest_bytes = read_text(manifest_path);
+        auto legacy = Json::parse(manifest_bytes);
+        legacy["schema_version"] = 1;
+        atomic_write(manifest_path, legacy.dump(), true);
+        rejects([&] { Journal journal(corrupt.job, corrupt.options, original); });
+        require(Json::parse(read_text(manifest_path))["schema_version"] == 1);
+        atomic_write(manifest_path, manifest_bytes, true);
         auto saved = read_text(chunk);
         auto edited = Json::parse(saved);
         edited["segments"][0]["text"] = "tampered";

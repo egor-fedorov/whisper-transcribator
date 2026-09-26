@@ -96,8 +96,10 @@ rate-limited. A first SIGINT/SIGTERM requests a graceful stop; a second exits
 immediately, leaving the last committed checkpoint recoverable.
 
 TXT joins recognition segments with spaces instead of adding arbitrary line breaks.
-SRT preserves segment timestamps. JSON schema version 1 includes segment/run metadata;
+SRT preserves segment timestamps. JSON schema version 2 includes segment/run metadata;
 backend-specific unavailable metrics are `null`, not fabricated values.
+Each segment records its window's language; `languages` lists observed languages
+in encounter order and top-level `language` is `null` for multilingual recordings.
 `--format all` requires `--output-dir` and uses a single inference pass.
 
 Existing outputs cause an error unless `--overwrite` is set. `--skip-existing`
@@ -118,9 +120,15 @@ Use `--chunk-seconds 30` to reduce the window, or another integer between 30 and
 is preferred as its boundary; `--chunk-min-silence-ms` controls the minimum pause
 (200 ms by default). `--vad-min-silence-ms` independently controls inference VAD
 (2000 ms by default).
-Without such a pause, or with `--no-vad`, the maximum window is used. Windows
-do not overlap. Recognition near a cut can differ from whole-file inference.
-Language detection is locked after the first nonempty window for `--language auto`.
+The full bounded window is recognized, but only complete segments before the
+chosen boundary and a two-second end guard are committed. The uncommitted audio
+tail is retained for the next window, including with `--no-vad`. At EOF the
+remaining segments are committed. If no positive non-overlapping segment boundary
+exists, a full window is committed with a warning; timestamp estimates cannot
+guarantee perfect boundary words. Silence still advances the checkpoint.
+`--language auto` detects language independently in every window, not every word.
+An explicit language remains fixed. Audio defaults to FFmpeg's best audio stream;
+`--audio-stream N` selects an absolute container stream index, not an audio ordinal.
 
 PCM, VAD and recognition buffers cover only the current window. TXT/SRT/JSON
 are assembled incrementally from saved segments, not accumulated in RAM. Model
@@ -148,7 +156,10 @@ and backend versions. It then re-decodes and discards the completed audio prefix
 without running inference on it. There is no full PCM cache or approximate seek.
 Source hashing and prefix decoding can take time before recognition resumes.
 At most the uncommitted window must be recognized again after a crash or kill.
-Progress reports use absolute audio seconds; inference percentages are per window.
+Progress reports use file-level audio seconds and an estimated remaining time
+after a window commits. Unknown or exceeded duration estimates suppress the ETA.
+Reading streams, hashing, model loading, prefix decoding and publication have
+separate status messages; only successful publication reports completion.
 
 Failed attempts before the first committed window do not count as saved progress.
 Validated empty checkpoints are safely restarted, including after replacing a
@@ -158,6 +169,9 @@ error unless `--overwrite` explicitly starts over. `--resume` starts a new job
 when there is no checkpoint; incompatible or damaged checkpoints are errors.
 `--resume --overwrite` permits replacing existing outputs but does not bypass
 checkpoint validation. Plain `--overwrite` discards this job's saved progress.
+Checkpoint schema 2 / chunking version 3 do not migrate earlier unreleased
+checkpoints. Finish those jobs with their original binary, or explicitly restart
+with `--overwrite` without `--resume`; incompatible progress is never silently reused.
 If publication of multiple formats was interrupted, verified completed formats
 are retained and missing ones are reconstructed without inference. Changed output
 files require explicit overwrite permission. Existing 0.3.0 partial runs have no

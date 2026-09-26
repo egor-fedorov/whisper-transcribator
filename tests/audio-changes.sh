@@ -13,3 +13,7 @@ cat "$root/surround.ts" "$root/mono.ts" >"$root/forward.ts"
 cat "$root/mono.ts" "$root/surround.ts" >"$root/reverse.ts"
 "$binary" --compare "$root/forward.ts" "$root/surround.ts" "$root/mono.ts"
 "$binary" --compare "$root/reverse.ts" "$root/mono.ts" "$root/surround.ts"
+"$ffmpeg" -hide_banner -loglevel error -f lavfi -i 'anullsrc=r=16000:cl=mono:d=1' \
+    -f lavfi -i 'anullsrc=r=16000:cl=mono:d=2' -map 0:a -map 1:a -c:a pcm_s16le \
+    -disposition:a:0 0 -disposition:a:1 default "$root/tracks.mkv"
+"$binary" --streams "$root/tracks.mkv"

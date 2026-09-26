@@ -1,8 +1,12 @@
 #include "report.hpp"
 #include "app.hpp"
+#include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <unistd.h>
 
 namespace wt {
@@ -72,5 +76,37 @@ void install_signal_handlers() {
     sigaddset(&action.sa_mask, SIGTERM);
     if (sigaction(SIGINT, &action, nullptr) || sigaction(SIGTERM, &action, nullptr))
         throw std::runtime_error("Cannot install signal handlers");
+}
+FileProgress::FileProgress(std::string value, double duration)
+    : label(std::move(value)), total(std::isfinite(duration) && duration > 0 ? duration : 0) {}
+void FileProgress::begin_window(int64_t samples, size_t count) {
+    start = samples / 16000.0;
+    window = count / 16000.0;
+    if (base < 0) {
+        base = committed = start;
+        began = std::chrono::steady_clock::now();
+    }
+    update(0);
+}
+void FileProgress::commit(int64_t samples) {
+    committed = samples / 16000.0;
+    start = committed;
+    window = 0;
+    update(0);
+}
+void FileProgress::update(int percent) {
+    double position = start + window * std::clamp(percent, 0, 100) / 100.0;
+    if (position > total)
+        total = 0;
+    std::ostringstream text;
+    text << label << " | " << std::fixed << std::setprecision(1) << position << "s";
+    if (total > 0) {
+        text << " / ~" << total << "s (" << std::min(99, int(position / total * 100)) << "%)";
+        auto elapsed =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+        if (committed > base && elapsed > 0)
+            text << " | ETA ~" << (total - position) * elapsed / (committed - base) << "s";
+    }
+    report_progress("Transcribing", text.str());
 }
 } // namespace wt

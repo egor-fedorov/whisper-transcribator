@@ -11,7 +11,7 @@ mkdir -p "$root"
 root=$(realpath "$root")
 common=(--model "$model" --vad-model "$vad" --language en --device "$device" --cpu-threads 2 --local-files-only)
 "$binary" "$sample" --output-dir "$root/plain" --format all --no-vad "${common[@]}"
-jq -e '.schema_version == 1 and .language == "en" and .duration > 10 and .duration < 12
+jq -e '.schema_version == 2 and .language == "en" and .languages == ["en"] and .duration > 10 and .duration < 12
     and (.segments | length > 0) and (.text | ascii_downcase | contains("country"))' "$root/plain/jfk.json"
 test -s "$root/plain/jfk.txt"
 grep -q -- '-->' "$root/plain/jfk.srt"

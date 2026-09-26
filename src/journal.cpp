@@ -1,5 +1,6 @@
 #include "pipeline.hpp"
 #include "version.hpp"
+#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <fcntl.h>
@@ -68,6 +69,18 @@ void validate_segment(const Segment& segment, double from, double to) {
         segment.end < segment.start || segment.end > to)
         throw std::runtime_error("Invalid checkpoint segment");
 }
+void add_language(std::vector<std::string>& languages, const std::string& language) {
+    if (language.empty())
+        return;
+    if (language.size() > 16 || !std::all_of(language.begin(), language.end(), [](unsigned char c) {
+            return (c >= 'a' && c <= 'z') || c == '-';
+        }))
+        throw std::runtime_error("Invalid checkpoint language");
+    if (std::find(languages.begin(), languages.end(), language) == languages.end())
+        languages.push_back(language);
+    if (languages.size() > 256)
+        throw std::runtime_error("Too many checkpoint languages");
+}
 } // namespace
 fs::path checkpoint_path(const Job& job) {
     return job.outputs.begin()->second.parent_path() / ".whisper-transcribator" /
@@ -126,11 +139,13 @@ Journal::Journal(const Job& job, const Options& options, const Json& fingerprint
     auto manifest = directory / "manifest.json";
     if (fs::exists(manifest) || fs::is_symlink(manifest)) {
         state = read_record(manifest);
-        if (state.at("schema_version") != 1 || !state.at("fingerprint").is_object() ||
-            !state.at("chunks").is_number_integer() || state.at("chunks").get<int64_t>() < 0 ||
-            !state.at("samples").is_number_integer() || samples() < 0 ||
-            !state.at("language").is_string() || !state.at("finished").is_boolean() ||
-            !state.at("published_hashes").is_object())
+        if (state.at("schema_version") != 2)
+            throw std::runtime_error("Incompatible checkpoint schema; finish with the previous "
+                                     "binary or restart explicitly with --overwrite");
+        if (!state.at("fingerprint").is_object() || !state.at("chunks").is_number_integer() ||
+            state.at("chunks").get<int64_t>() < 0 || !state.at("samples").is_number_integer() ||
+            samples() < 0 || !state.at("languages").is_array() ||
+            !state.at("finished").is_boolean() || !state.at("published_hashes").is_object())
             throw std::runtime_error("Invalid checkpoint manifest");
         visit([](const Segment&) {});
         if (state.at("chunks") == 0 && !finished() && state.at("published_hashes").empty()) {
@@ -144,7 +159,9 @@ Journal::Journal(const Job& job, const Options& options, const Json& fingerprint
                 auto empty = state;
                 state["chunks"] = 1;
                 state["samples"] = record.at("end_sample");
-                state["language"] = record.at("language");
+                state["languages"] = Json::array();
+                if (!record.at("language").get<std::string>().empty())
+                    state["languages"].push_back(record.at("language"));
                 state["last_hash"] = sha256_text(record.dump());
                 visit([](const Segment&) {});
                 state = empty;
@@ -168,9 +185,8 @@ Journal::Journal(const Job& job, const Options& options, const Json& fingerprint
         sync_directory(directory.parent_path());
     }
     if (!persisted) {
-        state = {{"schema_version", 1}, {"fingerprint", fingerprint},
-                 {"chunks", 0},         {"samples", 0},
-                 {"language", ""},      {"last_hash", ""},
+        state = {{"schema_version", 2}, {"fingerprint", fingerprint},        {"chunks", 0},
+                 {"samples", 0},        {"languages", Json::array()},        {"last_hash", ""},
                  {"finished", false},   {"published_hashes", Json::object()}};
     }
     for (const auto& [format, path] : job.outputs) {
@@ -190,7 +206,13 @@ Journal::Journal(const Job& job, const Options& options, const Json& fingerprint
 }
 Journal::~Journal() = default;
 int64_t Journal::samples() const { return state.at("samples").get<int64_t>(); }
-std::string Journal::language() const { return state.at("language").get<std::string>(); }
+std::vector<std::string> Journal::languages() const {
+    return state.at("languages").get<std::vector<std::string>>();
+}
+std::string Journal::language() const {
+    auto values = languages();
+    return values.size() == 1 ? values.front() : "";
+}
 bool Journal::finished() const { return state.at("finished").get<bool>(); }
 fs::path Journal::chunk_path(int64_t index) const {
     return directory / ("chunk-" + std::to_string(index) + ".json");
@@ -219,19 +241,20 @@ void Journal::append(int64_t count, const Transcript& transcript) {
                             {"text", segment.text},
                             {"no_speech_prob", segment.no_speech_probability}});
     }
-    auto next_language = language();
+    auto next_languages = languages();
+    std::string chunk_language;
     if (!segments.empty()) {
-        if (transcript.language.empty() ||
-            (!next_language.empty() && next_language != transcript.language))
-            throw std::runtime_error("Inconsistent chunk language");
-        next_language = transcript.language;
+        if (transcript.language.empty())
+            throw std::runtime_error("Missing chunk language");
+        chunk_language = transcript.language;
+        add_language(next_languages, chunk_language);
     }
     auto index = state.at("chunks").get<int64_t>();
     Json record = {{"index", index},
                    {"start_sample", samples()},
                    {"end_sample", samples() + count},
                    {"previous_hash", state.at("last_hash")},
-                   {"language", next_language},
+                   {"language", chunk_language},
                    {"segments", segments}};
     if (!persisted) {
         private_directory(directory);
@@ -242,7 +265,7 @@ void Journal::append(int64_t count, const Transcript& transcript) {
     state["last_hash"] = sha256_text(record.dump());
     state["samples"] = samples() + count;
     state["chunks"] = index + 1;
-    state["language"] = next_language;
+    state["languages"] = next_languages;
     save();
 }
 void Journal::finish() {
@@ -253,7 +276,8 @@ void Journal::finish() {
 }
 void Journal::visit(const std::function<void(const Segment&)>& consumer) const {
     int64_t position = 0;
-    std::string hash, detected;
+    std::string hash;
+    std::vector<std::string> detected;
     auto limit =
         state.at("fingerprint").at("run").at("chunk_seconds").get<int>() * int64_t(sample_rate);
     for (int64_t i = 0; i < state.at("chunks").get<int64_t>(); ++i) {
@@ -263,22 +287,24 @@ void Journal::visit(const std::function<void(const Segment&)>& consumer) const {
         auto lang = record.at("language").get<std::string>();
         if (record.at("index") != i || record.at("start_sample") != position || end <= position ||
             end - position > limit || record.at("previous_hash") != hash ||
-            (!detected.empty() && lang != detected) || !record.at("segments").is_array())
+            !record.at("segments").is_array())
             throw std::runtime_error("Corrupt checkpoint sequence");
         for (const auto& item : record.at("segments")) {
             Segment segment{item.at("start").get<double>(), item.at("end").get<double>(),
                             item.at("text").get<std::string>(),
-                            item.at("no_speech_prob").get<double>()};
+                            item.at("no_speech_prob").get<double>(), lang};
             validate_segment(segment, position / double(sample_rate), end / double(sample_rate));
             if (segment.text.empty() || lang.empty())
                 throw std::runtime_error("Corrupt checkpoint text");
             consumer(segment);
         }
-        detected = lang;
+        if (record.at("segments").empty() && !lang.empty())
+            throw std::runtime_error("Language attached to a silent chunk");
+        add_language(detected, lang);
         hash = sha256_text(record.dump());
         position = end;
     }
-    if (position != samples() || hash != state.at("last_hash") || detected != language())
+    if (position != samples() || hash != state.at("last_hash") || detected != languages())
         throw std::runtime_error("Checkpoint commit mismatch");
 }
 void Journal::publish(const Job& job, const Options& options) {

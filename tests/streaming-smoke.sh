@@ -16,24 +16,22 @@ for mode in plain vad; do
     extra=()
     if [[ $mode == plain ]]; then extra=(--no-vad); fi
     "$binary" "${common[@]}" "${extra[@]}" --output-dir "$root/$mode" >"$root/$mode.log" 2>&1
-    jq -e '.duration == 41 and .run.chunk_seconds == 30 and .run.chunking_version == 2
+    jq -e '.duration == 41 and .run.chunk_seconds == 30 and .run.chunking_version == 3
         and (.segments | length > 1)
         and all(.segments[]; .start >= 0 and .end >= .start and .end <= 41)
         and any(.segments[]; .start >= 30)' "$root/$mode/windows.json"
     test "$(grep -c '^Checkpoint:' "$root/$mode.log")" -ge 2
 done
-# The trailing pause moves the first VAD boundary before the 30-second hard limit.
-grep -q '^Checkpoint: 30\.000000s$' "$root/plain.log"
-if grep -q '^Checkpoint: 30\.000000s$' "$root/vad.log"; then
-    echo 'VAD did not choose the trailing pause' >&2
-    exit 1
-fi
+# Both modes retain unfinished audio, rather than cutting the first window at 30s.
+for mode in plain vad; do
+    awk '/^Checkpoint:/ { if ($2 + 0 <= 0 || $2 + 0 >= 30) exit 1; found=1; exit } END { if (!found) exit 1 }' "$root/$mode.log"
+done
 "$binary" "${common[@]}" --no-vad --output-dir "$root/resume" >"$root/interrupted.log" 2>&1 &
 pid=$!
 trap 'kill -TERM "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
 found=false
 for ((i = 0; i < 12000; ++i)); do
-    if grep -q '^Checkpoint: 30\.000000s$' "$root/interrupted.log"; then
+    if grep -q '^Checkpoint:' "$root/interrupted.log"; then
         found=true
         break
     fi
@@ -50,11 +48,13 @@ wait "$pid" || status=$?
 trap - EXIT
 test "$status" = 143
 test ! -e "$root/resume/windows.txt"
+manifest=$(find "$root/resume/.whisper-transcribator" -name manifest.json -type f)
+boundary=$(jq -r '.samples / 16000' "$manifest")
 "$binary" "${common[@]}" --no-vad --resume --output-dir "$root/resume" >"$root/resumed.log" 2>&1
-grep -q '^Resume: decoding prefix without inference to 30\.000000s$' "$root/resumed.log"
+grep -q '^Resume: decoding prefix without inference to ' "$root/resumed.log"
 if grep -q '^Recognizing 0\.000000-' "$root/resumed.log"; then exit 1; fi
 jq -e '.duration == 41 and (.segments | length > 1)' "$root/resume/windows.json"
 # Already committed segments must be retained exactly, not regenerated.
-diff <(jq -c '[.segments[] | select(.end <= 30)]' "$root/plain/windows.json") \
-     <(jq -c '[.segments[] | select(.end <= 30)]' "$root/resume/windows.json")
+diff <(jq -c --argjson boundary "$boundary" '[.segments[] | select(.end <= $boundary)]' "$root/plain/windows.json") \
+     <(jq -c --argjson boundary "$boundary" '[.segments[] | select(.end <= $boundary)]' "$root/resume/windows.json")
 echo "Windowed $device inference and resume smoke passed"

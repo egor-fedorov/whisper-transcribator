@@ -1,5 +1,6 @@
 #include "pipeline.hpp"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <limits>
 
@@ -23,13 +24,40 @@ size_t pause_cut(size_t samples, const std::vector<std::pair<int64_t, int64_t>>&
     gap(static_cast<int64_t>(samples));
     return static_cast<size_t>(selected);
 }
+size_t committed_cut(size_t samples, size_t preferred, const Transcript& transcript,
+                     size_t guard_samples) {
+    if (!preferred || preferred > samples)
+        throw std::runtime_error("Invalid preferred boundary");
+    if (transcript.segments.empty())
+        return samples;
+    auto target = std::min(preferred, samples > guard_samples ? samples - guard_samples : 0);
+    double duration = samples / double(sample_rate);
+    std::vector<double> suffix(transcript.segments.size() + 1, duration);
+    for (size_t i = transcript.segments.size(); i-- > 0;) {
+        const auto& segment = transcript.segments[i];
+        if (!std::isfinite(segment.start) || !std::isfinite(segment.end) || segment.start < 0 ||
+            segment.end < segment.start || segment.end > duration)
+            throw std::runtime_error("Invalid recognition timestamps");
+        suffix[i] = std::min(suffix[i + 1], segment.start);
+    }
+    double end = 0;
+    size_t selected = 0;
+    for (size_t i = 0; i < transcript.segments.size(); ++i) {
+        end = std::max(end, transcript.segments[i].end);
+        auto count = static_cast<size_t>(std::ceil(end * sample_rate));
+        if (count && count <= target && suffix[i + 1] >= count / double(sample_rate))
+            selected = count;
+    }
+    return selected ? selected : samples;
+}
 void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Recognize& recognize,
-                const ChooseCut& cut) {
+                const ChooseCut& cut, const WindowProgress& progress, size_t guard_samples) {
     if (!limit || limit > 600 * sample_rate)
         throw std::runtime_error("Invalid chunk size");
     if (journal.finished())
         return;
     int64_t discard = journal.samples();
+    bool warned = false;
     if (discard)
         log_message(LogLevel::info, "Resume: decoding prefix without inference to " +
                                         std::to_string(discard / double(sample_rate)) + "s");
@@ -40,6 +68,9 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
         if (part.empty() || part.size() > count)
             throw std::runtime_error("Audio ends before checkpoint position");
         discard -= static_cast<int64_t>(part.size());
+        report_progress("Resume decoding",
+                        std::to_string((journal.samples() - discard) / double(sample_rate)) +
+                            " / " + std::to_string(journal.samples() / double(sample_rate)) + "s");
     }
     std::vector<float> buffer;
     buffer.reserve(limit);
@@ -60,22 +91,36 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
             journal.finish();
             return;
         }
-        size_t count = eof ? buffer.size() : cut(buffer);
-        if (!count || count > buffer.size())
-            throw std::runtime_error("Invalid chunk boundary");
-        if (journal.samples() > std::numeric_limits<int64_t>::max() - int64_t(count))
+        if (journal.samples() > std::numeric_limits<int64_t>::max() - int64_t(buffer.size()))
             throw std::runtime_error("Audio sample counter overflow");
-        std::vector<float> pcm(buffer.begin(), buffer.begin() + count);
-        log_message(LogLevel::debug,
-                    "Recognizing " + std::to_string(journal.samples() / double(sample_rate)) + "-" +
-                        std::to_string((journal.samples() + int64_t(count)) / double(sample_rate)) +
-                        "s");
-        auto transcript = recognize(pcm, journal.language());
+        if (progress)
+            progress(journal.samples(), buffer.size(), false);
+        log_message(
+            LogLevel::debug,
+            "Recognizing " + std::to_string(journal.samples() / double(sample_rate)) + "-" +
+                std::to_string((journal.samples() + int64_t(buffer.size())) / double(sample_rate)) +
+                "s");
+        auto transcript = recognize(buffer, "");
         check_cancelled();
+        size_t count = eof ? buffer.size()
+                           : committed_cut(buffer.size(), cut(buffer), transcript, guard_samples);
+        if (!eof && count == buffer.size() && !transcript.segments.empty() && !warned) {
+            log_message(LogLevel::warning, "No safe segment boundary; committing a full window. "
+                                           "Boundary words may be less accurate.");
+            warned = true;
+        }
+        transcript.segments.erase(
+            std::remove_if(
+                transcript.segments.begin(), transcript.segments.end(),
+                [&](const auto& segment) { return segment.end > count / double(sample_rate); }),
+            transcript.segments.end());
+        transcript.duration = count / double(sample_rate);
         journal.append(static_cast<int64_t>(count), transcript);
         buffer.erase(buffer.begin(), buffer.begin() + count);
         log_message(LogLevel::debug,
                     "Checkpoint: " + std::to_string(journal.samples() / double(sample_rate)) + "s");
+        if (progress)
+            progress(journal.samples(), 0, true);
     }
 }
 } // namespace wt
