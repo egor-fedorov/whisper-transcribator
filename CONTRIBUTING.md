@@ -55,3 +55,5 @@ packaging and documentation. Do not publish releases automatically.
 Open a PR against `main`; required CI checks must pass on an up-to-date branch.
 Force pushes and deletion of `main` are disabled. Use squash merges for focused
 changes. Release preparation is documented in [releasing](docs/releasing.md).
+
+Write each release-note paragraph or list item on a single physical line. Do not manually wrap prose, indent continuation lines, or add blank lines after headings; let the renderer wrap text to the reader's window.
