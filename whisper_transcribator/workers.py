@@ -52,6 +52,12 @@ def run_workers(jobs, args, call):
                 tasks.put((next_job, args))
                 outstanding += 1
     finally:
+        if not outstanding:
+            # Let successful workers release native runtimes and their semaphores.
+            for _ in processes:
+                tasks.put(None)
+            for process in processes:
+                process.join(timeout=5)
         for process in processes:
             if process.is_alive():
                 process.terminate()

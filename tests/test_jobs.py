@@ -5,6 +5,7 @@ import subprocess
 import sys
 import unittest
 from contextlib import ExitStack
+from multiprocessing.util import Finalize
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -24,7 +25,20 @@ def crashed_worker(_task):
     os._exit(9)
 
 
+def finalizing_worker(task):
+    path, _args = task
+    Finalize(None, Path(path).write_text, args=("clean shutdown",), exitpriority=0)
+    return path, None
+
+
 class WorkerTests(unittest.TestCase):
+    def test_successful_worker_finalizers_run(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "finalized"
+            args = SimpleNamespace(jobs=1, continue_on_error=False)
+            self.assertEqual(cli.parallel_transcribe([str(path)], args, finalizing_worker), 0)
+            self.assertEqual(path.read_text(), "clean shutdown")
+
     def test_last_worker_error_is_not_lost(self):
         args = SimpleNamespace(jobs=2, continue_on_error=True)
         self.assertEqual(cli.parallel_transcribe(["good", "bad"], args, fake_worker), 1)
