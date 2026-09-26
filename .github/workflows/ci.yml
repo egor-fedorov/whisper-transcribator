@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build clang-18 clang-format-18 libomp-18-dev libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck
+          sudo apt-get install -y ninja-build clang-18 clang-format-18 libomp-18-dev ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck
       - run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
       - run: shellcheck tests/*.sh packaging/*.sh
       - run: bash tests/release.sh

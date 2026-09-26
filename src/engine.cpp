@@ -75,7 +75,7 @@ int transcribe(Options options) {
                 throw std::runtime_error("Cannot initialize VAD splitter");
         }
         auto params = whisper_vad_default_params();
-        params.min_silence_duration_ms = options.vad_min_silence_ms;
+        params.min_silence_duration_ms = options.chunk_min_silence_ms;
         params.speech_pad_ms = 0;
         std::unique_ptr<whisper_vad_segments, decltype(&whisper_vad_free_segments)> segments(
             whisper_vad_segments_from_samples(splitter.get(), params, pcm.data(),
@@ -92,7 +92,7 @@ int transcribe(Options options) {
             from = std::clamp<int64_t>(from, 0, pcm.size());
             speech.emplace_back(from, std::clamp<int64_t>(to, from, pcm.size()));
         }
-        return pause_cut(pcm.size(), speech, options.vad_min_silence_ms);
+        return pause_cut(pcm.size(), speech, options.chunk_min_silence_ms);
     };
     bool failed = false;
     for (const auto& job : jobs) {

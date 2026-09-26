@@ -215,6 +215,9 @@ int main(int argc, char** argv) {
         require(pause_cut(16000, {}, 100) == 16000);
         require(pause_cut(16000, {{0, 12000}}, 100) == 14000);
         require(pause_cut(16000, {{0, 13000}, {15000, 16000}}, 2000) == 16000);
+        require(pause_cut(16000, {{0, 12000}, {15200, 16000}}, 200) == 13600);
+        require(pause_cut(16000, {{0, 12000}, {15199, 16000}}, 200) == 16000);
+        require(pause_cut(16000, {{0, 12000}, {12001, 16000}}, 0) == 12000);
 
         name = "incompatible and corrupted checkpoints";
         Fixture corrupt(root / "corrupt");
