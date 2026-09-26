@@ -1,36 +1,36 @@
-# Backend Selection
+# Backend Decision
 
-Status: 2026-09-26. The supported CLI remains Python/faster-whisper (`v0.2.0`);
-whisper.cpp is a separate native prototype. New product features are paused until
-the backend is selected. Unfinished Python chunk/resume work is preserved on
-`wip/python-chunk-resume`, not included in main or the release.
+Decision: 2026-09-26. Starting with 0.3, the only supported implementation is
+C++17 + whisper.cpp. Python/faster-whisper 0.2 is retained in the immutable
+`v0.2.0` tag as a rollback reference, not a maintained branch or second backend.
+Docker remains optional packaging of the same CLI; archives are the primary
+delivery. A Rust wrapper would not by itself change the inference engine.
 
-## Findings
+The local comparison used four 120-second clips, three runs per configuration,
+on an i5-12400F / RTX 4060 Ti 16 GB. Median end-to-end seconds and maximum process
+RSS are shown below; these are configuration-specific, not universal speed claims.
 
-The [local comparison](../experiments/whisper_cpp/BENCHMARK.md) found a GPU speed
-and host-memory advantage for the native prototype on the tested machine. Its
-CPU result did not show the same speed advantage. The internal manual quality
-check is complete: both implementations produced correct, practically identical
-transcriptions on the reviewed short samples. Media and transcripts remain private.
+| Configuration | faster-whisper | whisper.cpp |
+| --- | ---: | ---: |
+| CPU / small, seconds | 82.08 | 98.38 |
+| CPU / small, RSS MiB | 1635 | 872 |
+| CUDA / large-v3, seconds | 35.76 | 29.91 |
+| CUDA / large-v3, RSS MiB | 3379 | 664 |
 
-This compares CTranslate2 with whisper.cpp/GGML, not Python arithmetic with C++:
-faster-whisper already uses a native inference engine. A Rust frontend alone
-would not change that engine or its memory characteristics.
+Versions: faster-whisper 1.2.1 / CTranslate2 4.6.0; whisper.cpp
+`927cfce34f31707e17f2bff35c349632fb9e2c3a`. Both used Russian, beam 5,
+four CPU threads and VAD off. CT2 used float32 on CPU and float16 on GPU;
+GGML used unquantized weights with flash attention. Precision/decoder defaults
+were not identical. These figures do not characterize the old CPU int8 default,
+VAD memory peaks or arbitrary GPUs. Raw results remain private.
 
-## Remaining Decision
+An internal manual check of short large-v3 transcripts from both backends was
+completed: the owner found them correct and practically identical. Audio and
+transcripts are not included in the repository; no further quality framework is
+needed for this decision.
 
-Choose the backend based on the measured resource use and the cost of preserving
-the existing CLI workflow, not another transcription quality exercise:
-
-- The native prototype still lacks sorted directory processing, numbered mappings,
-  skip/overwrite controls and model download/cache management.
-- Decide which additional features to retain: CPU jobs, int8, batching, prompts
-  and word timestamps. Current capability differences are listed in the
-  [prototype documentation](../experiments/whisper_cpp/README.md#parity).
-- Native delivery is an archive with shared libraries, not a universal static
-  executable. Target CPU/GPU architectures, codecs and dependency notices remain
-  part of the distribution work. Neither current implementation has bounded-memory
-  audio processing or resume.
-
-Docker stays optional for either backend. Select the supported implementation
-before resuming chunk/resume development.
+The selection favors the measured GPU/RAM behavior and native distribution,
+not a claim that Python arithmetic is slow: faster-whisper already uses native
+inference. Core file safety and model management are retained; the narrower
+0.3 feature scope is explicit in the [migration guide](migration.md).
+Bounded-memory decoding and resume are future work, not implied by this rewrite.

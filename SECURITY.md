@@ -7,7 +7,9 @@ mount unrelated personal directories into a container.
 For confidential recordings, pre-download the model, use `--local-files-only`
 and disable container networking with `--network none`. Mount sources and models
 read-only and use a separate writable output directory. JSON records source
-paths and the optional initial prompt: review it before sharing.
+paths: review it before sharing. Media protocols are limited to local files;
+model downloads use HTTPS with SHA-256 verification. Locally supplied GGML files
+are trusted inputs and do not have catalog integrity guarantees.
 
 Report vulnerabilities with GitHub private vulnerability reporting when enabled
 by the repository owner. Until a public repository/contact is configured, do not

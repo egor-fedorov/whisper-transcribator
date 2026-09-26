@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 - Local Candidate
+
+- Replace Python/faster-whisper with one C++17/whisper.cpp implementation.
+- Preserve sorted sequential jobs, stable numbered maps and protected atomic outputs.
+- Add pinned GGML/VAD catalog, verified downloads, local/offline cache and diagnostics.
+- Deliver CPU/CUDA archives with shared libraries; Docker packages the same CLI.
+- Add CTest, GCC/Clang, wrapper sanitizers and short offline inference checks.
+- Remove Python tooling, prototype duplication and root shell launchers.
+
+Python 0.2 is frozen in `v0.2.0`, not maintained in parallel. Jobs, batching,
+compute-type, prompts and word timestamps are not in 0.3. Full-audio decoding
+remains; chunking/resume are deferred. See [migration](docs/migration.md).
+
 ## 0.2.0 - 2026-09-26
 
 - Unified `transcribe`, `models list/download`, `doctor` and version commands.
