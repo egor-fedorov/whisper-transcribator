@@ -1,4 +1,5 @@
 #pragma once
+#include "report.hpp"
 #include <csignal>
 #include <cstdint>
 #include <filesystem>
@@ -32,6 +33,7 @@ struct Options {
     bool resume = false;
     bool overwrite = false, skip_existing = false, continue_on_error = false;
     bool local_files_only = false, no_vad = false, json = false;
+    bool quiet = false, verbose = false;
 };
 struct Job {
     fs::path source;

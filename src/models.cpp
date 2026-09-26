@@ -140,7 +140,8 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
                         throw std::runtime_error("Cannot acquire model lock");
                     check_cancelled();
                     if (!announced) {
-                        std::cerr << "Waiting for model preparation: " << path << '\n';
+                        log_message(LogLevel::info,
+                                    "Waiting for model preparation: " + path.string());
                         announced = true;
                     }
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -161,7 +162,8 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
         throw std::runtime_error("Cannot create download file");
     close(fd);
     try {
-        std::cerr << "Downloading " << model.name << " (" << model.bytes / 1024 / 1024 << " MiB)\n";
+        log_message(LogLevel::info, "Downloading " + model.name + " (" +
+                                        std::to_string(model.bytes / 1024 / 1024) + " MiB)");
         fetch(model.url, temporary);
         check_cancelled();
         if (!valid_model(model, temporary))
@@ -180,7 +182,7 @@ PreparedModel prepare_model(const std::string& value, const Options& options) {
     std::string name = value == "large" ? "large-v3" : value == "turbo" ? "large-v3-turbo" : value;
     for (const auto& model : model_catalog())
         if (model.name == name) {
-            std::cerr << "Preparing model: " << name << '\n';
+            log_message(LogLevel::info, "Preparing model: " + name);
             return ensure_cached(model, model_root(options), options.local_files_only);
         }
     if (fs::exists(resolve_path(value)) || value.find('/') != std::string::npos ||

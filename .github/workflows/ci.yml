@@ -31,15 +31,33 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build clang-18 clang-format-18 libomp-18-dev ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck strace
+          sudo apt-get install -y ccache ninja-build clang-18 clang-format-18 libomp-18-dev ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck strace
+      - id: compiler
+        run: echo "version=$(${{ matrix.cxx }} -dumpfullversion -dumpversion)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .build/ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.cc }}-${{ steps.compiler.outputs.version }}-${{ matrix.sanitize }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.cc }}-${{ steps.compiler.outputs.version }}-${{ matrix.sanitize }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}-
+      - run: |
+          echo "CCACHE_DIR=$PWD/.build/ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$PWD" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=500M" >> "$GITHUB_ENV"
       - run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
       - run: shellcheck tests/*.sh packaging/*.sh
       - run: bash tests/release.sh
-      - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }}
+      - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
       - run: cmake --build .build/ci -j2
+      - run: |
+          ccache --zero-stats
+          cmake --build .build/ci --target clean
+          cmake --build .build/ci -j2
+          ccache --show-stats
+          ccache --print-stats | awk '$1 ~ /cache_hit/ { hits += $2 } END { exit !(hits > 0) }'
       - run: ctest --test-dir .build/ci --output-on-failure
       - run: bash tests/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
       - if: matrix.sanitize == 'OFF'

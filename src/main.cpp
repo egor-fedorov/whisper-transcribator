@@ -2,21 +2,20 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
-    struct sigaction action {};
-    action.sa_handler = [](int signal) { wt::stop_signal = signal; };
-    sigemptyset(&action.sa_mask);
-    sigaction(SIGINT, &action, nullptr);
-    sigaction(SIGTERM, &action, nullptr);
     try {
-        return wt::run_cli(argc, argv);
+        wt::install_signal_handlers();
+        auto status = wt::run_cli(argc, argv);
+        wt::finish_progress();
+        return status;
     } catch (const wt::Cancelled&) {
-        std::cerr << "Interrupted; committed progress is preserved. Repeat with --resume.\n";
+        wt::log_message(wt::LogLevel::warning,
+                        "Interrupted; committed progress is preserved. Repeat with --resume.");
         return 128 + wt::stop_signal;
     } catch (const wt::UsageError& error) {
-        std::cerr << error.what() << '\n';
+        wt::log_message(wt::LogLevel::error, error.what());
         return 2;
     } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
+        wt::log_message(wt::LogLevel::error, error.what());
         return wt::stop_signal ? 128 + wt::stop_signal : 1;
     }
 }

@@ -30,6 +30,7 @@ expect 2 --chunk-seconds 29
 expect 2 --chunk-seconds 601
 expect 2 --chunk-min-silence-ms -1
 expect 2 --device magic
+expect 2 --quiet --verbose
 expect 2 models download
 expect 2 models list tiny
 expect 2 models download unknown --local-files-only
@@ -43,6 +44,8 @@ grep -q "$revision" "$root/stdout"
 expect 1 "$root/missing.mp4" --local-files-only
 mkdir -p "$root/empty"
 expect 0 --input-dir "$root/empty" --local-files-only
+expect 0 --input-dir "$root/empty" --local-files-only --quiet
+test ! -s "$root/stderr"
 printf media >"$root/input.mp4"
 printf completed >"$root/input.txt"
 expect 0 "$root/input.mp4" --skip-existing --local-files-only

@@ -19,6 +19,8 @@ int run_cli(int argc, char** argv) {
     }
     CLI::App app{"Local media transcription via whisper.cpp", "whisper-transcribator"};
     app.set_version_flag("--version", WT_VERSION);
+    auto* quiet = app.add_flag("--quiet", o.quiet, "Only warnings and errors; no progress");
+    app.add_flag("--verbose", o.verbose, "Include backend diagnostics")->excludes(quiet);
     app.add_option("--download-root", o.download_root, "Model cache directory (XDG by default)");
     app.add_flag("--local-files-only", o.local_files_only, "Never download models or VAD weights");
     if (o.command == "models") {
@@ -33,6 +35,7 @@ int run_cli(int argc, char** argv) {
             app.exit(error);
             return error.get_exit_code() ? 2 : 0;
         }
+        configure_reporting(o.quiet, o.verbose);
         if (action == "download") {
             if (name.empty())
                 throw UsageError("models download requires a model name or GGML path");
@@ -110,6 +113,7 @@ int run_cli(int argc, char** argv) {
         app.exit(error);
         return error.get_exit_code() ? 2 : 0;
     }
+    configure_reporting(o.quiet, o.verbose);
     if (o.command == "doctor") {
         auto report = doctor(o);
         if (o.json)

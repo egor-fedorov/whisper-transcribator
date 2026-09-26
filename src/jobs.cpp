@@ -120,7 +120,8 @@ std::vector<Job> prepare_jobs(const Options& o) {
         for (const auto& [format, path] : job.outputs)
             complete &= fs::is_regular_file(path) && fs::file_size(path) > 0;
         if (o.skip_existing && !o.overwrite && complete) {
-            std::cerr << "Skipping complete result: " << job.source.filename() << '\n';
+            log_message(LogLevel::info,
+                        "Skipping complete result: " + job.source.filename().string());
             continue;
         }
         for (const auto& [format, path] : job.outputs) {
