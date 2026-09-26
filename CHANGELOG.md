@@ -12,6 +12,7 @@
 Python 0.2 is frozen in `v0.2.0`, not maintained in parallel. Jobs, batching,
 compute-type, prompts and word timestamps are not in 0.3. Full-audio decoding
 remains; chunking/resume are deferred. See [migration](docs/migration.md).
+Local checks and remaining limits: [verification notes](docs/releases/0.3.0.md).
 
 ## 0.2.0 - 2026-09-26
 
