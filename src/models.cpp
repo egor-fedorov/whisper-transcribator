@@ -2,8 +2,6 @@
 #include "catalog.hpp"
 #include <cerrno>
 #include <chrono>
-#include <cstdio>
-#include <curl/curl.h>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
@@ -32,63 +30,8 @@ fs::path model_root(const Options& options) {
     }
     return resolve_path(fs::path(cache) / "whisper-transcribator" / "models");
 }
-void fetch_https(const std::string& url, const fs::path& target) {
-    if (url.rfind("https://", 0) != 0)
-        throw std::runtime_error("Model downloads require HTTPS");
-    struct Global {
-        Global() {
-            if (curl_global_init(CURL_GLOBAL_DEFAULT))
-                throw std::runtime_error("Cannot initialize curl");
-        }
-        ~Global() { curl_global_cleanup(); }
-    };
-    static Global global;
-    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(curl_easy_init(), curl_easy_cleanup);
-    auto close_file = [](FILE* file) { fclose(file); };
-    std::unique_ptr<FILE, decltype(close_file)> file(fopen(target.c_str(), "wb"), close_file);
-    if (!curl || !file)
-        throw std::runtime_error("Cannot initialize model download");
-    curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
-#if LIBCURL_VERSION_NUM >= 0x075500
-    curl_easy_setopt(curl.get(), CURLOPT_PROTOCOLS_STR, "https");
-    curl_easy_setopt(curl.get(), CURLOPT_REDIR_PROTOCOLS_STR, "https");
-#else
-    curl_easy_setopt(curl.get(), CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
-    curl_easy_setopt(curl.get(), CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
-#endif
-    curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYPEER, 1L);
-    curl_easy_setopt(curl.get(), CURLOPT_SSL_VERIFYHOST, 2L);
-    curl_easy_setopt(curl.get(), CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl.get(), CURLOPT_MAXREDIRS, 8L);
-    curl_easy_setopt(curl.get(), CURLOPT_FAILONERROR, 1L);
-    curl_easy_setopt(curl.get(), CURLOPT_CONNECTTIMEOUT, 30L);
-    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_LIMIT, 1024L);
-    curl_easy_setopt(curl.get(), CURLOPT_LOW_SPEED_TIME, 60L);
-    curl_easy_setopt(curl.get(), CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl.get(), CURLOPT_USERAGENT, "whisper-transcribator");
-    std::string ca = env("SSL_CERT_FILE");
-    if (ca.empty()) {
-        std::error_code error;
-        auto executable = fs::read_symlink("/proc/self/exe", error);
-        auto bundled = executable.parent_path().parent_path() / "share" / "cacert.pem";
-        if (!error && fs::is_regular_file(bundled))
-            ca = bundled.string();
-    }
-    if (!ca.empty())
-        curl_easy_setopt(curl.get(), CURLOPT_CAINFO, ca.c_str());
-    curl_easy_setopt(curl.get(), CURLOPT_WRITEDATA, file.get());
-    curl_easy_setopt(curl.get(), CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(
-        curl.get(), CURLOPT_XFERINFOFUNCTION,
-        +[](void*, curl_off_t, curl_off_t, curl_off_t, curl_off_t) -> int {
-            return stop_signal ? 1 : 0;
-        });
-    auto code = curl_easy_perform(curl.get());
-    check_cancelled();
-    if (code != CURLE_OK)
-        throw std::runtime_error(std::string("Model download failed: ") + curl_easy_strerror(code));
-    if (fflush(file.get()) || fsync(fileno(file.get())))
-        throw std::runtime_error("Cannot flush downloaded model");
+fs::path partial_model_path(const Model& model, const fs::path& root) {
+    return root / ("." + model.file + "." + model.hash + ".part");
 }
 static std::string stable_hash(const fs::path& path) {
     struct stat before {
@@ -156,25 +99,30 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
     } lock(root / (model.file + ".lock"));
     if (fs::exists(target) || fs::is_symlink(target))
         return cached();
-    auto temporary = (root / ".download-XXXXXX").string();
-    int fd = mkstemp(temporary.data());
-    if (fd < 0)
-        throw std::runtime_error("Cannot create download file");
+    auto temporary = partial_model_path(model, root);
+    int fd = open_partial_model(temporary);
     close(fd);
-    try {
+    sync_directory(root);
+    if (fs::file_size(temporary) > model.bytes) {
+        unlink(temporary.c_str());
+        sync_directory(root);
+        throw std::runtime_error("Removed oversized partial model; retry the download");
+    }
+    if (fs::file_size(temporary) != model.bytes) {
         log_message(LogLevel::info, "Downloading " + model.name + " (" +
                                         std::to_string(model.bytes / 1024 / 1024) + " MiB)");
-        fetch(model.url, temporary);
-        check_cancelled();
-        if (!valid_model(model, temporary))
-            throw std::runtime_error("Model size/SHA-256 verification failed");
-        if (link(temporary.c_str(), target.c_str()))
-            throw std::runtime_error("Cannot publish downloaded model; target preserved");
-        sync_directory(root);
-    } catch (...) {
-        unlink(temporary.c_str());
-        throw;
+        fetch(model, temporary);
     }
+    check_cancelled();
+    if (!valid_model(model, temporary)) {
+        unlink(temporary.c_str());
+        sync_directory(root);
+        throw std::runtime_error(
+            "Model size/SHA-256 verification failed; removed corrupt partial download");
+    }
+    if (link(temporary.c_str(), target.c_str()))
+        throw std::runtime_error("Cannot publish downloaded model; target preserved");
+    sync_directory(root);
     unlink(temporary.c_str());
     return {target, model.hash};
 }
@@ -200,9 +148,11 @@ Json list_models(const Options& options) {
     auto root = model_root(options);
     for (const auto& model : model_catalog()) {
         auto path = root / model.file;
-        std::string status = !fs::exists(path)          ? "missing"
-                             : valid_model(model, path) ? "cached"
-                                                        : "corrupt";
+        std::string status =
+            !fs::exists(path)
+                ? (fs::exists(partial_model_path(model, root)) ? "partial" : "missing")
+            : valid_model(model, path) ? "cached"
+                                       : "corrupt";
         result.push_back({{"name", model.name},
                           {"status", status},
                           {"path", path.string()},

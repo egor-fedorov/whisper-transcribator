@@ -15,6 +15,7 @@ jq -e '.schema_version == 2 and .language == "en" and .languages == ["en"] and .
     and (.segments | length > 0) and (.text | ascii_downcase | contains("country"))' "$root/plain/jfk.json"
 test -s "$root/plain/jfk.txt"
 grep -q -- '-->' "$root/plain/jfk.srt"
+test "$(head -n 1 "$root/plain/jfk.vtt")" = WEBVTT
 "$binary" "$sample" --output-dir "$root/vad" --format all "${common[@]}"
 jq -e '.run.vad == true and (.segments | length > 0)' "$root/vad/jfk.json"
 # A failed first file must not claim success or block the next with --continue-on-error.

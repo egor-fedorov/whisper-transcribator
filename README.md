@@ -66,7 +66,9 @@ Defaults: `small`, Russian, TXT, device `auto`, beam size 5, VAD enabled,
 ```
 
 The catalog contains `tiny`, `base`, `small`, `medium`, `large-v3` and
-`large-v3-turbo`; `large` and `turbo` are aliases. Silero VAD is a separate,
+`large-v3-turbo`, `large-v3-turbo-q5_0` (574 MB), and `large-v3-turbo-q8_0`
+(874 MB); `large` and `turbo` retain their unquantized aliases. File sizes are
+not total inference RAM/VRAM requirements. Silero VAD is a separate,
 small model. **No weights are embedded in an image or archive.** Only the selected
 model and, when enabled, VAD weights are downloaded on first use.
 Catalog names take precedence over files or directories in the current directory.
@@ -81,6 +83,13 @@ explicitly and retry. Missing-model downloads wait for a busy cache lock and can
 be cancelled; verified existing weights do not take the download lock. Each
 prepared model is hashed once and its verified digest is reused for checkpoints.
 `models list --json` verifies existing catalog weights without downloading.
+Interrupted transfers retain a private, hash-specific `.part` file and resume
+automatically on retry. Download progress includes existing bytes. A server that
+ignores Range causes a safe restart, not an append of duplicate data. The final
+file is published only after full size/SHA-256 verification; corrupt partial
+downloads are removed, while corrupt published weights are preserved for explicit
+repair. `models list` reports `partial` for an unfinished download; partial files
+are not usable models in offline mode.
 
 `--local-files-only` forbids downloads, including VAD. Local models must be
 nonempty GGML files, not faster-whisper/CTranslate2 directories or GGUF files.
@@ -188,10 +197,8 @@ are retained and missing ones are reconstructed without inference. Changed outpu
 files require explicit overwrite permission. Existing 0.3.0 partial runs have no
 compatible checkpoints. `--skip-existing` retains its completeness-only semantics.
 
-Chunking version 2 also fixes mid-stream changes in decoded audio parameters.
-Earlier unreleased checkpoints cannot be resumed: finish them with the previous
-binary or explicitly restart with `--overwrite` without `--resume`. Completed
-transcripts are unaffected.
+Mid-stream changes in sample rate, channel layout and sample format are supported.
+Completed transcripts are unaffected by checkpoint schema changes.
 
 Numbered names are `result_001.txt`, etc. `result_files.json` records the source
 mapping. Changed input lists or orphaned numbered outputs are rejected even with
