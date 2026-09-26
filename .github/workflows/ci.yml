@@ -57,7 +57,7 @@ jobs:
           cmake --build .build/ci --target clean
           cmake --build .build/ci -j2
           ccache --show-stats
-          ccache --print-stats | awk '$1 ~ /^cache_hit/ { hits += $2 } END { exit !(hits > 0) }'
+          ccache --print-stats | awk '$1 ~ /cache_hit/ { hits += $2 } END { exit !(hits > 0) }'
       - run: ctest --test-dir .build/ci --output-on-failure
       - run: bash tests/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
       - if: matrix.sanitize == 'OFF'
