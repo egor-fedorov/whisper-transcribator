@@ -26,7 +26,7 @@ jobs:
             cxx: clang++-18
             sanitize: 'ON'
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build clang-18 clang-format-18 libomp-18-dev libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck
@@ -46,7 +46,7 @@ jobs:
   package:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: docker build -f packaging/Dockerfile --target archive --output type=local,dest=.build/artifacts/cpu .
       - run: |
           cd .build/artifacts/cpu
@@ -83,7 +83,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.build_cuda
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: |
           docker build -f packaging/Dockerfile --target archive --build-arg WT_CUDA=ON \
             --build-arg BUILD_IMAGE=nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97 \
@@ -96,7 +96,7 @@ jobs:
   secrets:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
       - run: |
