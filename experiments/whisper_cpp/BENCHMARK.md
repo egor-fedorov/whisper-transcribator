@@ -27,6 +27,9 @@ versus unquantized GGML with mixed-precision weights. GPU: large-v3,
 CTranslate2 float16 versus unquantized GGML; native flash attention is enabled.
 Backend defaults/decoding and numeric precision are **not identical**. In
 particular this is not a benchmark of the production CPU int8 default or batching.
+The [parameter and feature audit](../../docs/backend-selection.md) documents concrete
+differences, including fallback candidate count and repetition detection. These
+numbers compare the current configurations, not language overhead or matched decoders.
 
 Models are cached before timing. CTranslate2 snapshots: small
 `536b0662742c02347bc0e980a01041f333bce120`, large-v3
@@ -104,6 +107,9 @@ Next useful experiment: reference-checked short excerpts and targeted native
 feature parity. Chunking/resume remains a separate project for either backend;
 neither current implementation guarantees RAM independent of recording length.
 Do not add automatic full-lecture benchmarks to CI or routine development.
+Three 30-second excerpts are prepared locally for blind human references; see the
+[review workflow](../../docs/quality.md). Product feature work is paused until this
+small migration check and a native capability review inform the backend choice.
 
 ## Packaging
 

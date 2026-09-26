@@ -2,3 +2,5 @@ include LICENSE README.md README.ru.md CHANGELOG.md CONTRIBUTING.md SECURITY.md 
 include Dockerfile requirements.lock run_whisper.sh transcribe_dir.sh
 recursive-include tests *.py
 include tools/smoke.py
+include tools/quality.py
+include docs/quality.md docs/backend-selection.md
