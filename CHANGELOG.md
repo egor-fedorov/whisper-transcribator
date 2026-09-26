@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Add quiet/verbose reporting, rate-limited terminal/log progress and immediate termination on a repeated interrupt; cache CI compilation separately for each toolchain and sanitizer configuration.
 - Require FFmpeg 5.1+, derive build metadata and artifact names from CMake, pin JSON independently, and enforce project warnings in CI while allowing explicit local CPU optimizations.
 - Default Docker runtime execution to UID/GID 10001; host bind mounts should still use the host user's explicit `--user`.
 - Prefer model catalog names over same-named local directories, reuse verified model hashes and wait cancellably for concurrent downloads without locking ready weights.

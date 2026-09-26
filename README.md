@@ -89,6 +89,12 @@ Their contents are not checked against the catalog. For a custom CA bundle set
 
 ## Outputs And Errors
 
+Status and progress go to stderr; command JSON stays on stdout. Use `--quiet`
+for warnings/errors only, or `--verbose` to include backend and checkpoint
+diagnostics. Terminal progress is updated in place; redirected progress is
+rate-limited. A first SIGINT/SIGTERM requests a graceful stop; a second exits
+immediately, leaving the last committed checkpoint recoverable.
+
 TXT joins recognition segments with spaces instead of adding arbitrary line breaks.
 SRT preserves segment timestamps. JSON schema version 1 includes segment/run metadata;
 backend-specific unavailable metrics are `null`, not fabricated values.

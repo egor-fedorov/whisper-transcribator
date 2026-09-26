@@ -31,8 +31,8 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
         return;
     int64_t discard = journal.samples();
     if (discard)
-        std::cerr << "Resume: decoding prefix without inference to "
-                  << discard / double(sample_rate) << "s\n";
+        log_message(LogLevel::info, "Resume: decoding prefix without inference to " +
+                                        std::to_string(discard / double(sample_rate)) + "s");
     while (discard) {
         check_cancelled();
         auto count = static_cast<size_t>(std::min<int64_t>(discard, 65536));
@@ -66,13 +66,16 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
         if (journal.samples() > std::numeric_limits<int64_t>::max() - int64_t(count))
             throw std::runtime_error("Audio sample counter overflow");
         std::vector<float> pcm(buffer.begin(), buffer.begin() + count);
-        std::cerr << "Recognizing " << journal.samples() / double(sample_rate) << "-"
-                  << (journal.samples() + int64_t(count)) / double(sample_rate) << "s\n";
+        log_message(LogLevel::debug,
+                    "Recognizing " + std::to_string(journal.samples() / double(sample_rate)) + "-" +
+                        std::to_string((journal.samples() + int64_t(count)) / double(sample_rate)) +
+                        "s");
         auto transcript = recognize(pcm, journal.language());
         check_cancelled();
         journal.append(static_cast<int64_t>(count), transcript);
         buffer.erase(buffer.begin(), buffer.begin() + count);
-        std::cerr << "Checkpoint: " << journal.samples() / double(sample_rate) << "s\n";
+        log_message(LogLevel::debug,
+                    "Checkpoint: " + std::to_string(journal.samples() / double(sample_rate)) + "s");
     }
 }
 } // namespace wt

@@ -6,8 +6,42 @@
 #include <chrono>
 #include <iostream>
 #include <memory>
+extern "C" {
+#include <libavutil/log.h>
+}
 
 namespace wt {
+namespace {
+void backend_logs() {
+    whisper_log_set(
+        [](ggml_log_level level, const char* text, void*) {
+            try {
+                static thread_local LogLevel previous = LogLevel::debug;
+                if (level != GGML_LOG_LEVEL_CONT)
+                    previous = level == GGML_LOG_LEVEL_ERROR  ? LogLevel::error
+                               : level == GGML_LOG_LEVEL_WARN ? LogLevel::warning
+                                                              : LogLevel::debug;
+                if (!trim(text).empty())
+                    log_message(previous, trim(text));
+            } catch (...) {
+            }
+        },
+        nullptr);
+    av_log_set_callback([](void* ptr, int level, const char* format, va_list args) {
+        try {
+            char line[2048];
+            int prefix = 1;
+            av_log_format_line2(ptr, level, format, args, line, sizeof(line), &prefix);
+            if (!trim(line).empty())
+                log_message(level <= AV_LOG_ERROR     ? LogLevel::error
+                            : level <= AV_LOG_WARNING ? LogLevel::warning
+                                                      : LogLevel::debug,
+                            trim(line));
+        } catch (...) {
+        }
+    });
+}
+} // namespace
 std::string select_device(const std::string& requested) {
     if (requested == "cpu")
         return "cpu";
@@ -24,10 +58,11 @@ std::string select_device(const std::string& requested) {
     if (requested == "cuda")
         throw std::runtime_error(
             "CUDA requested but unavailable; use a CUDA build and check the NVIDIA driver/runtime");
-    std::cerr << "CUDA unavailable; using CPU\n";
+    log_message(LogLevel::info, "CUDA unavailable; using CPU");
     return "cpu";
 }
 Json doctor(const Options& options) {
+    backend_logs();
     Json result = {{"version", WT_VERSION},
                    {"backend", "whisper.cpp"},
                    {"backend_version", whisper_version()},
@@ -42,11 +77,12 @@ Json doctor(const Options& options) {
     return result;
 }
 int transcribe(Options options) {
+    backend_logs();
     if (options.language != "auto" && whisper_lang_id(options.language.c_str()) < 0)
         throw UsageError("Unknown language: " + options.language);
     auto jobs = prepare_jobs(options);
     if (jobs.empty()) {
-        std::cerr << "No files to transcribe\n";
+        log_message(LogLevel::info, "No files to transcribe");
         return 0;
     }
     options.device = select_device(options.device);
@@ -56,7 +92,7 @@ int transcribe(Options options) {
         vad =
             prepare_model(options.vad_model.empty() ? "silero-v6.2.0" : options.vad_model, options);
     check_cancelled();
-    std::cerr << "Model: " << model.path << "; device: " << options.device << '\n';
+    log_message(LogLevel::info, "Model: " + model.path.string() + "; device: " + options.device);
     Json backend = {{"model_sha256", model.hash},
                     {"vad_sha256", vad.hash},
                     {"ffmpeg", audio_backend_version()}};
@@ -99,7 +135,7 @@ int transcribe(Options options) {
     for (const auto& job : jobs) {
         check_cancelled();
         auto start = std::chrono::steady_clock::now();
-        std::cerr << "Transcribing " << job.source << '\n';
+        log_message(LogLevel::info, "Transcribing " + job.source.string());
         try {
             auto modified = fs::last_write_time(job.source);
             auto size = fs::file_size(job.source);
@@ -144,7 +180,7 @@ int transcribe(Options options) {
                     auto& last = *static_cast<int*>(data);
                     if (value / 10 != last) {
                         last = value / 10;
-                        std::cerr << "Progress: " << value << "%\n";
+                        report_progress("Recognizing window", std::to_string(value) + "%");
                     }
                 };
                 auto status = whisper_full(context.get(), inference, pcm.data(),
@@ -177,13 +213,15 @@ int transcribe(Options options) {
             if (size != fs::file_size(job.source) || modified != fs::last_write_time(job.source))
                 throw std::runtime_error("Input changed during transcription");
             journal.publish(job, options);
-            std::cerr
-                << "Done: " << job.source.filename() << "; elapsed "
-                << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
-                << "s\n";
+            log_message(LogLevel::info,
+                        "Done: " + job.source.filename().string() + "; elapsed " +
+                            std::to_string(std::chrono::duration<double>(
+                                               std::chrono::steady_clock::now() - start)
+                                               .count()) +
+                            "s");
         } catch (const std::exception& error) {
             check_cancelled();
-            std::cerr << "Failed: " << job.source << ": " << error.what() << '\n';
+            log_message(LogLevel::error, "Failed: " + job.source.string() + ": " + error.what());
             if (!options.continue_on_error)
                 return 1;
             failed = true;

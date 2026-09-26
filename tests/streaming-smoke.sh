@@ -11,7 +11,7 @@ root=$(realpath "$6")
 device=${7:-cpu}
 "$helper" --repeat "$sample" "$root/windows.wav"
 common=("$root/windows.wav" --model "$model" --vad-model "$vad" --language en
-    --device "$device" --cpu-threads 2 --local-files-only --chunk-seconds 30 --format all)
+    --device "$device" --cpu-threads 2 --local-files-only --chunk-seconds 30 --format all --verbose)
 for mode in plain vad; do
     extra=()
     if [[ $mode == plain ]]; then extra=(--no-vad); fi
@@ -23,8 +23,8 @@ for mode in plain vad; do
     test "$(grep -c '^Checkpoint:' "$root/$mode.log")" -ge 2
 done
 # The trailing pause moves the first VAD boundary before the 30-second hard limit.
-grep -q '^Checkpoint: 30s$' "$root/plain.log"
-if grep -q '^Checkpoint: 30s$' "$root/vad.log"; then
+grep -q '^Checkpoint: 30\.000000s$' "$root/plain.log"
+if grep -q '^Checkpoint: 30\.000000s$' "$root/vad.log"; then
     echo 'VAD did not choose the trailing pause' >&2
     exit 1
 fi
@@ -33,7 +33,7 @@ pid=$!
 trap 'kill -TERM "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
 found=false
 for ((i = 0; i < 12000; ++i)); do
-    if grep -q '^Checkpoint: 30s$' "$root/interrupted.log"; then
+    if grep -q '^Checkpoint: 30\.000000s$' "$root/interrupted.log"; then
         found=true
         break
     fi
@@ -51,8 +51,8 @@ trap - EXIT
 test "$status" = 143
 test ! -e "$root/resume/windows.txt"
 "$binary" "${common[@]}" --no-vad --resume --output-dir "$root/resume" >"$root/resumed.log" 2>&1
-grep -q '^Resume: decoding prefix without inference to 30s$' "$root/resumed.log"
-if grep -q '^Recognizing 0-' "$root/resumed.log"; then exit 1; fi
+grep -q '^Resume: decoding prefix without inference to 30\.000000s$' "$root/resumed.log"
+if grep -q '^Recognizing 0\.000000-' "$root/resumed.log"; then exit 1; fi
 jq -e '.duration == 41 and (.segments | length > 1)' "$root/resume/windows.json"
 # Already committed segments must be retained exactly, not regenerated.
 diff <(jq -c '[.segments[] | select(.end <= 30)]' "$root/plain/windows.json") \
