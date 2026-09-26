@@ -40,6 +40,9 @@ tar -xzf whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz -C unpacked
 
 From the repository root, `--target runtime -t whisper-transcribator:cpu` builds
 the optional image using the exact same bundle. Models use `/models` in Docker.
+To wrap an already verified, unpacked archive without recompiling, use
+`docker build -f packaging/Dockerfile --target runtime-bundle -t whisper-transcribator:cpu .build/artifacts/cpu/unpacked`.
+This target's build context must be the unpacked archive, not the source checkout.
 
 ## CUDA
 
@@ -82,8 +85,9 @@ with narrowly scoped mounts once device permissions are configured.
    and a fresh output directory. Use the public 11-second fixture, not lectures.
 4. Check the CPU archive in clean Ubuntu 22.04 without Python/system FFmpeg, and
    the CPU runtime image. Confirm nonempty TXT/SRT/VTT/JSON and nonzero failure exits.
-   Run `tests/portable.sh` with QEMU's non-AVX2 `qemu64` CPU and test the diagnostic
-   for missing plugins without accepting libraries from the working directory.
+   Before release, opt into `tests/portable.sh BUNDLE OUTPUT FIXTURES` for inference
+   with QEMU's non-AVX2 `qemu64` CPU. Omitting `FIXTURES` only checks backend loading
+   and missing-plugin diagnostics, without downloading weights or running inference.
 5. On a trusted GPU machine, repeat the offline smoke with the CUDA archive and
    `cuda` as the last script argument; test the CUDA image with driver injection.
 6. Scan the entire Git history for secrets. Review the diff and ensure private
@@ -91,12 +95,23 @@ with narrowly scoped mounts once device permissions are configured.
 7. Only after approval, tag and publish the verified artifacts and checksums.
 
 CI runs on pushes to `main` and pull requests, without duplicate push runs for
-PR branches. The protected `main` requires the GCC, Clang/sanitizer, package and
+PR branches. The protected `main` requires the GCC, Clang/sanitizer, package, smoke and
 secret checks; no second reviewer is required for this single-maintainer project.
 CI runs CPU/compiler/sanitizer/package checks; optional manual dispatch builds
 the CUDA archive but does not certify GPU inference. It does not publish assets
 or expose a personal GPU runner to pull requests. The first remote checks passed;
 every release still needs a successful run for its exact source commit.
+
+The `package` job builds and verifies the archive, dependencies and `doctor`,
+including a model-free non-AVX2 loader check with a 30-second timeout. It never
+downloads models or performs speech recognition. The dependent `smoke` job
+downloads that exact archive, checks short native inference in clean Ubuntu, and
+wraps the same bundle in the non-root Docker runtime without recompiling.
+Slow QEMU inference is only in the opt-in `portable-inference` job: start it before
+release with `gh workflow run ci.yml -f run_portable_inference=true`. It is not
+part of pull-request or push CI. The separate compiler jobs retain their short
+source-build integration and sanitizer checks.
+
 Compiler caches are keyed by toolchain, sanitizer configuration and dependency
 pins; tests always run, including a rebuild that verifies actual cache hits.
 CTest exercises interrupted HTTPS downloads using a loopback TLS server and a

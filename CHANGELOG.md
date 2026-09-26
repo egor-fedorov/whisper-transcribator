@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Separate model-free archive packaging from native smoke tests using the same artifact; restrict slow non-AVX2 QEMU inference to an explicit manual workflow and keep only a quick loader check on pull requests.
 - Select CPU threads from physical cores, process affinity and visible hierarchical cgroup quotas; report the effective count in diagnostics and retain explicit overrides.
 - Build portable archives with dynamically selected CPU variants, including baseline x86_64 without AVX2; package plugin dependencies and test missing-plugin diagnostics and non-AVX2 inference.
 - Resume interrupted HTTPS model downloads with byte progress, validated ranges, private hash-specific partial files and final SHA-256 checks; add pinned turbo Q5_0/Q8_0 model entries without changing defaults.
