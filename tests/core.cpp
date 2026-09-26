@@ -127,6 +127,19 @@ int main() {
         o.overwrite = true;
         require(prepare_jobs(o).size() == 1);
     });
+    test("completed results do not need directory write access", [](auto root) {
+        auto o = input(root);
+        atomic_write(root / "a.txt", "complete");
+        o.skip_existing = true;
+        fs::permissions(root, fs::perms::owner_read | fs::perms::owner_exec);
+        try {
+            require(prepare_jobs(o).empty());
+        } catch (...) {
+            fs::permissions(root, fs::perms::owner_all);
+            throw;
+        }
+        fs::permissions(root, fs::perms::owner_all);
+    });
     test("empty output is not complete", [](auto root) {
         auto o = input(root);
         atomic_write(root / "a.txt", "");

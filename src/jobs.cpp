@@ -91,8 +91,9 @@ std::vector<Job> prepare_jobs(const Options& o) {
         pending.push_back(job);
     }
     std::set<fs::path> directories;
-    for (const auto& path : destinations)
-        directories.insert(path.parent_path());
+    for (const auto& job : pending)
+        for (const auto& [format, path] : job.outputs)
+            directories.insert(path.parent_path());
     for (const auto& directory : directories)
         probe_directory(directory);
     if (o.naming == "numbered" && !jobs.empty()) {
