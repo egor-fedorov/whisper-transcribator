@@ -38,6 +38,10 @@ usage error instead of being ignored. No compatibility wrapper silently translat
 int8 into another precision. Use a local quantized GGML file if you intentionally
 choose that model; the CLI does not convert weights.
 
+The unreleased `main` branch adds `--chunk-seconds` and `--resume` to the native
+backend. These do not import Python checkpoints or recover interrupted 0.3.0
+inference. See the README's long-recording section before using them.
+
 Exit codes remain meaningful: 1 runtime failure, 2 invalid CLI usage, 130/143
 interrupt/termination. A process killed externally (for example by the OOM killer)
 cannot print a final report; inspect the caller's exit status and system logs.

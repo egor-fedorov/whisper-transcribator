@@ -46,6 +46,10 @@ jobs:
           sudo unshare --net bash tests/smoke.sh "$PWD/.build/ci/whisper-transcribator" \
             "$PWD/.build/fixtures/jfk.wav" "$PWD/.build/fixtures/ggml-tiny.bin" \
             "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline"
+          sudo unshare --net bash tests/streaming-smoke.sh "$PWD/.build/ci/whisper-transcribator" \
+            "$PWD/.build/ci/tests/wt-audio-tests" "$PWD/.build/fixtures/jfk.wav" \
+            "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
+            "$PWD/.build/offline-streaming"
   package:
     runs-on: ubuntu-24.04
     timeout-minutes: 40

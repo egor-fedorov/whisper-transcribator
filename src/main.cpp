@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
     try {
         return wt::run_cli(argc, argv);
     } catch (const wt::Cancelled&) {
-        std::cerr << "Interrupted; unfinished file must be retried\n";
+        std::cerr << "Interrupted; committed progress is preserved. Repeat with --resume.\n";
         return 128 + wt::stop_signal;
     } catch (const wt::UsageError& error) {
         std::cerr << error.what() << '\n';

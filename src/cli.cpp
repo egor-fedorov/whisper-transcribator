@@ -75,7 +75,12 @@ int run_cli(int argc, char** argv) {
         app.add_option("--prefix", o.prefix, "Numbered filename prefix")->capture_default_str();
         app.add_flag("--skip-existing", o.skip_existing, "Skip complete nonempty output sets");
         app.add_flag("--overwrite", o.overwrite,
-                     "Replace existing outputs; takes precedence over skipping");
+                     "Replace outputs; restart saved progress unless --resume is also set");
+        app.add_flag("--resume", o.resume,
+                     "Continue compatible saved progress; otherwise start new");
+        app.add_option("--chunk-seconds", o.chunk_seconds, "Maximum audio window in seconds")
+            ->check(CLI::Range(30, 600))
+            ->capture_default_str();
         app.add_flag("--continue-on-error", o.continue_on_error,
                      "Continue after file failures; still exit nonzero");
         app.add_option("--model", o.model, "Catalog name or a local GGML model file")
