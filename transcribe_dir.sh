@@ -11,7 +11,7 @@ Environment variables:
   WHISPER_IMAGE=whisper-transcribator
   WHISPER_MODEL=small
   WHISPER_LANGUAGE=ru
-  WHISPER_FORMAT=text
+  WHISPER_FORMAT=text  # text, srt, json, all
   WHISPER_DEVICE=cpu
   WHISPER_COMPUTE_TYPE=int8
   WHISPER_CPU_THREADS=<auto>
@@ -68,6 +68,7 @@ case "$format" in
   text) output_ext="txt" ;;
   srt) output_ext="srt" ;;
   json) output_ext="json" ;;
+  all) output_ext="json" ;;
   *)
     echo "Unsupported WHISPER_FORMAT: $format" >&2
     exit 1
@@ -117,7 +118,8 @@ for file_path in "${files[@]}"; do
   output_name="${base_name}.${output_ext}"
   output_path="${input_dir}/${output_name}"
 
-  if [[ "$overwrite" != "1" && -f "$output_path" ]]; then
+  if [[ "$overwrite" != "1" && -s "$output_path" ]] && \
+     { [[ "$format" != all ]] || { [[ -s "${input_dir}/${base_name}.txt" ]] && [[ -s "${input_dir}/${base_name}.srt" ]]; }; }; then
     echo "Skipping existing transcript: $output_name" >&2
     continue
   fi
@@ -131,7 +133,15 @@ if [[ ${#pending_inputs[@]} -eq 0 ]]; then
 fi
 
 echo "Transcribing ${#pending_inputs[@]} file(s) with ${cpu_threads} CPU thread(s)." >&2
-"$docker_bin" run --rm \
+docker_args=()
+if [[ "$device" == cuda ]]; then
+  docker_args+=(--gpus all)
+  for node in /dev/nvidia-uvm /dev/nvidia-uvm-tools; do
+    [[ ! -c "$node" ]] || docker_args+=(--device "$node")
+  done
+fi
+[[ "$overwrite" != 1 ]] || extra_args+=(--overwrite)
+"$docker_bin" run --rm "${docker_args[@]}" \
   -v "${input_dir}:/work" \
   -v "${models_volume}:/models" \
   "$image" \
