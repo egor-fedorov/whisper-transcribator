@@ -69,8 +69,15 @@ int run_cli(int argc, char** argv) {
                        "Discover media files in filename order, non-recursive");
         app.add_option("-o,--output", o.output, "Output path for one input and one format");
         app.add_option("--output-dir", o.output_dir, "Destination directory; created if missing");
-        app.add_option("--format", o.format, "all writes TXT, SRT and JSON from one inference")
-            ->check(CLI::IsMember({"text", "srt", "json", "all"}))
+        app.add_option("--format", o.format, "all writes TXT, SRT, VTT and JSON from one inference")
+            ->check(CLI::IsMember({"text", "srt", "vtt", "json", "all"}))
+            ->capture_default_str();
+        app.add_option("--text-layout", o.text_layout, "TXT and JSON text layout")
+            ->check(CLI::IsMember({"paragraphs", "single-line"}))
+            ->capture_default_str();
+        app.add_option("--paragraph-pause-ms", o.paragraph_pause_ms,
+                       "Pause that starts a new paragraph")
+            ->check(CLI::NonNegativeNumber)
             ->capture_default_str();
         app.add_option("--naming", o.naming, "Source stems or stable numbers with a JSON mapping")
             ->check(CLI::IsMember({"source", "numbered"}))

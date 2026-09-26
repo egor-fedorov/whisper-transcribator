@@ -94,8 +94,8 @@ int main(int argc, char** argv) {
         root = pattern;
         auto short_rss = measure(root / "short", 120);
         auto long_rss = measure(root / "long", 3600);
-        std::cout << "Synthetic decoding + fake inference + TXT/SRT/JSON: 120s RSS " << short_rss
-                  << " KiB; 3600s RSS " << long_rss << " KiB\n";
+        std::cout << "Synthetic decoding + fake inference + TXT/SRT/VTT/JSON: 120s RSS "
+                  << short_rss << " KiB; 3600s RSS " << long_rss << " KiB\n";
         if (long_rss > short_rss + 32 * 1024)
             throw std::runtime_error("Memory grew by more than 32 MiB with recording length");
         fs::remove_all(root);

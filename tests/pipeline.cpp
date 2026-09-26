@@ -244,7 +244,7 @@ int main(int argc, char** argv) {
             journal.append(16, {"", 0.001, {}});
             journal.finish();
             journal.publish(silent.job, silent.options);
-            require(read_text(silent.job.outputs.at("text")) == "Hello Other language\n");
+            require(read_text(silent.job.outputs.at("text")) == "Hello\n\nOther language\n");
             auto mixed = Json::parse(read_text(silent.job.outputs.at("json")));
             require(mixed["language"].is_null() && mixed["segments"][1]["language"] == "ru");
         }
