@@ -27,6 +27,7 @@ struct Decoder {
 };
 
 static void check(int code, const char* operation) {
+    wt::check_cancelled();
     if (code < 0) {
         char message[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(code, message, sizeof(message));
@@ -36,6 +37,7 @@ static void check(int code, const char* operation) {
 
 namespace wt {
 std::vector<float> decode_audio(const fs::path& path) {
+    check_cancelled();
     Decoder d;
     if (!d.frame || !d.packet)
         throw std::bad_alloc();

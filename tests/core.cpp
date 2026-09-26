@@ -58,6 +58,12 @@ Model fixture() {
 }
 } // namespace
 int main() {
+    test("unicode filenames and transcript", [](auto root) {
+        auto o = input(root, u8"\u041b\u0435\u043a\u0446\u0438\u044f (1).mp4");
+        auto job = prepare_jobs(o)[0];
+        write_outputs(job, o, {"ru", 1, {{0, 1, u8"\u0422\u0435\u043a\u0441\u0442.", 0}}});
+        require(read_text(job.outputs.at("text")) == u8"\u0422\u0435\u043a\u0441\u0442.\n");
+    });
     test("atomic no clobber and replacement", [](auto root) {
         auto path = root / "result";
         atomic_write(path, "original");

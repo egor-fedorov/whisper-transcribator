@@ -24,6 +24,13 @@ status=0
 test "$status" = 1
 test ! -e "$root/batch/broken.txt"
 test -s "$root/batch/jfk.txt"
+mkdir -p "$root/sequential"
+cp "$sample" "$root/sequential/01.wav"
+cp "$sample" "$root/sequential/02.wav"
+"$binary" --input-dir "$root/sequential" --output-dir "$root/numbered" --naming numbered "${common[@]}"
+test -s "$root/numbered/result_001.txt"
+test -s "$root/numbered/result_002.txt"
+jq -e 'length == 2 and .[0].outputs.text == "result_001.txt"' "$root/numbered/result_files.json"
 "$binary" "$sample" --output-dir "$root/plain" --format all --skip-existing --model /missing --local-files-only
 # SIGTERM must not publish a partial transcript or exit successfully.
 "$binary" "$sample" -o "$root/interrupted.txt" "${common[@]}" >"$root/interrupt.log" 2>&1 &
