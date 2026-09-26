@@ -1,10 +1,15 @@
-#include "app.hpp"
-#include "resampler.hpp"
+#include "audio/audio.hpp"
+#include "audio/resampler.hpp"
+#include "support/cancel.hpp"
+#include "support/error.hpp"
+#include "support/io.hpp"
+#include "support/report.hpp"
 #include <algorithm>
 #include <memory>
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/log.h>
 #include <libswresample/swresample.h>
 }
 
@@ -192,6 +197,21 @@ std::vector<float> AudioReader::read(size_t limit) {
         d.offset += count;
     }
     return output;
+}
+void configure_audio_logging() {
+    av_log_set_callback([](void* ptr, int level, const char* format, va_list args) {
+        try {
+            char line[2048];
+            int prefix = 1;
+            av_log_format_line2(ptr, level, format, args, line, sizeof(line), &prefix);
+            if (!trim(line).empty())
+                log_message(level <= AV_LOG_ERROR     ? LogLevel::error
+                            : level <= AV_LOG_WARNING ? LogLevel::warning
+                                                      : LogLevel::debug,
+                            trim(line));
+        } catch (...) {
+        }
+    });
 }
 std::string audio_backend_version() {
     return std::to_string(avformat_version()) + "/" + std::to_string(avcodec_version()) + "/" +

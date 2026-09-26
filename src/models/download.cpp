@@ -1,4 +1,8 @@
-#include "app.hpp"
+#include "models/download.hpp"
+#include "models/models.hpp"
+#include "support/cancel.hpp"
+#include "support/io.hpp"
+#include "support/report.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cerrno>

@@ -1,5 +1,9 @@
-#include "pipeline.hpp"
-#include "version.hpp"
+#include "transcript/journal.hpp"
+#include "support/cancel.hpp"
+#include "support/hash.hpp"
+#include "support/io.hpp"
+#include "support/options.hpp"
+#include "transcript/metadata.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
@@ -57,12 +61,6 @@ void write_record(const fs::path& path, const Json& record) {
         throw std::runtime_error("Checkpoint record exceeds size limit");
     atomic_write_stream(path, [&](auto& out) { out << bytes; }, true, true);
 }
-Json destinations(const Job& job) {
-    Json result = Json::object();
-    for (const auto& [format, path] : job.outputs)
-        result[format] = resolve_path(path).string();
-    return result;
-}
 void validate_segment(const Segment& segment, double from, double to) {
     if (!std::isfinite(segment.start) || !std::isfinite(segment.end) ||
         !std::isfinite(segment.no_speech_probability) || segment.start < from ||
@@ -84,26 +82,11 @@ void add_language(std::vector<std::string>& languages, const std::string& langua
 } // namespace
 fs::path checkpoint_path(const Job& job) {
     return job.outputs.begin()->second.parent_path() / ".whisper-transcribator" /
-           sha256_text(destinations(job).dump());
+           sha256_text(job_destinations(job).dump());
 }
 bool has_checkpoint(const Job& job) {
     auto path = checkpoint_path(job);
     return fs::exists(path) || fs::is_symlink(path);
-}
-Json job_fingerprint(const Job& job, const Options& options, const Json& backend) {
-    auto size = fs::file_size(job.source);
-    auto modified = fs::last_write_time(job.source);
-    auto hash = sha256(job.source);
-    if (size != fs::file_size(job.source) || modified != fs::last_write_time(job.source))
-        throw std::runtime_error("Input changed while hashing");
-    return {{"source", job.source.string()},
-            {"size", size},
-            {"sha256", hash},
-            {"outputs", destinations(job)},
-            {"run", run_metadata(options)},
-            {"language", options.language},
-            {"model", options.model},
-            {"backend", backend}};
 }
 struct Journal::Lock {
     int fd = -1;
@@ -316,16 +299,14 @@ void Journal::visit(const std::function<void(const Segment&)>& consumer) const {
     if (position != samples() || hash != state.at("last_hash") || detected != languages())
         throw std::runtime_error("Checkpoint commit mismatch");
 }
-void Journal::publish(const Job& job, const Options& options) {
+void Journal::publish(const Job& job, const Options& options, const RenderOutput& render) {
     if (!finished())
         throw std::runtime_error("Cannot publish unfinished transcript");
     Json hashes = Json::object();
     for (const auto& [format, path] : job.outputs) {
         auto staged = directory / ("output." + format);
         atomic_write_stream(
-            staged,
-            [&, format = format](auto& out) { render_stream(out, format, job, options, *this); },
-            true, true);
+            staged, [&, format = format](auto& out) { render(out, format); }, true, true);
         hashes[format] = sha256(staged);
     }
     if (!state.at("published_hashes").empty() && hashes != state.at("published_hashes"))

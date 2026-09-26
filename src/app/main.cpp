@@ -1,4 +1,7 @@
-#include "app.hpp"
+#include "app/cli.hpp"
+#include "support/cancel.hpp"
+#include "support/error.hpp"
+#include "support/report.hpp"
 #include <iostream>
 
 int main(int argc, char** argv) {

@@ -1,5 +1,4 @@
-#include "report.hpp"
-#include "app.hpp"
+#include "support/report.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -7,6 +6,7 @@
 #include <iostream>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <unistd.h>
 
 namespace wt {
@@ -63,19 +63,6 @@ void finish_progress() {
     std::lock_guard<std::mutex> lock(output_mutex);
     clear_line();
     last_phase.clear();
-}
-void install_signal_handlers() {
-    struct sigaction action {};
-    action.sa_handler = [](int signal) {
-        if (stop_signal)
-            _exit(128 + signal);
-        stop_signal = signal;
-    };
-    sigemptyset(&action.sa_mask);
-    sigaddset(&action.sa_mask, SIGINT);
-    sigaddset(&action.sa_mask, SIGTERM);
-    if (sigaction(SIGINT, &action, nullptr) || sigaction(SIGTERM, &action, nullptr))
-        throw std::runtime_error("Cannot install signal handlers");
 }
 FileProgress::FileProgress(std::string value, double duration)
     : label(std::move(value)), total(std::isfinite(duration) && duration > 0 ? duration : 0) {}

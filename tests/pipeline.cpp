@@ -1,4 +1,11 @@
-#include "pipeline.hpp"
+#include "transcript/pipeline.hpp"
+#include "support/cancel.hpp"
+#include "support/io.hpp"
+#include "support/options.hpp"
+#include "transcript/jobs.hpp"
+#include "transcript/journal.hpp"
+#include "transcript/metadata.hpp"
+#include "transcript/outputs.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -73,7 +80,7 @@ void run(Fixture& f, Journal& journal, Audio& audio, int fail_at = -1) {
             return audio.recognize(pcm, language);
         },
         [](const auto& pcm) { return pcm.size() - 4; }, {}, 4);
-    journal.publish(f.job, f.options);
+    publish_outputs(f.job, f.options, journal);
 }
 void signal_test(Fixture& f, int signal) {
     int ready[2];
@@ -243,7 +250,7 @@ int main(int argc, char** argv) {
                     journal.languages() == std::vector<std::string>({"en", "ru"}));
             journal.append(16, {"", 0.001, {}});
             journal.finish();
-            journal.publish(silent.job, silent.options);
+            publish_outputs(silent.job, silent.options, journal);
             require(read_text(silent.job.outputs.at("text")) == "Hello\n\nOther language\n");
             auto mixed = Json::parse(read_text(silent.job.outputs.at("json")));
             require(mixed["language"].is_null() && mixed["segments"][1]["language"] == "ru");
@@ -253,7 +260,7 @@ int main(int argc, char** argv) {
             Journal journal(empty.job, empty.options, empty.fingerprint());
             journal.append(16, {"", 0.001, {}});
             journal.finish();
-            rejects([&] { journal.publish(empty.job, empty.options); });
+            rejects([&] { publish_outputs(empty.job, empty.options, journal); });
             require(!fs::exists(empty.job.outputs.at("json")));
         }
 
@@ -338,7 +345,7 @@ int main(int argc, char** argv) {
             journal.append(16, {"en", 0.001, {{0, 0.001, "final", 0}}});
             journal.finish();
             fs::create_directory(publish.job.outputs.at("srt"));
-            rejects([&] { journal.publish(publish.job, publish.options); });
+            rejects([&] { publish_outputs(publish.job, publish.options, journal); });
             require(fs::exists(publish.job.outputs.at("json")));
             require(!fs::exists(publish.job.outputs.at("text")));
             fs::remove(publish.job.outputs.at("srt"));

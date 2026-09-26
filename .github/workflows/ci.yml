@@ -48,8 +48,8 @@ jobs:
           echo "CCACHE_DIR=$PWD/.build/ccache" >> "$GITHUB_ENV"
           echo "CCACHE_BASEDIR=$PWD" >> "$GITHUB_ENV"
           echo "CCACHE_MAXSIZE=500M" >> "$GITHUB_ENV"
-      - run: clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
-      - run: shellcheck tests/*.sh packaging/*.sh
+      - run: find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-18 --dry-run --Werror {} +
+      - run: find tests packaging -type f -name '*.sh' -exec shellcheck {} +
       - run: bash tests/release.sh
       - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         env:

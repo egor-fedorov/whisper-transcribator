@@ -1,4 +1,12 @@
-#include "pipeline.hpp"
+#include "models/models.hpp"
+#include "support/cancel.hpp"
+#include "support/hash.hpp"
+#include "support/io.hpp"
+#include "support/options.hpp"
+#include "transcript/jobs.hpp"
+#include "transcript/journal.hpp"
+#include "transcript/metadata.hpp"
+#include "transcript/outputs.hpp"
 #include <cmath>
 #include <fcntl.h>
 #include <iostream>
@@ -60,7 +68,7 @@ void write_outputs(const Job& job, const Options& options, const Transcript& res
     Journal journal(job, options, job_fingerprint(job, options, Json::object()));
     journal.append(static_cast<int64_t>(std::llround(result.duration * sample_rate)), result);
     journal.finish();
-    journal.publish(job, options);
+    publish_outputs(job, options, journal);
 }
 } // namespace
 int main() {

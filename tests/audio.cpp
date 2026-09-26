@@ -1,5 +1,8 @@
-#include "app.hpp"
-#include "resampler.hpp"
+#include "audio/audio.hpp"
+#include "audio/resampler.hpp"
+#include "support/cancel.hpp"
+#include "support/error.hpp"
+#include "support/io.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

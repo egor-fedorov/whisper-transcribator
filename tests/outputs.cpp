@@ -1,4 +1,9 @@
-#include "pipeline.hpp"
+#include "transcript/outputs.hpp"
+#include "support/io.hpp"
+#include "support/options.hpp"
+#include "transcript/jobs.hpp"
+#include "transcript/journal.hpp"
+#include "transcript/metadata.hpp"
 #include <iostream>
 #include <unistd.h>
 
@@ -41,7 +46,7 @@ int main() {
             fs::create_directory(job.outputs.at("vtt"));
             bool failed = false;
             try {
-                journal.publish(job, options);
+                publish_outputs(job, options, journal);
             } catch (const std::exception&) {
                 failed = true;
             }
@@ -51,7 +56,7 @@ int main() {
         {
             Journal journal(job, options, fingerprint);
             require(journal.finished());
-            journal.publish(job, options);
+            publish_outputs(job, options, journal);
         }
         auto text = read_text(job.outputs.at("text"));
         require(text == u8"First line. Same paragraph.\n\nNew & <tag> --> "
@@ -72,7 +77,7 @@ int main() {
             Journal journal(job, options, job_fingerprint(job, options, Json::object()));
             journal.append(10 * sample_rate, {"en", 10, {{0, 1, "One.", 0}, {8, 9, "Two.", 0}}});
             journal.finish();
-            journal.publish(job, options);
+            publish_outputs(job, options, journal);
         }
         require(read_text(job.outputs.at("text")) == "One. Two.\n");
         for (const auto& [format, path] : job.outputs)
@@ -86,7 +91,7 @@ int main() {
             journal.append(3 * sample_rate,
                            {"ru", 3, {{0, 1, unicode + ".", 0}, {1, 2, "Next.", 0}}});
             journal.finish();
-            journal.publish(job, options);
+            publish_outputs(job, options, journal);
             require(read_text(job.outputs.at("text")) == unicode + ".\n\nNext.\n");
         }
         for (const auto& [format, path] : job.outputs)

@@ -1,5 +1,5 @@
-#include "cpu.hpp"
-#include "app.hpp"
+#include "support/cpu.hpp"
+#include "support/io.hpp"
 #include <iostream>
 #include <unistd.h>
 

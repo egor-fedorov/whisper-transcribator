@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -9,7 +10,6 @@ void configure_reporting(bool quiet, bool verbose);
 void log_message(LogLevel level, const std::string& message);
 void report_progress(const std::string& phase, const std::string& detail, bool force = false);
 void finish_progress();
-void install_signal_handlers();
 class FileProgress {
     std::string label;
     double total = 0, base = -1, committed = 0, start = 0, window = 0;

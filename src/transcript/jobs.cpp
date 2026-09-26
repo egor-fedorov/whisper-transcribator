@@ -1,4 +1,9 @@
-#include "pipeline.hpp"
+#include "transcript/jobs.hpp"
+#include "support/error.hpp"
+#include "support/io.hpp"
+#include "support/options.hpp"
+#include "support/report.hpp"
+#include "transcript/journal.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cerrno>

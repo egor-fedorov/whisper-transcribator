@@ -1,4 +1,7 @@
-#include "pipeline.hpp"
+#include "transcript/pipeline.hpp"
+#include "support/cancel.hpp"
+#include "support/report.hpp"
+#include "transcript/journal.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

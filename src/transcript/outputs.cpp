@@ -1,5 +1,7 @@
-#include "pipeline.hpp"
-#include "version.hpp"
+#include "transcript/outputs.hpp"
+#include "support/options.hpp"
+#include "transcript/journal.hpp"
+#include "transcript/metadata.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -55,23 +57,6 @@ std::string cue_text(const std::string& text) {
     return result;
 }
 } // namespace
-Json run_metadata(const Options& options) {
-    return {{"backend", "whisper.cpp"},
-            {"version", WT_VERSION},
-            {"backend_revision", WT_WHISPER_REVISION},
-            {"device", options.device},
-            {"beam_size", options.beam_size},
-            {"cpu_threads", options.cpu_threads},
-            {"audio_stream", options.audio_stream},
-            {"text_layout", options.text_layout},
-            {"paragraph_pause_ms", options.paragraph_pause_ms},
-            {"vad", !options.no_vad},
-            {"vad_min_silence_ms", options.vad_min_silence_ms},
-            {"flash_attention", true},
-            {"chunk_seconds", options.chunk_seconds},
-            {"chunk_min_silence_ms", options.chunk_min_silence_ms},
-            {"chunking_version", chunking_version}};
-}
 void render_stream(std::ostream& stream, const std::string& format, const Job& job,
                    const Options& options, const Journal& journal) {
     bool any = false;
@@ -172,6 +157,11 @@ void render_stream(std::ostream& stream, const std::string& format, const Job& j
     }
     if (!any)
         throw std::runtime_error("No transcript produced for: " + job.source.string());
+}
+void publish_outputs(const Job& job, const Options& options, Journal& journal) {
+    journal.publish(job, options, [&](auto& out, const auto& format) {
+        render_stream(out, format, job, options, journal);
+    });
 }
 std::string timestamp(double seconds) {
     if (!std::isfinite(seconds) || seconds < 0)

@@ -1,4 +1,11 @@
-#include "pipeline.hpp"
+#include "audio/audio.hpp"
+#include "support/io.hpp"
+#include "support/options.hpp"
+#include "transcript/jobs.hpp"
+#include "transcript/journal.hpp"
+#include "transcript/metadata.hpp"
+#include "transcript/outputs.hpp"
+#include "transcript/pipeline.hpp"
 #include <algorithm>
 #include <iostream>
 #include <sys/resource.h>
@@ -59,7 +66,7 @@ void scenario(const fs::path& root, int seconds) {
     auto expected = int64_t(seconds) * sample_rate;
     if (journal.samples() != expected || processed < expected || processed > expected * 2)
         throw std::runtime_error("Lost committed samples or excessive tail reprocessing");
-    journal.publish(job, options);
+    publish_outputs(job, options, journal);
     fs::remove_all(root);
 }
 long measure(const fs::path& root, int seconds) {

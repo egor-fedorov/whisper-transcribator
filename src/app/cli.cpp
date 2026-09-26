@@ -1,4 +1,10 @@
-#include "app.hpp"
+#include "app/cli.hpp"
+#include "app/commands.hpp"
+#include "models/models.hpp"
+#include "support/error.hpp"
+#include "support/io.hpp"
+#include "support/options.hpp"
+#include "support/report.hpp"
 #include "version.hpp"
 #include <CLI/CLI.hpp>
 #include <algorithm>
