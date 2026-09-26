@@ -58,6 +58,9 @@ int run_cli(int argc, char** argv) {
                    "Inference device; explicit CUDA never silently falls back")
         ->check(CLI::IsMember({"auto", "cpu", "cuda"}))
         ->capture_default_str();
+    app.add_option("--cpu-threads", o.cpu_threads,
+                   "0 selects physical cores within affinity and CPU quota")
+        ->check(CLI::NonNegativeNumber);
     if (o.command == "doctor") {
         app.add_flag("--json", o.json);
     } else {
@@ -102,8 +105,6 @@ int run_cli(int argc, char** argv) {
         app.add_option("--language", o.language, "Language code or auto")->capture_default_str();
         app.add_option("--audio-stream", o.audio_stream,
                        "Absolute container stream index; default selects the best audio stream")
-            ->check(CLI::NonNegativeNumber);
-        app.add_option("--cpu-threads", o.cpu_threads, "0 uses whisper.cpp's default")
             ->check(CLI::NonNegativeNumber);
         app.add_option("--beam-size", o.beam_size, "Beam search width")
             ->check(CLI::Range(1, 8))

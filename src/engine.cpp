@@ -1,9 +1,11 @@
+#include "cpu.hpp"
 #include "ggml-backend.h"
 #include "pipeline.hpp"
 #include "version.hpp"
 #include "whisper.h"
 #include <algorithm>
 #include <chrono>
+#include <dlfcn.h>
 #include <iostream>
 #include <memory>
 extern "C" {
@@ -43,16 +45,30 @@ void backend_logs() {
 }
 } // namespace
 std::string select_device(const std::string& requested) {
-    if (requested == "cpu")
-        return "cpu";
-    ggml_backend_load_all();
-    bool cuda = false;
+    static const bool loaded = [] {
+        Dl_info library{};
+        if (!dladdr(reinterpret_cast<void*>(ggml_backend_dev_count), &library) ||
+            !library.dli_fname)
+            throw std::runtime_error("Cannot locate installed ggml backend directory");
+        auto directory = fs::canonical(library.dli_fname).parent_path();
+        ggml_backend_load_all_from_path(directory.c_str());
+        return true;
+    }();
+    (void)loaded;
+    bool cuda = false, cpu = false;
     for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
         auto dev = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU)
+            cpu = true;
         if (std::string(ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev))) == "CUDA" &&
             ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_GPU)
             cuda = true;
     }
+    if (!cpu)
+        throw std::runtime_error("No compatible CPU backend; check the installed libggml-cpu "
+                                 "plugins and their dependencies");
+    if (requested == "cpu")
+        return "cpu";
     if (cuda)
         return "cuda";
     if (requested == "cuda")
@@ -63,12 +79,14 @@ std::string select_device(const std::string& requested) {
 }
 Json doctor(const Options& options) {
     backend_logs();
-    Json result = {{"version", WT_VERSION},
-                   {"backend", "whisper.cpp"},
-                   {"backend_version", whisper_version()},
-                   {"backend_revision", WT_WHISPER_REVISION},
-                   {"model_cache", model_root(options).string()},
-                   {"errors", Json::array()}};
+    Json result = {
+        {"version", WT_VERSION},
+        {"backend", "whisper.cpp"},
+        {"backend_version", whisper_version()},
+        {"backend_revision", WT_WHISPER_REVISION},
+        {"model_cache", model_root(options).string()},
+        {"cpu_threads", options.cpu_threads > 0 ? options.cpu_threads : automatic_cpu_threads()},
+        {"errors", Json::array()}};
     try {
         result["device"] = select_device(options.device);
     } catch (const std::exception& error) {
@@ -86,6 +104,9 @@ int transcribe(Options options) {
         return 0;
     }
     options.device = select_device(options.device);
+    if (!options.cpu_threads)
+        options.cpu_threads = automatic_cpu_threads();
+    log_message(LogLevel::info, "CPU threads: " + std::to_string(options.cpu_threads));
     auto model = prepare_model(options.model, options);
     PreparedModel vad;
     if (!options.no_vad)

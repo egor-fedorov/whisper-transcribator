@@ -31,7 +31,7 @@ COPY tests/ tests/
 ARG WT_CUDA=OFF
 ARG CUDA_ARCHITECTURES=75;80;86;89;90
 RUN cmake -S . -B .build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_CUDA=${WT_CUDA} \
-    -DGGML_NATIVE=OFF -DWT_WERROR=ON \
+    -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DWT_WERROR=ON \
     -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
     && cmake --build .build/release -j4 \
     && ctest --test-dir .build/release --output-on-failure
@@ -55,8 +55,7 @@ RUN . .build/release/generated/package.env && mkdir -p /export \
     && cd /export && sha256sum *.tar.gz > SHA256SUMS
 FROM scratch AS archive
 COPY --from=build /export/ /
-FROM ${RUNTIME_IMAGE} AS runtime
-COPY --from=build /bundle/ /opt/whisper-transcribator/
+FROM ${RUNTIME_IMAGE} AS runtime-base
 RUN groupadd --gid 10001 whisper && useradd --uid 10001 --gid 10001 --no-create-home whisper \
     && mkdir -p /models /data && chown 10001:10001 /models /data
 ENV WHISPER_DOWNLOAD_ROOT=/models NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
@@ -64,3 +63,8 @@ USER 10001:10001
 WORKDIR /data
 ENTRYPOINT ["/opt/whisper-transcribator/bin/whisper-transcribator"]
 CMD ["--help"]
+FROM runtime-base AS runtime-bundle
+# The build context is a verified unpacked archive, not the source checkout.
+COPY . /opt/whisper-transcribator/
+FROM runtime-base AS runtime
+COPY --from=build /bundle/ /opt/whisper-transcribator/

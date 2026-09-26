@@ -9,6 +9,10 @@ on:
         description: Build CUDA archive (hardware inference is a separate manual gate)
         type: boolean
         default: false
+      run_portable_inference:
+        description: Run slow non-AVX2 inference under QEMU before release
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -72,22 +76,43 @@ jobs:
             "$PWD/.build/offline-streaming"
   package:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: docker build -f packaging/Dockerfile --target archive --output type=local,dest=.build/artifacts/cpu .
-      - run: |
-          cd .build/artifacts/cpu
-          sha256sum -c SHA256SUMS
-          mkdir unpacked
-          set -- whisper-transcribator-*-linux-x86_64-cpu.tar.gz
-          test "$#" = 1
-          tar -xzf "$1" -C unpacked
-          . unpacked/share/build-metadata.env
-          test "$1" = "whisper-transcribator-${WT_PACKAGE_VERSION}-linux-x86_64-cpu.tar.gz"
-          test "$(unpacked/bin/whisper-transcribator --version)" = "$WT_PACKAGE_VERSION"
-      - run: bash tests/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
-      - run: |
+      - name: Build CPU archive (no model downloads or inference)
+        run: docker build -f packaging/Dockerfile --target archive --output type=local,dest=.build/artifacts/cpu .
+      - name: Verify archive, dependencies and doctor
+        run: bash tests/package.sh .build/artifacts/cpu
+      - name: Install QEMU for the loader check
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user
+      - name: Check non-AVX2 backend loading (no inference, 30s limit)
+        run: bash tests/portable.sh .build/artifacts/cpu/unpacked .build/portable
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-cpu
+          path: |
+            .build/artifacts/cpu/*.tar.gz
+            .build/artifacts/cpu/SHA256SUMS
+          retention-days: 7
+          if-no-files-found: error
+  smoke:
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-cpu
+          path: .build/artifacts/cpu
+      - name: Verify the exact archive produced by package
+        run: bash tests/package.sh .build/artifacts/cpu
+      - name: Prepare public 11-second fixture and tiny weights
+        run: bash tests/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
+      - name: Run archive inference offline in clean Ubuntu
+        run: |
           mkdir -p .build/clean-output
           docker run --rm --network none --user "$(id -u):$(id -g)" \
             -v "$PWD/.build/artifacts/cpu/unpacked:/app:ro" \
@@ -96,8 +121,10 @@ jobs:
             --model /fixtures/ggml-tiny.bin --vad-model /fixtures/ggml-silero-v6.2.0.bin \
             --language en --device cpu --local-files-only --output-dir /output --format all
           jq -e '.run.backend == "whisper.cpp" and (.text | ascii_downcase | contains("country"))' .build/clean-output/jfk.json
-      - run: docker build -f packaging/Dockerfile --target runtime -t whisper-transcribator:test .
-      - run: |
+      - name: Wrap the same archive in Docker (no recompilation)
+        run: docker build -f packaging/Dockerfile --target runtime-bundle -t whisper-transcribator:test .build/artifacts/cpu/unpacked
+      - name: Check offline inference as the default non-root user
+        run: |
           # Only public test fixtures are shared with the image's different default UID.
           chmod a+r .build/fixtures/jfk.wav .build/fixtures/ggml-tiny.bin
           test "$(docker run --rm --entrypoint id whisper-transcribator:test -u)" = 10001
@@ -110,7 +137,8 @@ jobs:
               test "$(stat -c %u /data/transcripts/.whisper-transcribator)" = 10001
               test -w /models
             '
-      - run: |
+      - name: Check offline inference with host-owned outputs
+        run: |
           mkdir -p .build/docker-output
           docker run --rm --network none --user "$(id -u):$(id -g)" \
             -v "$PWD/.build/fixtures:/fixtures:ro" -v "$PWD/.build/docker-output:/output" \
@@ -118,14 +146,27 @@ jobs:
             --model /fixtures/ggml-tiny.bin --vad-model /fixtures/ggml-silero-v6.2.0.bin \
             --language en --device cpu --local-files-only --output-dir /output --format all
           jq -e '.run.backend == "whisper.cpp" and (.segments | length > 0)' .build/docker-output/jfk.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+  portable-inference:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_portable_inference
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: native-cpu
-          path: |
-            .build/artifacts/cpu/*.tar.gz
-            .build/artifacts/cpu/SHA256SUMS
-          retention-days: 7
-          if-no-files-found: error
+          path: .build/artifacts/cpu
+      - name: Verify the exact archive produced by package
+        run: bash tests/package.sh .build/artifacts/cpu
+      - name: Install QEMU for opt-in inference
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user
+      - name: Prepare public 11-second fixture and tiny weights
+        run: bash tests/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
+      - name: Run opt-in non-AVX2 inference (slow emulation, 10m limit)
+        run: bash tests/portable.sh .build/artifacts/cpu/unpacked .build/portable .build/fixtures
   compatibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -18,6 +18,15 @@ ctest --preset cpu
 
 Use the Ubuntu 22.04 recipe for portable archives. It includes its FFmpeg,
 inference libraries, TLS trust store, notices and sources; no weights or Python.
+The recipe enables `GGML_BACKEND_DL` and `GGML_CPU_ALL_VARIANTS` with
+`GGML_NATIVE=OFF`. The loader selects a compatible installed CPU plugin, including
+baseline x86_64 without AVX2; CUDA archives also retain this CPU fallback.
+Packaging collects dependencies for every plugin, not only the executable.
+`share/backends.txt` inventories the included modules.
+
+Local source builds can opt into host-specific optimization with
+`cmake --preset cpu -DGGML_NATIVE=ON`; do not redistribute that build as portable.
+Host-native and dynamic portable configurations are mutually exclusive.
 
 ```bash
 docker build -f packaging/Dockerfile --target archive \
@@ -31,6 +40,9 @@ tar -xzf whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz -C unpacked
 
 From the repository root, `--target runtime -t whisper-transcribator:cpu` builds
 the optional image using the exact same bundle. Models use `/models` in Docker.
+To wrap an already verified, unpacked archive without recompiling, use
+`docker build -f packaging/Dockerfile --target runtime-bundle -t whisper-transcribator:cpu .build/artifacts/cpu/unpacked`.
+This target's build context must be the unpacked archive, not the source checkout.
 
 ## CUDA
 
@@ -72,7 +84,10 @@ with narrowly scoped mounts once device permissions are configured.
 3. Run `tests/prepare-smoke.sh` once, then `tests/smoke.sh` with networking disabled
    and a fresh output directory. Use the public 11-second fixture, not lectures.
 4. Check the CPU archive in clean Ubuntu 22.04 without Python/system FFmpeg, and
-   the CPU runtime image. Confirm nonempty TXT/SRT/JSON and nonzero failure exits.
+   the CPU runtime image. Confirm nonempty TXT/SRT/VTT/JSON and nonzero failure exits.
+   Before release, opt into `tests/portable.sh BUNDLE OUTPUT FIXTURES` for inference
+   with QEMU's non-AVX2 `qemu64` CPU. Omitting `FIXTURES` only checks backend loading
+   and missing-plugin diagnostics, without downloading weights or running inference.
 5. On a trusted GPU machine, repeat the offline smoke with the CUDA archive and
    `cuda` as the last script argument; test the CUDA image with driver injection.
 6. Scan the entire Git history for secrets. Review the diff and ensure private
@@ -80,12 +95,29 @@ with narrowly scoped mounts once device permissions are configured.
 7. Only after approval, tag and publish the verified artifacts and checksums.
 
 CI runs on pushes to `main` and pull requests, without duplicate push runs for
-PR branches. The protected `main` requires the GCC, Clang/sanitizer, package and
+PR branches. The protected `main` requires the GCC, Clang/sanitizer, package, smoke and
 secret checks; no second reviewer is required for this single-maintainer project.
 CI runs CPU/compiler/sanitizer/package checks; optional manual dispatch builds
 the CUDA archive but does not certify GPU inference. It does not publish assets
 or expose a personal GPU runner to pull requests. The first remote checks passed;
 every release still needs a successful run for its exact source commit.
+
+The `package` job builds and verifies the archive, dependencies and `doctor`,
+including a model-free non-AVX2 loader check with a 30-second timeout. It never
+downloads models or performs speech recognition. The dependent `smoke` job
+downloads that exact archive, checks short native inference in clean Ubuntu, and
+wraps the same bundle in the non-root Docker runtime without recompiling.
+Slow QEMU inference is only in the opt-in `portable-inference` job: start it before
+release with `gh workflow run ci.yml -f run_portable_inference=true`. It is not
+part of pull-request or push CI. The separate compiler jobs retain their short
+source-build integration and sanitizer checks.
+
+Compiler caches are keyed by toolchain, sanitizer configuration and dependency
+pins; tests always run, including a rebuild that verifies actual cache hits.
+CTest exercises interrupted HTTPS downloads using a loopback TLS server and a
+temporary trusted certificate; it does not download large model weights.
+Streaming tests repeat the public fixture into a short recording. Long-duration
+memory tests use synthetic audio and fake inference, not full lecture recognition.
 
 ## Prepare And Publish
 
@@ -118,7 +150,8 @@ are not a substitute for release assets. Dependency updates arrive through
 Dependabot; merging workflow changes with `gh` requires the `workflow` token scope.
 
 Dependencies downloaded by CMake can be supplied offline via
-`FETCHCONTENT_SOURCE_DIR_WHISPER` and `FETCHCONTENT_SOURCE_DIR_CLI11`; those local
+`FETCHCONTENT_SOURCE_DIR_WHISPER`, `FETCHCONTENT_SOURCE_DIR_CLI11` and
+`FETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON`; those local
 overrides are trusted and bypass archive hash verification. App build versions,
 FFmpeg pin and source package versions are recorded in the bundle. Apt security
 updates mean rebuilds need not have identical bytes.

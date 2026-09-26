@@ -26,21 +26,37 @@ Old TSV mappings are not supported.
   cannot be reused as native models. Existing weights/results are not deleted.
 - Cache defaults to the XDG cache directory. Docker explicitly uses `/models`.
 - `--device auto` chooses CUDA when available, otherwise reports CPU fallback.
-- JSON keeps schema version 1; unavailable probability/decoder statistics are
+- Published 0.3.0 JSON keeps schema version 1; unavailable probability/decoder statistics are
   `null`. Metadata identifies `whisper.cpp`.
 - All-format output is atomic per file, not an all-or-nothing transaction.
 
 ## Removed In 0.3
 
 `--jobs`, batching, `--compute-type`, prompts and word timestamps are not
-implemented. Neither chunking nor resume is available. These flags produce a
+implemented. Published 0.3.0 has neither chunking nor resume. Unsupported flags produce a
 usage error instead of being ignored. No compatibility wrapper silently translates
 int8 into another precision. Use a local quantized GGML file if you intentionally
 choose that model; the CLI does not convert weights.
 
-The unreleased `main` branch adds `--chunk-seconds` and `--resume` to the native
-backend. These do not import Python checkpoints or recover interrupted 0.3.0
-inference. See the README's long-recording section before using them.
+## Unreleased Main
+
+The native backend adds `--chunk-seconds` and `--resume`, not Python checkpoint
+imports or recovery of interrupted 0.3.0 inference. Checkpoint schema 2 / chunking
+version 3 reject earlier unfinished progress without migration: finish with the
+old binary or explicitly restart. See the README's long-recording section.
+
+TXT and JSON aggregate text now use paragraphs by default; choose
+`--text-layout single-line` to retain the old layout. JSON schema 2 records
+per-segment languages and a language list; its top-level language is `null` for
+mixed-language or empty transcripts. `--format all` now means TXT/SRT/VTT/JSON.
+An old three-file set is not considered complete, and old three-format checkpoints
+must be finished with the old binary or moved aside explicitly before starting
+over. Completed single-format transcripts are unaffected.
+
+`--cpu-threads 0` now follows physical cores, process affinity and visible CPU
+quotas instead of whisper.cpp's four-thread default. An explicit positive value
+still overrides auto selection. Automatic language detection runs per window,
+and FFmpeg selects the best audio stream unless `--audio-stream N` is supplied.
 
 Exit codes remain meaningful: 1 runtime failure, 2 invalid CLI usage, 130/143
 interrupt/termination. A process killed externally (for example by the OOM killer)

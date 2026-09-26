@@ -44,6 +44,9 @@ test ! -e "$root/models"
 expect 0 doctor --device cpu --json
 grep -q 'whisper.cpp' "$root/stdout"
 grep -q "$revision" "$root/stdout"
+grep -Eq '"cpu_threads": [1-9][0-9]*' "$root/stdout"
+expect 0 doctor --device cpu --cpu-threads 3 --json
+grep -q '"cpu_threads": 3' "$root/stdout"
 expect 1 "$root/missing.mp4" --local-files-only
 mkdir -p "$root/empty"
 expect 0 --input-dir "$root/empty" --local-files-only
