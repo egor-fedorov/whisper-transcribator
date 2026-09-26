@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Default TXT/JSON text to pause- and sentence-based paragraphs, with `--text-layout single-line` compatibility and a configurable paragraph pause; preserve raw recognition segments.
+- Add escaped WebVTT captions and include VTT in `--format all`, complete-set checks, mappings and interrupted publication recovery; detect old three-format saved progress rather than silently starting again.
 - Retain uncommitted audio tails across bounded windows, detect automatic language per window, select the best audio stream or an explicit `--audio-stream`, and show file-level progress/ETA.
 - Use checkpoint schema 2 and chunking version 3; previous unreleased progress requires the previous binary or an explicit restart. JSON schema 2 records per-segment languages and a multilingual language summary.
 - Add quiet/verbose reporting, rate-limited terminal/log progress and immediate termination on a repeated interrupt; cache CI compilation separately for each toolchain and sanitizer configuration.
@@ -10,7 +12,7 @@
 - Avoid saved-progress errors after early failures; safely restart verified zero-progress journals while preserving committed windows and unknown contents.
 - Index paths and file identities instead of comparing every output against every input; consistently reject output and mapping symlinks.
 - Handle mid-stream audio rate, format and channel layout changes without losing resampler tails or corrupting PCM.
-- Separate the 200 ms window-boundary pause threshold (`--chunk-min-silence-ms`) from inference VAD; bump chunking version to 2 and reject earlier unreleased checkpoints.
+- Separate the 200 ms window-boundary pause threshold (`--chunk-min-silence-ms`) from inference VAD.
 - Decode audio incrementally and run whisper.cpp in bounded windows with `--chunk-seconds` (120 seconds by default, range 30-600), preferring VAD pauses near window boundaries.
 - Automatically checkpoint completed windows and add explicit `--resume` with source/model/settings validation; re-decode the completed prefix without repeating inference.
 - Stream TXT/SRT/JSON from saved fragments instead of accumulating the full transcript in RAM, and recover interrupted multi-format publication using verified output hashes.

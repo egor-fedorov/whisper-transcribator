@@ -122,6 +122,15 @@ struct Journal::Lock {
 Journal::Journal(const Job& job, const Options& options, const Json& fingerprint)
     : directory(checkpoint_path(job)) {
     private_directory(directory.parent_path());
+    if (job.outputs.size() == 4 && job.outputs.count("vtt")) {
+        auto legacy = job;
+        legacy.outputs.erase("vtt");
+        if (has_checkpoint(legacy))
+            throw std::runtime_error("Saved progress for the old three-format all exists: " +
+                                     checkpoint_path(legacy).string() +
+                                     "; finish with the previous binary or explicitly move that "
+                                     "checkpoint aside before restarting");
+    }
     lock = std::make_unique<Lock>(directory.string() + ".lock");
     auto completed = fs::path(directory.string() + ".completed");
     if (fs::exists(completed) || fs::is_symlink(completed)) {

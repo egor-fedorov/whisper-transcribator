@@ -200,6 +200,8 @@ int main() {
         rejects([&] { prepare_jobs(o); });
         atomic_write(root / "a.srt", "srt");
         atomic_write(root / "a.json", "{}");
+        rejects([&] { prepare_jobs(o); });
+        atomic_write(root / "a.vtt", "WEBVTT");
         require(prepare_jobs(o).empty());
     });
     test("explicit ordering", [](auto root) {

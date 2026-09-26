@@ -95,12 +95,19 @@ diagnostics. Terminal progress is updated in place; redirected progress is
 rate-limited. A first SIGINT/SIGTERM requests a graceful stop; a second exits
 immediately, leaving the last committed checkpoint recoverable.
 
-TXT joins recognition segments with spaces instead of adding arbitrary line breaks.
+TXT defaults to readable paragraphs: a pause of at least 2000 ms, a language
+change, or a sentence-ending segment after about 600 Unicode characters starts
+a new paragraph. This is a formatting heuristic, not an LLM rewrite or summary.
+Segments otherwise join with spaces, including across recognition windows; lines
+are never wrapped to a fixed width. Use `--text-layout single-line` for the old
+layout or `--paragraph-pause-ms N` to change the pause threshold. JSON `text`
+uses the same layout; individual segment text/timestamps remain unchanged.
 SRT preserves segment timestamps. JSON schema version 2 includes segment/run metadata;
 backend-specific unavailable metrics are `null`, not fabricated values.
 Each segment records its window's language; `languages` lists observed languages
 in encounter order and top-level `language` is `null` for multilingual recordings.
-`--format all` requires `--output-dir` and uses a single inference pass.
+`--format vtt` produces WebVTT captions. `--format all` requires `--output-dir`
+and writes TXT, SRT, VTT and JSON from the same recognition results.
 
 Existing outputs cause an error unless `--overwrite` is set. `--skip-existing`
 skips only when every requested output is a nonempty regular file; it is not a
@@ -109,7 +116,7 @@ content/model validation. Incomplete sets require an explicit `--overwrite`, or
 Inputs, including hardlink/symlink aliases, are protected from output collisions.
 Output files and numbered mappings must not be symlinks, including with
 `--overwrite` or `--skip-existing`; symlinks to directories remain supported.
-Each output is atomically published; the three-format set is not a transaction.
+Each output is atomically published; the four-format set is not a transaction.
 On interruption no partial file is published, but already completed files remain.
 
 ## Long Recordings And Resume (Unreleased)
@@ -130,7 +137,7 @@ guarantee perfect boundary words. Silence still advances the checkpoint.
 An explicit language remains fixed. Audio defaults to FFmpeg's best audio stream;
 `--audio-stream N` selects an absolute container stream index, not an audio ordinal.
 
-PCM, VAD and recognition buffers cover only the current window. TXT/SRT/JSON
+PCM, VAD and recognition buffers cover only the current window. TXT/SRT/VTT/JSON
 are assembled incrementally from saved segments, not accumulated in RAM. Model
 weights, backend workspaces and container metadata still consume memory: this is
 not a hard RAM/VRAM cap, and a smaller window cannot make every model fit.
@@ -172,6 +179,10 @@ checkpoint validation. Plain `--overwrite` discards this job's saved progress.
 Checkpoint schema 2 / chunking version 3 do not migrate earlier unreleased
 checkpoints. Finish those jobs with their original binary, or explicitly restart
 with `--overwrite` without `--resume`; incompatible progress is never silently reused.
+An old three-format `all` checkpoint is also detected: finish it with the old
+binary, choose a new output directory, or explicitly move its checkpoint aside.
+Existing three-format outputs are no longer a complete `all` set; select a
+single format to retain its skip behavior, or explicitly overwrite the full set.
 If publication of multiple formats was interrupted, verified completed formats
 are retained and missing ones are reconstructed without inference. Changed output
 files require explicit overwrite permission. Existing 0.3.0 partial runs have no

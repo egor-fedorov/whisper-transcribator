@@ -92,7 +92,7 @@ std::vector<Job> prepare_jobs(const Options& o) {
     std::vector<Job> jobs, pending;
     std::vector<fs::path> destinations;
     const std::map<std::string, std::string> extensions = {
-        {"text", ".txt"}, {"srt", ".srt"}, {"json", ".json"}};
+        {"text", ".txt"}, {"srt", ".srt"}, {"vtt", ".vtt"}, {"json", ".json"}};
     for (size_t i = 0; i < inputs.size(); ++i) {
         Job job{inputs[i], {}};
         for (const auto& [format, extension] : extensions) {
