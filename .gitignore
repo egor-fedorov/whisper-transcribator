@@ -1,4 +1,5 @@
 /.build/
+/__cmake_systeminformation/
 .whisper-transcribator/
 /models/
 /transcripts/
