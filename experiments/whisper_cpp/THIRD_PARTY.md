@@ -9,6 +9,7 @@ The application code is MIT. That does not relicense the following dependencies.
 | FFmpeg 8.0.1 | Shared LGPL build, original source archive and configure log included |
 | libstdc++, libgcc, libgomp | Distribution copyright/exception notices included |
 | cuBLAS, CUDA runtime (CUDA archive only) | Proprietary NVIDIA notices included; driver excluded |
+| NCCL (when linked by ggml CUDA) | Distribution BSD license notice included |
 | Model weights | Not distributed by this project |
 
 The FFmpeg build disables autodetection, GPL/nonfree components, networking and

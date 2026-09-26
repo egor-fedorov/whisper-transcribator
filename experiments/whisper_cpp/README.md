@@ -25,6 +25,8 @@ For GPU add `-DNATIVE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89` when configuring
 VAD is enabled by default and requires `--vad-model PATH`; `--no-vad` disables it.
 CTranslate2 model directories cannot be used: download GGML weights separately.
 Models are not embedded in binaries or archives.
+`-DNATIVE_SANITIZERS=ON` instruments the wrapper with ASan/UBSan, not all upstream
+library code. CI runs both argument checks and real tiny inference in that build.
 
 ## Archive
 
@@ -42,7 +44,7 @@ The archive contains `bin/`, `lib/`, `sources/` and `licenses/`. Keep them toget
 RPATH is relative. This is not a single static executable. The default build base
 is pinned Ubuntu 22.04/CUDA 12.8.1; CPU archives need no CUDA driver. CUDA archives
 require a compatible host NVIDIA driver. Neither glibc nor the driver is bundled.
-CPU builds currently require AVX2/FMA/F16C-capable hardware. No claim is made about
+CPU builds currently require AVX2/FMA/F16C/BMI2-capable hardware. No claim is made about
 all Linux distributions or untested GPU architectures. Change CUDA_ARCHITECTURES
 for your target GPU (the Dockerfile default builds 75/80/86/89/90 and takes longer).
 

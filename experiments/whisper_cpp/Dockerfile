@@ -44,6 +44,9 @@ RUN bash package.sh /build /bundle \
            [ ! -d "$directory" ] || cp -aL "$directory" /bundle/licenses/; \
          done; \
        fi
+RUN if [ -f /bundle/lib/libnccl.so.2 ]; then \
+      cp -aL /usr/share/doc/libnccl2 /bundle/licenses/; \
+    fi
 RUN mkdir -p /export && tar -C /bundle -czf /export/whisper-transcribator-native-linux-x86_64.tar.gz .
 FROM scratch AS archive
 COPY --from=build /export/ /
