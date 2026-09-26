@@ -95,6 +95,8 @@ skips only when every requested output is a nonempty regular file; it is not a
 content/model validation. Incomplete sets require an explicit `--overwrite`, or
 `--resume` with a checkpoint that verifies the already published files.
 Inputs, including hardlink/symlink aliases, are protected from output collisions.
+Output files and numbered mappings must not be symlinks, including with
+`--overwrite` or `--skip-existing`; symlinks to directories remain supported.
 Each output is atomically published; the three-format set is not a transaction.
 On interruption no partial file is published, but already completed files remain.
 
@@ -138,6 +140,9 @@ Source hashing and prefix decoding can take time before recognition resumes.
 At most the uncommitted window must be recognized again after a crash or kill.
 Progress reports use absolute audio seconds; inference percentages are per window.
 
+Failed attempts before the first committed window do not count as saved progress.
+Validated empty checkpoints are safely restarted, including after replacing a
+bad input. Unknown or damaged checkpoint contents are never silently removed.
 Saved progress is never silently reused. Without `--resume`, its presence is an
 error unless `--overwrite` explicitly starts over. `--resume` starts a new job
 when there is no checkpoint; incompatible or damaged checkpoints are errors.

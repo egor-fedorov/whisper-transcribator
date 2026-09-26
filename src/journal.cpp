@@ -121,34 +121,57 @@ Journal::Journal(const Job& job, const Options& options, const Json& fingerprint
         if (options.overwrite && !options.resume) {
             fs::remove_all(directory);
             sync_directory(directory.parent_path());
-        } else if (!options.resume) {
-            throw std::runtime_error("Saved progress exists; use --resume or --overwrite: " +
-                                     directory.string());
         }
     }
-    private_directory(directory);
     auto manifest = directory / "manifest.json";
     if (fs::exists(manifest) || fs::is_symlink(manifest)) {
         state = read_record(manifest);
-        if (state.at("schema_version") != 1 ||
-            nlohmann::json(state.at("fingerprint")) != nlohmann::json(fingerprint))
-            throw std::runtime_error("Checkpoint is incompatible with input, models or settings; "
-                                     "use --overwrite without --resume to restart");
-        if (!state.at("chunks").is_number_integer() || state.at("chunks").get<int64_t>() < 0 ||
+        if (state.at("schema_version") != 1 || !state.at("fingerprint").is_object() ||
+            !state.at("chunks").is_number_integer() || state.at("chunks").get<int64_t>() < 0 ||
             !state.at("samples").is_number_integer() || samples() < 0 ||
             !state.at("language").is_string() || !state.at("finished").is_boolean() ||
             !state.at("published_hashes").is_object())
             throw std::runtime_error("Invalid checkpoint manifest");
         visit([](const Segment&) {});
-    } else {
-        // A crash before the first manifest cannot have committed any inference.
+        if (state.at("chunks") == 0 && !finished() && state.at("published_hashes").empty()) {
+            // Only a known, uncommitted first record may accompany an empty manifest.
+            for (const auto& entry : fs::directory_iterator(directory)) {
+                if (entry.path() == manifest)
+                    continue;
+                if (entry.path() != chunk_path(0))
+                    throw std::runtime_error("Unknown empty checkpoint contents; use --overwrite");
+                auto record = read_record(entry.path());
+                auto empty = state;
+                state["chunks"] = 1;
+                state["samples"] = record.at("end_sample");
+                state["language"] = record.at("language");
+                state["last_hash"] = sha256_text(record.dump());
+                visit([](const Segment&) {});
+                state = empty;
+            }
+            fs::remove_all(directory);
+            sync_directory(directory.parent_path());
+        } else {
+            if (!options.resume)
+                throw std::runtime_error("Saved progress exists; use --resume or --overwrite: " +
+                                         directory.string());
+            if (nlohmann::json(state.at("fingerprint")) != nlohmann::json(fingerprint))
+                throw std::runtime_error(
+                    "Checkpoint is incompatible with input, models or settings; "
+                    "use --overwrite without --resume to restart");
+            persisted = true;
+        }
+    } else if (has_checkpoint(job)) {
         if (!fs::is_empty(directory))
             throw std::runtime_error("Checkpoint manifest missing; use --overwrite to restart");
+        fs::remove(directory);
+        sync_directory(directory.parent_path());
+    }
+    if (!persisted) {
         state = {{"schema_version", 1}, {"fingerprint", fingerprint},
                  {"chunks", 0},         {"samples", 0},
                  {"language", ""},      {"last_hash", ""},
                  {"finished", false},   {"published_hashes", Json::object()}};
-        save();
     }
     for (const auto& [format, path] : job.outputs) {
         if (!fs::exists(path) && !fs::is_symlink(path))
@@ -210,6 +233,11 @@ void Journal::append(int64_t count, const Transcript& transcript) {
                    {"previous_hash", state.at("last_hash")},
                    {"language", next_language},
                    {"segments", segments}};
+    if (!persisted) {
+        private_directory(directory);
+        save();
+        persisted = true;
+    }
     write_record(chunk_path(index), record);
     state["last_hash"] = sha256_text(record.dump());
     state["samples"] = samples() + count;
@@ -218,6 +246,8 @@ void Journal::append(int64_t count, const Transcript& transcript) {
     save();
 }
 void Journal::finish() {
+    if (!persisted || !samples())
+        throw std::runtime_error("Cannot finish an empty checkpoint");
     state["finished"] = true;
     save();
 }

@@ -14,6 +14,7 @@ class Journal {
     std::unique_ptr<Lock> lock;
     fs::path directory;
     Json state;
+    bool persisted = false;
     void save();
     fs::path chunk_path(int64_t index) const;
 

@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Avoid saved-progress errors after early failures; safely restart verified zero-progress journals while preserving committed windows and unknown contents.
+- Index paths and file identities instead of comparing every output against every input; consistently reject output and mapping symlinks.
 - Handle mid-stream audio rate, format and channel layout changes without losing resampler tails or corrupting PCM.
 - Separate the 200 ms window-boundary pause threshold (`--chunk-min-silence-ms`) from inference VAD; bump chunking version to 2 and reject earlier unreleased checkpoints.
 - Decode audio incrementally and run whisper.cpp in bounded windows with `--chunk-seconds` (120 seconds by default, range 30-600), preferring VAD pauses near window boundaries.
