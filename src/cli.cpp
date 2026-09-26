@@ -60,7 +60,7 @@ int run_cli(int argc, char** argv) {
     } else {
         app.footer(
             "Commands: transcribe (default), models list/download, doctor. Python-only jobs, "
-            "batching, compute-type, prompts and word timestamps are not supported in 0.3.");
+            "batching, compute-type, prompts and word timestamps are not supported.");
         app.add_option("inputs", o.inputs, "Media files (use -- before names starting with -)");
         app.add_option("--input-dir", o.input_dir,
                        "Discover media files in filename order, non-recursive");

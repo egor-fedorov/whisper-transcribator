@@ -23,7 +23,12 @@ ctest --preset asan
 
 ASan/UBSan instrument this project's code, not an audit of upstream dependencies.
 LeakSanitizer cannot run under ptrace-based sandboxes; run these checks normally,
-rather than disabling leak detection. GCC and Clang are checked in CI.
+rather than disabling leak detection. GCC and Clang are checked in CI with
+`-DWT_WERROR=ON` for project code and tests, not dependencies. FFmpeg 5.1 is the
+minimum supported version and is checked separately. Installing the `ffmpeg`
+executable enables an additional synthetic MPEG-TS transition test; it is a test
+tool only, not a runtime dependency. `-DGGML_NATIVE=ON` is supported for local
+builds; portable packaging explicitly keeps it off.
 
 The optional inference check uses only a public 11-second JFK recording:
 

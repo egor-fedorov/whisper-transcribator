@@ -2,6 +2,8 @@
 set -euo pipefail
 binary=$1
 root=$2
+version=$3
+revision=$4
 mkdir -p "$root"
 export WHISPER_DOWNLOAD_ROOT="$root/models"
 unset WHISPER_MODEL
@@ -17,7 +19,7 @@ expect() {
 }
 expect 0 --help
 expect 0 --version
-grep -qx '0.3.0' "$root/stdout"
+test "$(<"$root/stdout")" = "$version"
 expect 2
 expect 2 --jobs 2
 expect 2 --compute-type int8
@@ -37,6 +39,7 @@ grep -q 'large-v3-turbo' "$root/stdout"
 test ! -e "$root/models"
 expect 0 doctor --device cpu --json
 grep -q 'whisper.cpp' "$root/stdout"
+grep -q "$revision" "$root/stdout"
 expect 1 "$root/missing.mp4" --local-files-only
 mkdir -p "$root/empty"
 expect 0 --input-dir "$root/empty" --local-files-only

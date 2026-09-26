@@ -31,30 +31,36 @@ COPY tests/ tests/
 ARG WT_CUDA=OFF
 ARG CUDA_ARCHITECTURES=75;80;86;89;90
 RUN cmake -S . -B .build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_CUDA=${WT_CUDA} \
+    -DGGML_NATIVE=OFF -DWT_WERROR=ON \
     -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
     && cmake --build .build/release -j4 \
     && ctest --test-dir .build/release --output-on-failure
 COPY packaging/ packaging/
-RUN apt-get update && bash packaging/package.sh .build/release /bundle \
+RUN . .build/release/generated/package.env \
+    && apt-get update && bash packaging/package.sh .build/release /bundle \
     && cp /src/ffmpeg.tar.xz /bundle/sources/ffmpeg-8.0.1.tar.xz \
     && cp /src/ffmpeg-8.0.1/COPYING.LGPLv2.1 /bundle/licenses/FFmpeg-LGPL-2.1.txt \
     && cp /src/ffmpeg-8.0.1/ffbuild/config.log /bundle/sources/ffmpeg-config.log \
-    && tar -C .build/release/_deps/whisper-src -czf /bundle/sources/whisper.cpp-927cfce.tar.gz . \
+    && tar -C .build/release/_deps/whisper-src -czf "/bundle/sources/whisper.cpp-${WT_WHISPER_REVISION}.tar.gz" . \
     && cp .build/release/_deps/whisper-src/LICENSE /bundle/licenses/whisper.cpp-MIT.txt \
-    && cp .build/release/_deps/whisper-src/examples/json.hpp /bundle/licenses/json-header-with-license.hpp \
-    && tar -C .build/release/_deps/cli11-src -czf /bundle/sources/CLI11-2.5.0.tar.gz . \
+    && cp .build/release/_deps/nlohmann_json-src/LICENSE.MIT /bundle/licenses/nlohmann-json-MIT.txt \
+    && tar -C .build/release/_deps/nlohmann_json-src -czf "/bundle/sources/nlohmann-json-${WT_JSON_VERSION}.tar.gz" . \
+    && tar -C .build/release/_deps/cli11-src -czf "/bundle/sources/CLI11-${WT_CLI11_VERSION}.tar.gz" . \
     && cp .build/release/_deps/cli11-src/LICENSE /bundle/licenses/CLI11-BSD.txt \
     && cp LICENSE /bundle/licenses/whisper-transcribator-MIT.txt \
-    && tar -czf /bundle/sources/whisper-transcribator-0.3.0.tar.gz CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE
-RUN mkdir -p /export \
+    && tar -czf "/bundle/sources/whisper-transcribator-${WT_PACKAGE_VERSION}.tar.gz" CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE
+RUN . .build/release/generated/package.env && mkdir -p /export \
     && if [ "${WT_CUDA}" = ON ]; then flavor=cuda; else flavor=cpu; fi \
-    && tar -C /bundle -czf "/export/whisper-transcribator-0.3.0-linux-x86_64-${flavor}.tar.gz" . \
+    && tar -C /bundle -czf "/export/whisper-transcribator-${WT_PACKAGE_VERSION}-linux-x86_64-${flavor}.tar.gz" . \
     && cd /export && sha256sum *.tar.gz > SHA256SUMS
 FROM scratch AS archive
 COPY --from=build /export/ /
 FROM ${RUNTIME_IMAGE} AS runtime
 COPY --from=build /bundle/ /opt/whisper-transcribator/
+RUN groupadd --gid 10001 whisper && useradd --uid 10001 --gid 10001 --no-create-home whisper \
+    && mkdir -p /models /data && chown 10001:10001 /models /data
 ENV WHISPER_DOWNLOAD_ROOT=/models NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
+USER 10001:10001
 WORKDIR /data
 ENTRYPOINT ["/opt/whisper-transcribator/bin/whisper-transcribator"]
 CMD ["--help"]

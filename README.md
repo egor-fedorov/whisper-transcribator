@@ -175,6 +175,10 @@ checks backend availability without downloading weights or running inference.
 ## Optional Docker
 
 Docker packages the **same native CLI**, not a Python backend.
+The runtime image defaults to UID/GID 10001. For host bind mounts, use your own
+UID/GID as below and create writable directories first. Existing root-owned
+checkpoints or model volumes are not automatically re-owned; explicitly repair
+their ownership on the host before running as your user.
 
 ```bash
 docker build -f packaging/Dockerfile --target runtime -t whisper-transcribator:cpu .

@@ -7,7 +7,7 @@ historical Python implementation, not another active release line.
 
 ## CPU
 
-For a developer build with system FFmpeg (5.0+), libcurl and OpenSSL:
+For a developer build with system FFmpeg (5.1+), libcurl and OpenSSL:
 
 ```bash
 cmake --preset cpu
