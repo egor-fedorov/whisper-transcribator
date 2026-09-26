@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-09-26
 
 - Unified `transcribe`, `models list/download`, `doctor` and version commands.
 - Directory sorting, numbered mappings, skip policy and CPU workers in the CLI.
