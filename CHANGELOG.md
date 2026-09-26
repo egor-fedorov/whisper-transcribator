@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- Decode audio incrementally and run whisper.cpp in bounded windows with `--chunk-seconds` (120 seconds by default, range 30-600), preferring VAD pauses near window boundaries.
+- Automatically checkpoint completed windows and add explicit `--resume` with source/model/settings validation; re-decode the completed prefix without repeating inference.
+- Stream TXT/SRT/JSON from saved fragments instead of accumulating the full transcript in RAM, and recover interrupted multi-format publication using verified output hashes.
+- Preserve JSON schema version 1 and add window size and chunking version to run metadata.
+- Add bounded-memory, checkpoint integrity, signal recovery and write-failure regressions, plus short offline windowed-inference and resume checks.
+
+These changes are available on `main`, not in the published 0.3.0 archives. Windowing limits recording-length-dependent buffers, not total model RAM or VRAM.
+
 ## 0.3.0 - 2026-09-26
 
 - Replace Python/faster-whisper with one C++17/whisper.cpp implementation.
