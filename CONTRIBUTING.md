@@ -31,12 +31,24 @@ The optional inference check uses only a public 11-second JFK recording:
 bash tests/prepare-smoke.sh .build/cpu/whisper-transcribator .build/fixtures
 bash tests/smoke.sh .build/cpu/whisper-transcribator .build/fixtures/jfk.wav \
   .build/fixtures/ggml-tiny.bin .build/fixtures/ggml-silero-v6.2.0.bin .build/smoke
+bash tests/streaming-smoke.sh .build/cpu/whisper-transcribator \
+  .build/cpu/tests/wt-audio-tests .build/fixtures/jfk.wav \
+  .build/fixtures/ggml-tiny.bin .build/fixtures/ggml-silero-v6.2.0.bin .build/streaming-smoke
 ```
 
 Use a fresh smoke output directory for each run. Fixtures/weights are downloaded
 only during preparation. CI then disables networking for actual inference.
 Do not add private recordings, transcripts or model weights. Never run full
 lectures for routine checks or benchmarks.
+
+The streaming smoke generates a 41-second fixture by repeating the public sample
+and inserting silence. It checks VAD boundaries and actual SIGTERM/resume. Pass
+`cuda` as the final argument to either smoke script for a trusted GPU check.
+Model-free pipeline tests cover SIGINT/SIGTERM/SIGKILL, checkpoint corruption,
+incompatible settings, disk-write failures and interrupted multi-format output.
+The non-sanitized memory test decodes synthetic 120/3600-second WAV files with
+fake inference and large fake text, checking that peak RSS grows by no more than
+32 MiB. It does not transcribe hour-long recordings or measure model quality.
 
 ## Layout
 

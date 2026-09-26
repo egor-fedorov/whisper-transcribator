@@ -4,6 +4,9 @@ A local C++17 CLI that turns an audio stream in a media file into TXT, SRT or JS
 Inference uses whisper.cpp; decoding and resampling use FFmpeg libraries.
 No Python runtime, external ffmpeg executable or web service is required.
 
+Streaming transcription and `--resume` on `main` are unreleased. The published
+0.3.0 archives do not include these features yet; build from source to try them.
+
 [Migration from 0.2](docs/migration.md) ·
 [Build and release](docs/releasing.md)
 
@@ -89,10 +92,59 @@ backend-specific unavailable metrics are `null`, not fabricated values.
 
 Existing outputs cause an error unless `--overwrite` is set. `--skip-existing`
 skips only when every requested output is a nonempty regular file; it is not a
-content/model validation. Incomplete sets require an explicit `--overwrite`.
+content/model validation. Incomplete sets require an explicit `--overwrite`, or
+`--resume` with a checkpoint that verifies the already published files.
 Inputs, including hardlink/symlink aliases, are protected from output collisions.
 Each output is atomically published; the three-format set is not a transaction.
 On interruption no partial file is published, but already completed files remain.
+
+## Long Recordings And Resume (Unreleased)
+
+Audio is decoded incrementally and recognized in windows of at most 120 seconds.
+Use `--chunk-seconds 30` to reduce the window, or another integer between 30 and
+600. With VAD enabled, the last suitable pause in the final quarter of a window
+is preferred as its boundary; `--vad-min-silence-ms` controls the minimum pause.
+Without such a pause, or with `--no-vad`, the maximum window is used. Windows
+do not overlap. Recognition near a cut can differ from whole-file inference.
+Language detection is locked after the first nonempty window for `--language auto`.
+
+PCM, VAD and recognition buffers cover only the current window. TXT/SRT/JSON
+are assembled incrementally from saved segments, not accumulated in RAM. Model
+weights, backend workspaces and container metadata still consume memory: this is
+not a hard RAM/VRAM cap, and a smaller window cannot make every model fit.
+
+```bash
+./bin/whisper-transcribator lecture.mp4 --output-dir transcripts --format all \
+  --model large-v3 --device cuda --chunk-seconds 120
+# After interruption, repeat the same options and add --resume:
+./bin/whisper-transcribator lecture.mp4 --output-dir transcripts --format all \
+  --model large-v3 --device cuda --chunk-seconds 120 --resume
+```
+
+Every finished window, including silence, is automatically checkpointed under
+`transcripts/.whisper-transcribator/`. This private directory contains transcript
+fragments and source paths, not audio or model weights. Keep it on persistent
+storage; mounting `/output` in Docker also preserves checkpoints. Payloads are
+removed after successful publication; small lock files remain to prevent races.
+Allow disk space for the journal and staged output files. Disk errors fail the
+job rather than reporting a completed transcript.
+
+`--resume` validates source/model hashes, requested outputs, inference options
+and backend versions. It then re-decodes and discards the completed audio prefix
+without running inference on it. There is no full PCM cache or approximate seek.
+Source hashing and prefix decoding can take time before recognition resumes.
+At most the uncommitted window must be recognized again after a crash or kill.
+Progress reports use absolute audio seconds; inference percentages are per window.
+
+Saved progress is never silently reused. Without `--resume`, its presence is an
+error unless `--overwrite` explicitly starts over. `--resume` starts a new job
+when there is no checkpoint; incompatible or damaged checkpoints are errors.
+`--resume --overwrite` permits replacing existing outputs but does not bypass
+checkpoint validation. Plain `--overwrite` discards this job's saved progress.
+If publication of multiple formats was interrupted, verified completed formats
+are retained and missing ones are reconstructed without inference. Changed output
+files require explicit overwrite permission. Existing 0.3.0 partial runs have no
+compatible checkpoints. `--skip-existing` retains its completeness-only semantics.
 
 Numbered names are `result_001.txt`, etc. `result_files.json` records the source
 mapping. Changed input lists or orphaned numbered outputs are rejected even with
@@ -127,12 +179,12 @@ Do not run untrusted media as root or mount unrelated directories.
 
 There is no server, LLM summarizer or second backend. Transcripts are not lecture
 summaries. Version 0.3 intentionally does not support jobs, batching, compute-type,
-prompts, word timestamps, chunking or resume; unknown options are errors.
+prompts or word timestamps; unknown options are errors. Chunking and resume are
+available on `main`, not in the published 0.3.0 archives.
 Python 0.2 is frozen in `v0.2.0`, not maintained alongside C++.
 
-Audio still decodes in full; VAD can allocate additional buffers. RAM is **not**
-bounded independently of recording length. Choose a smaller model if necessary.
-Bounded-memory decoding and resumable jobs are the next separate design task.
+No parallel file jobs, full audio cache, checkpoint migration between backend
+versions, or absolute memory-budget flag is provided.
 
 [Backend decision](docs/backend-selection.md) · [Contributing](CONTRIBUTING.md) ·
 [Security](SECURITY.md) · [Dependency notices](docs/third-party.md)
