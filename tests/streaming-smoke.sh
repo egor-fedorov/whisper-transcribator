@@ -16,7 +16,7 @@ for mode in plain vad; do
     extra=()
     if [[ $mode == plain ]]; then extra=(--no-vad); fi
     "$binary" "${common[@]}" "${extra[@]}" --output-dir "$root/$mode" >"$root/$mode.log" 2>&1
-    jq -e '.duration == 41 and .run.chunk_seconds == 30 and .run.chunking_version == 1
+    jq -e '.duration == 41 and .run.chunk_seconds == 30 and .run.chunking_version == 2
         and (.segments | length > 1)
         and all(.segments[]; .start >= 0 and .end >= .start and .end <= 41)
         and any(.segments[]; .start >= 30)' "$root/$mode/windows.json"

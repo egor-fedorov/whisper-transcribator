@@ -28,6 +28,7 @@ struct Options {
     std::string model = "small", download_root, language = "ru", device = "auto", vad_model;
     int cpu_threads = 0, beam_size = 5, vad_min_silence_ms = 2000;
     int chunk_seconds = 120;
+    int chunk_min_silence_ms = 200;
     bool resume = false;
     bool overwrite = false, skip_existing = false, continue_on_error = false;
     bool local_files_only = false, no_vad = false, json = false;

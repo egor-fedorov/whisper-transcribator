@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Handle mid-stream audio rate, format and channel layout changes without losing resampler tails or corrupting PCM.
+- Separate the 200 ms window-boundary pause threshold (`--chunk-min-silence-ms`) from inference VAD; bump chunking version to 2 and reject earlier unreleased checkpoints.
 - Decode audio incrementally and run whisper.cpp in bounded windows with `--chunk-seconds` (120 seconds by default, range 30-600), preferring VAD pauses near window boundaries.
 - Automatically checkpoint completed windows and add explicit `--resume` with source/model/settings validation; re-decode the completed prefix without repeating inference.
 - Stream TXT/SRT/JSON from saved fragments instead of accumulating the full transcript in RAM, and recover interrupted multi-format publication using verified output hashes.

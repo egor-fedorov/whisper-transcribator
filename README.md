@@ -103,7 +103,9 @@ On interruption no partial file is published, but already completed files remain
 Audio is decoded incrementally and recognized in windows of at most 120 seconds.
 Use `--chunk-seconds 30` to reduce the window, or another integer between 30 and
 600. With VAD enabled, the last suitable pause in the final quarter of a window
-is preferred as its boundary; `--vad-min-silence-ms` controls the minimum pause.
+is preferred as its boundary; `--chunk-min-silence-ms` controls the minimum pause
+(200 ms by default). `--vad-min-silence-ms` independently controls inference VAD
+(2000 ms by default).
 Without such a pause, or with `--no-vad`, the maximum window is used. Windows
 do not overlap. Recognition near a cut can differ from whole-file inference.
 Language detection is locked after the first nonempty window for `--language auto`.
@@ -145,6 +147,11 @@ If publication of multiple formats was interrupted, verified completed formats
 are retained and missing ones are reconstructed without inference. Changed output
 files require explicit overwrite permission. Existing 0.3.0 partial runs have no
 compatible checkpoints. `--skip-existing` retains its completeness-only semantics.
+
+Chunking version 2 also fixes mid-stream changes in decoded audio parameters.
+Earlier unreleased checkpoints cannot be resumed: finish them with the previous
+binary or explicitly restart with `--overwrite` without `--resume`. Completed
+transcripts are unaffected.
 
 Numbered names are `result_001.txt`, etc. `result_files.json` records the source
 mapping. Changed input lists or orphaned numbered outputs are rejected even with

@@ -83,6 +83,10 @@ int run_cli(int argc, char** argv) {
             ->capture_default_str();
         app.add_flag("--continue-on-error", o.continue_on_error,
                      "Continue after file failures; still exit nonzero");
+        app.add_option("--chunk-min-silence-ms", o.chunk_min_silence_ms,
+                       "Minimum VAD pause for an audio window boundary")
+            ->check(CLI::NonNegativeNumber)
+            ->capture_default_str();
         app.add_option("--model", o.model, "Catalog name or a local GGML model file")
             ->capture_default_str();
         app.add_option("--language", o.language, "Language code or auto")->capture_default_str();

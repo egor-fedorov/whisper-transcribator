@@ -16,6 +16,7 @@ Json run_metadata(const Options& options) {
             {"vad_min_silence_ms", options.vad_min_silence_ms},
             {"flash_attention", true},
             {"chunk_seconds", options.chunk_seconds},
+            {"chunk_min_silence_ms", options.chunk_min_silence_ms},
             {"chunking_version", chunking_version}};
 }
 void render_stream(std::ostream& stream, const std::string& format, const Job& job,

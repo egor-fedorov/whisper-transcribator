@@ -3,7 +3,7 @@
 
 namespace wt {
 constexpr int sample_rate = 16000;
-constexpr int chunking_version = 1;
+constexpr int chunking_version = 2;
 fs::path checkpoint_path(const Job& job);
 bool has_checkpoint(const Job& job);
 Json run_metadata(const Options& options);
