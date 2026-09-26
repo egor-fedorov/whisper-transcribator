@@ -79,8 +79,9 @@ three-file transaction.
 ## Comparison
 
 See [BENCHMARK.md](BENCHMARK.md) for measured results and caveats. The runner is
-`tools/benchmark.py`: `prepare --inputs FILE1 FILE2 FILE3`, then `cpu`, `gpu`,
-and `full`. It prepares four fixed 120-second clips and records wall time, child
+`tools/benchmark.py`: `prepare --inputs FILE1 FILE2 FILE3`, then `cpu` and `gpu`.
+An optional `full --allow-long-run` requires an explicitly agreed time budget.
+It prepares four fixed 120-second clips and records wall time, child
 peak RSS and sampled GPU process VRAM. CPU/GPU clip runs default to three repeats;
 the full first lecture runs once per backend. Private media, paths and raw output
 stay under ignored `benchmark-results/`; nothing is uploaded.
