@@ -26,7 +26,7 @@ FROM python AS cuda-libraries
 RUN pip install --target=/opt/cuda nvidia-cublas-cu12==12.8.4.1 nvidia-cudnn-cu12==9.7.1.26
 
 FROM base AS package
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md LICENSE ./
 COPY whisper_transcribator ./whisper_transcribator
 RUN pip wheel --no-deps --no-build-isolation --wheel-dir /wheels .
 

@@ -22,3 +22,8 @@ models/
 *.mkv
 *.wav
 *.mp3
+benchmark-results/
+*.egg-info/
+.env
+.env.*
+.coverage
