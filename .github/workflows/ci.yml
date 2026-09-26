@@ -76,7 +76,7 @@ jobs:
             --model /fixtures/ggml-tiny.bin --vad-model /fixtures/ggml-silero-v6.2.0.bin \
             --language en --device cpu --local-files-only --output-dir /output --format all
           jq -e '.run.backend == "whisper.cpp" and (.segments | length > 0)' .build/docker-output/jfk.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: native-cpu
           path: |
@@ -94,7 +94,7 @@ jobs:
           docker build -f packaging/Dockerfile --target archive --build-arg WT_CUDA=ON \
             --build-arg BUILD_IMAGE=nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97 \
             --output type=local,dest=.build/artifacts/cuda .
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: native-cuda-unverified-hardware
           path: .build/artifacts/cuda/*
