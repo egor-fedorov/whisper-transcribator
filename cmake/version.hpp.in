@@ -1,0 +1,3 @@
+#pragma once
+#define WT_VERSION "@PROJECT_VERSION@"
+#define WT_WHISPER_REVISION "927cfce34f31707e17f2bff35c349632fb9e2c3a"

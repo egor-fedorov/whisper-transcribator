@@ -1,0 +1,2 @@
+#pragma once
+inline constexpr const char *wt_model_catalog = R"catalog(@WT_MODEL_CATALOG@)catalog";
