@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import importlib
 import json
+import logging
 import os
 import re
 import sys
+import tempfile
+import time
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
@@ -60,9 +64,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=("text", "srt", "json"),
+        choices=("text", "srt", "json", "all"),
         default=DEFAULT_OUTPUT_FORMAT,
         help="Output format.",
+    )
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Allow replacing existing transcripts."
     )
     parser.add_argument(
         "--language",
@@ -150,8 +157,14 @@ def validate_args(args: argparse.Namespace) -> None:
     if args.output and args.output_dir:
         raise SystemExit("Use either --output or --output-dir, not both.")
 
+    if args.format == "all" and (args.output or not args.output_dir):
+        raise SystemExit("--format all requires --output-dir and cannot be used with --output.")
+
     if args.batch_size < 1:
         raise SystemExit("--batch-size must be >= 1.")
+
+    if args.batch_size > 1 and args.no_vad:
+        raise SystemExit("--batch-size > 1 requires VAD; remove --no-vad or use --batch-size 1.")
 
     if args.beam_size < 1:
         raise SystemExit("--beam-size must be >= 1.")
@@ -181,10 +194,7 @@ def normalize_language(language: str) -> str | None:
 
 
 def resolve_media_path(path_str: str) -> Path:
-    path = Path(path_str).expanduser()
-    if not path.is_absolute():
-        path = (Path.cwd() / path).resolve()
-    return path
+    return Path(path_str).expanduser().resolve()
 
 
 def resolve_output_path(
@@ -204,6 +214,46 @@ def resolve_output_path(
     return input_path.with_suffix(extension)
 
 
+def same_file(first: Path, second: Path) -> bool:
+    return first.resolve() == second.resolve() or (
+        first.exists() and second.exists() and first.samefile(second)
+    )
+
+
+def prepare_jobs(args: argparse.Namespace) -> list[tuple[Path, dict[str, Path]]]:
+    inputs = [resolve_media_path(value) for value in args.inputs]
+    for path in inputs:
+        if not path.is_file():
+            raise SystemExit(f"Input file not found: {path}")
+
+    formats = tuple(EXTENSIONS) if args.format == "all" else (args.format,)
+    jobs = []
+    destinations: list[Path] = []
+    for source in inputs:
+        outputs = {}
+        for output_format in formats:
+            target = resolve_output_path(source, args.output, args.output_dir, output_format)
+            if any(same_file(target, path) for path in inputs):
+                raise SystemExit(f"Output would overwrite an input file: {target}")
+            if any(same_file(target, path) for path in destinations):
+                raise SystemExit(f"Multiple outputs resolve to the same file: {target}")
+            if target.exists() and (not args.overwrite or not target.is_file()):
+                raise SystemExit(f"Output already exists: {target}. Use --overwrite to replace a transcript.")
+            destinations.append(target)
+            outputs[output_format] = target
+        jobs.append((source, outputs))
+
+    # Check destination access before downloading a model or processing hours of audio.
+    for directory in {path.parent for path in destinations}:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryFile(dir=directory):
+                pass
+        except OSError as exc:
+            raise SystemExit(f"Cannot write results in {directory}: {exc}") from exc
+    return jobs
+
+
 def looks_like_local_path(model_value: str) -> bool:
     return model_value.startswith(("/", "./", "../", "~"))
 
@@ -213,8 +263,8 @@ def resolve_model_reference(model_value: str) -> str:
 
     if candidate.exists() or looks_like_local_path(model_value):
         resolved = resolve_media_path(model_value)
-        if not resolved.exists():
-            raise SystemExit(f"Model path not found: {resolved}")
+        if not resolved.is_dir():
+            raise SystemExit(f"Model directory not found: {resolved}")
         return str(resolved)
 
     return model_value.strip()
@@ -228,15 +278,50 @@ def default_download_root_label(download_root: str | None) -> str:
     return download_root if download_root else "standard Hugging Face cache"
 
 
+def model_problems(directory: Path) -> list[str]:
+    problems = []
+    for name in ("model.bin", "config.json", "tokenizer.json"):
+        path = directory / name
+        if not path.is_file() or path.stat().st_size == 0:
+            problems.append(f"missing/empty {name}")
+        elif name.endswith(".json"):
+            try:
+                json.loads(path.read_text(encoding="utf-8"))
+            except (ValueError, OSError) as exc:
+                problems.append(f"invalid {name}: {exc}")
+    return problems
+
+
+def validate_model_directory(directory: Path) -> str:
+    problems = model_problems(directory)
+    if problems:
+        raise SystemExit(f"Incomplete model directory {directory}: {', '.join(problems)}")
+    return str(directory)
+
+
 def list_models(download_root: str | None) -> str:
     lines = [f"Model download root: {default_download_root_label(download_root)}", ""]
+    try:
+        utils = importlib.import_module("faster_whisper.utils")
+    except ModuleNotFoundError:
+        utils = None
     for model_name in KNOWN_MODEL_NAMES:
+        status = "on-demand"
+        target = None
         if download_root:
             target = resolve_media_path(download_root) / sanitize_model_name(model_name)
-            status = "cached" if target.is_dir() else "on-demand"
-            lines.append(f"{model_name:18} {status:9} {target}")
-        else:
-            lines.append(f"{model_name}")
+            if target.is_dir():
+                status = "incomplete" if model_problems(target) else "cached"
+        if status != "cached" and utils is not None:
+            try:
+                snapshot = Path(utils.download_model(
+                    model_name, cache_dir=download_root, local_files_only=True
+                ))
+                status = "incomplete" if model_problems(snapshot) else "cached"
+                target = snapshot
+            except Exception:
+                pass
+        lines.append(f"{model_name:18} {status:10} {target or ''}")
 
     lines.append("")
     lines.append("You can also pass a Hugging Face repo id or a local converted model directory to --model.")
@@ -244,12 +329,22 @@ def list_models(download_root: str | None) -> str:
 
 
 def choose_device(requested: str) -> str:
-    if requested != "auto":
-        return requested
-
-    if Path("/dev/nvidia0").exists() or shutil_which("nvidia-smi"):
-        return "cuda"
-
+    if requested == "cpu":
+        return "cpu"
+    try:
+        ctranslate2 = importlib.import_module("ctranslate2")
+        available = ctranslate2.get_cuda_device_count() > 0
+        if available:
+            ctranslate2.get_supported_compute_types("cuda")
+            for library in ("libcublas.so.12", "libcudnn.so.9"):
+                ctypes.CDLL(library)
+            return "cuda"
+        reason = "no CUDA devices visible to CTranslate2"
+    except (ImportError, RuntimeError, OSError) as exc:
+        reason = str(exc)
+    if requested == "cuda":
+        raise SystemExit(f"CUDA unavailable: {reason}. Use the CUDA image with --gpus all.")
+    print(f"Using CPU: {reason}", file=sys.stderr)
     return "cpu"
 
 
@@ -258,12 +353,6 @@ def choose_compute_type(requested: str, device: str) -> str:
         return requested
 
     return "float16" if device == "cuda" else "int8"
-
-
-def shutil_which(binary: str) -> str | None:
-    from shutil import which
-
-    return which(binary)
 
 
 def format_timestamp(
@@ -291,13 +380,13 @@ def render_text(segments: list[object]) -> str:
 
 def render_srt(segments: list[object]) -> str:
     blocks: list[str] = []
-    for index, segment in enumerate(segments, start=1):
+    for segment in segments:
         text = segment.text.strip()
         if not text:
             continue
         start = format_timestamp(segment.start, always_include_hours=True, decimal_marker=",")
         end = format_timestamp(segment.end, always_include_hours=True, decimal_marker=",")
-        blocks.append(f"{index}\n{start} --> {end}\n{text}")
+        blocks.append(f"{len(blocks) + 1}\n{start} --> {end}\n{text}")
     return "\n\n".join(blocks).strip() + "\n"
 
 
@@ -346,8 +435,9 @@ def write_output(
     model_name: str,
     info: object,
     segments: list[object],
+    overwrite: bool = False,
 ) -> None:
-    if not segments:
+    if not any(segment.text.strip() for segment in segments):
         raise SystemExit(f"No transcript produced for: {input_path}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -361,7 +451,29 @@ def write_output(
     else:
         raise SystemExit(f"Unsupported output format: {output_format}")
 
-    output_path.write_text(content, encoding="utf-8")
+    atomic_write(output_path, content, overwrite)
+
+
+def atomic_write(output_path: Path, content: str, overwrite: bool = False) -> None:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=output_path.parent,
+            prefix=".whisper-", suffix=".tmp", delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+            os.fchmod(stream.fileno(), 0o644)
+        if overwrite:
+            os.replace(temporary, output_path)
+        else:
+            # Publish without a race that could clobber another writer's result.
+            os.link(temporary, output_path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def ensure_model_is_available(
@@ -371,27 +483,25 @@ def ensure_model_is_available(
     local_files_only: bool,
 ) -> str:
     if Path(model_reference).exists():
-        return model_reference
+        return validate_model_directory(Path(model_reference))
 
+    legacy_problems = []
     if download_root:
         target_dir = resolve_media_path(download_root) / sanitize_model_name(model_reference)
         if target_dir.is_dir():
-            return str(target_dir)
+            legacy_problems = model_problems(target_dir)
+            if not legacy_problems:
+                return str(target_dir)
 
-        utils = importlib.import_module("faster_whisper.utils")
-        try:
-            downloaded_path = utils.download_model(
-                model_reference,
-                output_dir=str(target_dir),
-                local_files_only=local_files_only,
-            )
-        except Exception as exc:
-            raise SystemExit(
-                f"Unable to prepare model '{model_reference}' in {target_dir}: {exc}"
-            ) from exc
-        return str(downloaded_path)
-
-    return model_reference
+    utils = importlib.import_module("faster_whisper.utils")
+    try:
+        downloaded_path = utils.download_model(
+            model_reference, cache_dir=download_root, local_files_only=local_files_only,
+        )
+    except Exception as exc:
+        detail = f" Legacy cache: {', '.join(legacy_problems)}." if legacy_problems else ""
+        raise SystemExit(f"Unable to prepare model '{model_reference}': {exc}.{detail}") from exc
+    return validate_model_directory(Path(downloaded_path))
 
 
 def build_transcriber(
@@ -408,10 +518,9 @@ def build_transcriber(
         "device": device,
         "compute_type": compute_type,
         "cpu_threads": cpu_threads,
+        "download_root": download_root,
+        "local_files_only": local_files_only,
     }
-    if not Path(model_reference).exists():
-        kwargs["download_root"] = download_root
-        kwargs["local_files_only"] = local_files_only
 
     try:
         model = faster_whisper.WhisperModel(model_reference, **kwargs)
@@ -449,8 +558,21 @@ def transcribe_file(
     if batch_size > 1:
         transcribe_kwargs["batch_size"] = batch_size
 
+    started = time.monotonic()
+    last_report = started - 30
     segments, info = transcriber.transcribe(str(input_path), **transcribe_kwargs)
-    return list(segments), info
+    result = []
+    for segment in segments:
+        result.append(segment)
+        now = time.monotonic()
+        if now - last_report >= 30:
+            print(
+                f"Progress {input_path.name}: {format_timestamp(segment.end)} / "
+                f"{format_timestamp(info.duration)}; elapsed {now - started:.0f}s",
+                file=sys.stderr, flush=True,
+            )
+            last_report = now
+    return result, info
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -462,11 +584,16 @@ def main(argv: list[str] | None = None) -> int:
         print(list_models(args.download_root))
         return 0
 
+    jobs = prepare_jobs(args)
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+    logging.getLogger("faster_whisper").setLevel(logging.INFO)
     faster_whisper = load_faster_whisper()
     language = normalize_language(args.language)
     device = choose_device(args.device)
     compute_type = choose_compute_type(args.compute_type, device)
     model_reference = resolve_model_reference(args.model)
+    print(f"Model: {args.model}; device: {device}; compute: {compute_type}; batch: {args.batch_size}",
+          file=sys.stderr, flush=True)
     prepared_model = ensure_model_is_available(
         faster_whisper=faster_whisper,
         model_reference=model_reference,
@@ -484,37 +611,35 @@ def main(argv: list[str] | None = None) -> int:
         local_files_only=args.local_files_only,
     )
 
-    for raw_input in args.inputs:
-        input_path = resolve_media_path(raw_input)
-        if not input_path.is_file():
-            raise SystemExit(f"Input file not found: {input_path}")
-
-        output_path = resolve_output_path(
-            input_path=input_path,
-            output=args.output,
-            output_dir=args.output_dir,
-            output_format=args.format,
-        )
-
-        print(f"Transcribing {input_path} -> {output_path}", file=sys.stderr)
-        segments, info = transcribe_file(
-            transcriber=transcriber,
-            input_path=input_path,
-            language=language,
-            beam_size=args.beam_size,
-            initial_prompt=args.initial_prompt,
-            word_timestamps=args.word_timestamps,
-            vad_filter=not args.no_vad,
-            vad_min_silence_ms=args.vad_min_silence_ms,
-            batch_size=args.batch_size,
-        )
-        write_output(
-            input_path=input_path,
-            output_path=output_path,
-            output_format=args.format,
-            model_name=args.model,
-            info=info,
-            segments=segments,
-        )
+    for input_path, outputs in jobs:
+        started = time.monotonic()
+        print(f"Transcribing {input_path} -> {', '.join(map(str, outputs.values()))}",
+              file=sys.stderr, flush=True)
+        try:
+            segments, info = transcribe_file(
+                transcriber=transcriber,
+                input_path=input_path,
+                language=language,
+                beam_size=args.beam_size,
+                initial_prompt=args.initial_prompt,
+                word_timestamps=args.word_timestamps,
+                vad_filter=not args.no_vad,
+                vad_min_silence_ms=args.vad_min_silence_ms,
+                batch_size=args.batch_size,
+            )
+            for output_format, output_path in outputs.items():
+                write_output(
+                    input_path=input_path, output_path=output_path,
+                    output_format=output_format, model_name=args.model,
+                    info=info, segments=segments, overwrite=args.overwrite,
+                )
+        except Exception as exc:
+            raise SystemExit(f"Failed to transcribe {input_path}: {exc}") from exc
+        except KeyboardInterrupt:
+            print(f"Interrupted: {input_path}; this file may need to be transcribed again.",
+                  file=sys.stderr)
+            return 130
+        print(f"Done: {input_path.name}; {len(segments)} segments; "
+              f"elapsed {time.monotonic() - started:.1f}s", file=sys.stderr, flush=True)
 
     return 0
