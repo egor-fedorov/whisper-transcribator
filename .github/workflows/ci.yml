@@ -80,6 +80,8 @@ jobs:
           jq -e '.run.backend == "whisper.cpp" and (.text | ascii_downcase | contains("country"))' .build/clean-output/jfk.json
       - run: docker build -f packaging/Dockerfile --target runtime -t whisper-transcribator:test .
       - run: |
+          # Only public test fixtures are shared with the image's different default UID.
+          chmod a+r .build/fixtures/jfk.wav .build/fixtures/ggml-tiny.bin
           test "$(docker run --rm --entrypoint id whisper-transcribator:test -u)" = 10001
           docker run --rm --network none --entrypoint /bin/bash \
             -v "$PWD/.build/fixtures:/fixtures:ro" whisper-transcribator:test -euc '
