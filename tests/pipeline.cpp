@@ -150,6 +150,46 @@ int main(int argc, char** argv) {
     root = temporary;
     std::string name;
     try {
+        name = "early failures leave no saved progress";
+        Fixture early(root / "early");
+        {
+            Journal journal(early.job, early.options, early.fingerprint());
+            Audio audio;
+            rejects([&] { run(early, journal, audio, 0); });
+            require(!has_checkpoint(early.job));
+            rejects([&] { Journal busy(early.job, early.options, early.fingerprint()); });
+        }
+        atomic_write(early.job.source, "replacement input", true);
+        {
+            Journal journal(early.job, early.options, early.fingerprint());
+            require(!has_checkpoint(early.job));
+        }
+        name = "empty checkpoint recovery and unknown contents";
+        Fixture zero(root / "zero");
+        auto zero_path = checkpoint_path(zero.job);
+        {
+            Journal journal(zero.job, zero.options, zero.fingerprint());
+            journal.append(16, {"en", 0.001, {{0, 0.001, "orphan", 0}}});
+        }
+        auto zero_manifest = Json::parse(read_text(zero_path / "manifest.json"));
+        zero_manifest["chunks"] = zero_manifest["samples"] = 0;
+        zero_manifest["language"] = zero_manifest["last_hash"] = "";
+        atomic_write(zero_path / "manifest.json", zero_manifest.dump(), true);
+        atomic_write(zero_path / "unknown", "preserve");
+        rejects([&] { Journal journal(zero.job, zero.options, zero.fingerprint()); });
+        require(read_text(zero_path / "unknown") == "preserve");
+        fs::remove(zero_path / "unknown");
+        atomic_write(zero.job.source, "replacement", true);
+        {
+            Journal journal(zero.job, zero.options, zero.fingerprint());
+            require(!has_checkpoint(zero.job));
+        }
+        fs::create_directory(zero_path);
+        fs::permissions(zero_path, fs::perms::owner_all);
+        {
+            Journal journal(zero.job, zero.options, zero.fingerprint());
+            require(!has_checkpoint(zero.job));
+        }
         name = "bounded windows and byte-identical resume";
         Fixture f(root / "roundtrip");
         auto fingerprint = f.fingerprint();
@@ -300,6 +340,7 @@ int main(int argc, char** argv) {
         std::string saved_manifest;
         {
             Journal journal(disk.job, disk.options, disk.fingerprint());
+            journal.append(16, {"en", 0.001, {{0, 0.001, "committed", 0}}});
             saved_manifest = read_text(manifest);
             fs::remove(manifest);
             fs::create_directory(manifest);
@@ -310,7 +351,7 @@ int main(int argc, char** argv) {
         disk.options.resume = true;
         {
             Journal journal(disk.job, disk.options, disk.fingerprint());
-            require(journal.samples() == 0);
+            require(journal.samples() == 16);
             Audio audio;
             run(disk, journal, audio);
         }

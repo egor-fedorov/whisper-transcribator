@@ -1,13 +1,50 @@
 #include "pipeline.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <iomanip>
 #include <iostream>
 #include <regex>
 #include <set>
 #include <sstream>
+#include <sys/stat.h>
 
 namespace wt {
+namespace {
+struct Identity {
+    fs::path path;
+    std::pair<dev_t, ino_t> inode{};
+    bool exists = false;
+    explicit Identity(const fs::path& canonical) : path(canonical) {
+        struct stat st {};
+        if (stat(path.c_str(), &st) == 0) {
+            exists = true;
+            inode = {st.st_dev, st.st_ino};
+        } else if (errno != ENOENT && errno != ENOTDIR) {
+            throw std::runtime_error("Cannot inspect path: " + path.string());
+        }
+    }
+};
+struct PathIndex {
+    std::set<fs::path> paths;
+    std::set<std::pair<dev_t, ino_t>> inodes;
+    bool contains(const Identity& id) const {
+        return paths.count(id.path) || (id.exists && inodes.count(id.inode));
+    }
+    void insert(const Identity& id) {
+        paths.insert(id.path);
+        if (id.exists)
+            inodes.insert(id.inode);
+    }
+};
+fs::path output_path(const fs::path& raw) {
+    // Resolve directory aliases, but never follow the output's final component.
+    auto path = resolve_path(raw.parent_path().empty() ? "." : raw.parent_path()) / raw.filename();
+    if (fs::is_symlink(path))
+        throw std::runtime_error("Unsafe output symlink: " + path.string());
+    return path;
+}
+} // namespace
 std::vector<Job> prepare_jobs(const Options& o) {
     if (o.inputs.empty() && o.input_dir.empty())
         throw UsageError("At least one input is required");
@@ -45,9 +82,13 @@ std::vector<Job> prepare_jobs(const Options& o) {
         for (const auto& input : o.inputs)
             inputs.push_back(resolve_path(input));
     }
-    for (const auto& path : inputs)
+    PathIndex sources, outputs;
+    for (const auto& path : inputs) {
         if (!fs::is_regular_file(path))
             throw std::runtime_error("Input file not found: " + path.string());
+        sources.insert(Identity(path));
+    }
+    auto output_directory = o.output_dir.empty() ? fs::path{} : resolve_path(o.output_dir);
     std::vector<Job> jobs, pending;
     std::vector<fs::path> destinations;
     const std::map<std::string, std::string> extensions = {
@@ -57,21 +98,20 @@ std::vector<Job> prepare_jobs(const Options& o) {
         for (const auto& [format, extension] : extensions) {
             if (o.format != "all" && format != o.format)
                 continue;
-            auto directory =
-                o.output_dir.empty() ? inputs[i].parent_path() : resolve_path(o.output_dir);
+            auto directory = o.output_dir.empty() ? inputs[i].parent_path() : output_directory;
             std::ostringstream stem;
             if (o.naming == "numbered")
                 stem << o.prefix << '_' << std::setfill('0') << std::setw(3) << i + 1;
             else
                 stem << inputs[i].stem().string();
-            auto target =
-                o.output.empty() ? directory / (stem.str() + extension) : resolve_path(o.output);
-            for (const auto& source : inputs)
-                if (same_file(target, source))
-                    throw std::runtime_error("Output would overwrite input: " + target.string());
-            for (const auto& other : destinations)
-                if (same_file(target, other))
-                    throw std::runtime_error("Output collision: " + target.string());
+            auto target = output_path(o.output.empty() ? directory / (stem.str() + extension)
+                                                       : fs::path(o.output));
+            Identity identity(target);
+            if (sources.contains(identity))
+                throw std::runtime_error("Output would overwrite input: " + target.string());
+            if (outputs.contains(identity))
+                throw std::runtime_error("Output collision: " + target.string());
+            outputs.insert(identity);
             destinations.push_back(target);
             job.outputs[format] = target;
         }
@@ -98,10 +138,9 @@ std::vector<Job> prepare_jobs(const Options& o) {
     for (const auto& directory : directories)
         probe_directory(directory);
     if (o.naming == "numbered" && !jobs.empty()) {
-        auto path = resolve_path(o.output_dir) / (o.prefix + "_files.json");
-        for (const auto& source : inputs)
-            if (same_file(path, source))
-                throw std::runtime_error("Mapping would overwrite input");
+        auto path = output_path(output_directory / (o.prefix + "_files.json"));
+        if (sources.contains(Identity(path)))
+            throw std::runtime_error("Mapping would overwrite input");
         Json mapping = Json::array();
         for (size_t i = 0; i < jobs.size(); ++i) {
             Json outputs = Json::object();

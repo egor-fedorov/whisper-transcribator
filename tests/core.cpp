@@ -117,6 +117,45 @@ int main() {
         o.inputs.push_back((root / "a.wav").string());
         rejects([&] { prepare_jobs(o); });
     });
+    test("output symlinks are rejected before skip and overwrite", [](auto root) {
+        auto o = input(root);
+        atomic_write(root / "target", "preserve");
+        fs::create_symlink(root / "target", root / "a.txt");
+        for (bool explicit_output : {false, true}) {
+            o.output = explicit_output ? (root / "a.txt").string() : "";
+            for (bool overwrite : {false, true}) {
+                o.overwrite = overwrite;
+                o.skip_existing = true;
+                rejects([&] { prepare_jobs(o); });
+            }
+        }
+        require(read_text(root / "target") == "preserve");
+        fs::remove(root / "a.txt");
+        fs::create_symlink(root / "missing", root / "a.txt");
+        rejects([&] { prepare_jobs(o); });
+    });
+    test("directory symlinks and output inode collisions", [](auto root) {
+        auto o = input(root);
+        fs::create_directory(root / "out");
+        fs::create_directory_symlink(root / "out", root / "alias");
+        o.output_dir = (root / "alias").string();
+        require(prepare_jobs(o)[0].outputs.at("text") == root / "out/a.txt");
+        atomic_write(root / "b.mp4", "media");
+        o.inputs.push_back((root / "b.mp4").string());
+        atomic_write(root / "out/a.txt", "old");
+        fs::create_hard_link(root / "out/a.txt", root / "out/b.txt");
+        o.overwrite = true;
+        rejects([&] { prepare_jobs(o); });
+    });
+    test("numbered mapping symlink is rejected", [](auto root) {
+        auto o = input(root);
+        o.naming = "numbered";
+        o.output_dir = root.string();
+        prepare_jobs(o);
+        fs::rename(root / "result_files.json", root / "mapping");
+        fs::create_symlink(root / "mapping", root / "result_files.json");
+        rejects([&] { prepare_jobs(o); });
+    });
     test("output versus another input", [](auto root) {
         auto o = input(root);
         atomic_write(root / "a.txt", "text input");
