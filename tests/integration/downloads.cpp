@@ -2,6 +2,7 @@
 #include "support/cancel.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
+#include "support/test.hpp"
 #include <arpa/inet.h>
 #include <atomic>
 #include <fcntl.h>
@@ -12,21 +13,9 @@
 #include <unistd.h>
 
 using namespace wt;
+using namespace wt::test;
 namespace {
 const std::string payload = "abcdefghijklmnopqrstuvwxyz012345";
-void require(bool ok) {
-    if (!ok)
-        throw std::runtime_error("HTTPS download assertion failed");
-}
-template <class F> void rejects(F action) {
-    bool failed = false;
-    try {
-        action();
-    } catch (const std::exception&) {
-        failed = true;
-    }
-    require(failed);
-}
 class Server {
     std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> context{SSL_CTX_new(TLS_server_method()),
                                                               SSL_CTX_free};
@@ -130,71 +119,68 @@ void prefix(const Model& model, const fs::path& root) {
     close(fd);
     atomic_write(path, payload.substr(0, 8), true);
 }
+void transfers(const fs::path& root, const fs::path& cert, const fs::path& key) {
+    Server server(cert, key);
+    auto model = [&](const std::string& route) {
+        return Model{route, "fixture.bin", server.url + "/" + route, sha256_text(payload),
+                     payload.size()};
+    };
+    for (const auto& mode : {"resume", "ignore", "416"}) {
+        auto m = model(mode);
+        auto directory = root / mode;
+        prefix(m, directory);
+        require(read_text(ensure_cached(m, directory, false).path) == payload);
+        require(!fs::exists(partial_model_path(m, directory)));
+    }
+    auto cut = model("cut");
+    rejects([&] { ensure_cached(cut, root / "cut", false); });
+    require(fs::file_size(partial_model_path(cut, root / "cut")) == 8);
+    rejects([&] { ensure_cached(cut, root / "cut", true); });
+    require(read_text(ensure_cached(cut, root / "cut", false).path) == payload);
+    auto wrong = model("wrong");
+    prefix(wrong, root / "wrong");
+    rejects([&] { ensure_cached(wrong, root / "wrong", false); });
+    require(read_text(partial_model_path(wrong, root / "wrong")) == payload.substr(0, 8));
+    auto bad = model("bad");
+    rejects([&] { ensure_cached(bad, root / "bad", false); });
+    require(!fs::exists(partial_model_path(bad, root / "bad")) &&
+            !fs::exists(root / "bad/fixture.bin"));
+    auto cancelled = model("cancel");
+    bool stopped = false;
+    try {
+        ensure_cached(cancelled, root / "cancel", false);
+    } catch (const Cancelled&) {
+        stopped = true;
+    }
+    stop_signal = 0;
+    require(stopped && !fs::exists(root / "cancel/fixture.bin"));
+    auto tls = model("tls");
+    {
+        ScopedEnv untrusted("SSL_CERT_FILE", std::nullopt);
+        rejects([&] { ensure_cached(tls, root / "tls", false); });
+    }
+    require(!fs::exists(root / "tls/fixture.bin"));
+    auto unsafe = model("unsafe");
+    fs::create_directories(root / "unsafe");
+    atomic_write(root / "victim", "preserve");
+    fs::create_symlink(root / "victim", partial_model_path(unsafe, root / "unsafe"));
+    rejects([&] { ensure_cached(unsafe, root / "unsafe", false); });
+    require(read_text(root / "victim") == "preserve");
+    fs::remove(partial_model_path(unsafe, root / "unsafe"));
+    fs::create_hard_link(root / "victim", partial_model_path(unsafe, root / "unsafe"));
+    rejects([&] { ensure_cached(unsafe, root / "unsafe", false); });
+    require(read_text(root / "victim") == "preserve");
+    require(server.ranges >= 5);
+}
 } // namespace
 int main(int argc, char** argv) {
-    if (argc != 4)
+    if (argc != 3)
         return 2;
-    fs::path root = argv[3];
     signal(SIGPIPE, SIG_IGN);
     install_signal_handlers();
-    setenv("SSL_CERT_FILE", argv[1], 1);
-    setenv("NO_PROXY", "127.0.0.1", 1);
-    setenv("no_proxy", "127.0.0.1", 1);
-    try {
-        Server server(argv[1], argv[2]);
-        auto model = [&](const std::string& route) {
-            return Model{route, "fixture.bin", server.url + "/" + route, sha256_text(payload),
-                         payload.size()};
-        };
-        for (const auto& mode : {"resume", "ignore", "416"}) {
-            auto m = model(mode);
-            auto directory = root / mode;
-            prefix(m, directory);
-            require(read_text(ensure_cached(m, directory, false).path) == payload);
-            require(!fs::exists(partial_model_path(m, directory)));
-        }
-        auto cut = model("cut");
-        rejects([&] { ensure_cached(cut, root / "cut", false); });
-        require(fs::file_size(partial_model_path(cut, root / "cut")) == 8);
-        rejects([&] { ensure_cached(cut, root / "cut", true); });
-        require(read_text(ensure_cached(cut, root / "cut", false).path) == payload);
-        auto wrong = model("wrong");
-        prefix(wrong, root / "wrong");
-        rejects([&] { ensure_cached(wrong, root / "wrong", false); });
-        require(read_text(partial_model_path(wrong, root / "wrong")) == payload.substr(0, 8));
-        auto bad = model("bad");
-        rejects([&] { ensure_cached(bad, root / "bad", false); });
-        require(!fs::exists(partial_model_path(bad, root / "bad")) &&
-                !fs::exists(root / "bad/fixture.bin"));
-        auto cancelled = model("cancel");
-        bool stopped = false;
-        try {
-            ensure_cached(cancelled, root / "cancel", false);
-        } catch (const Cancelled&) {
-            stopped = true;
-        }
-        stop_signal = 0;
-        require(stopped && !fs::exists(root / "cancel/fixture.bin"));
-        auto tls = model("tls");
-        unsetenv("SSL_CERT_FILE");
-        rejects([&] { ensure_cached(tls, root / "tls", false); });
-        setenv("SSL_CERT_FILE", argv[1], 1);
-        require(!fs::exists(root / "tls/fixture.bin"));
-        auto unsafe = model("unsafe");
-        fs::create_directories(root / "unsafe");
-        atomic_write(root / "victim", "preserve");
-        fs::create_symlink(root / "victim", partial_model_path(unsafe, root / "unsafe"));
-        rejects([&] { ensure_cached(unsafe, root / "unsafe", false); });
-        require(read_text(root / "victim") == "preserve");
-        fs::remove(partial_model_path(unsafe, root / "unsafe"));
-        fs::create_hard_link(root / "victim", partial_model_path(unsafe, root / "unsafe"));
-        rejects([&] { ensure_cached(unsafe, root / "unsafe", false); });
-        require(read_text(root / "victim") == "preserve");
-        require(server.ranges >= 5);
-    } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
-        return 1;
-    }
-    std::cout
-        << "HTTPS ranges, interrupted/cancelled transfers, TLS and partial file safety passed\n";
+    ScopedEnv cert("SSL_CERT_FILE", argv[1]);
+    ScopedEnv proxy("NO_PROXY", "127.0.0.1");
+    ScopedEnv lower_proxy("no_proxy", "127.0.0.1");
+    return run_tests({{"HTTPS transfer, resume, TLS and partial-file safety",
+                       [&](const fs::path& root) { transfers(root, argv[1], argv[2]); }}});
 }

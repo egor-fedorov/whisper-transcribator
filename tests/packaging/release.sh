@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-helper=$(realpath "$(dirname "$0")/../packaging/release.sh")
+helper=$(realpath "$(dirname "$0")/../../packaging/release.sh")
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 mkdir -p "$root/repo" "$root/bin"

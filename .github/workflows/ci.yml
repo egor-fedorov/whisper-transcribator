@@ -50,7 +50,7 @@ jobs:
           echo "CCACHE_MAXSIZE=500M" >> "$GITHUB_ENV"
       - run: find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-18 --dry-run --Werror {} +
       - run: find tests packaging -type f -name '*.sh' -exec shellcheck {} +
-      - run: bash tests/release.sh
+      - run: bash tests/packaging/release.sh
       - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         env:
           CC: ${{ matrix.cc }}
@@ -63,15 +63,15 @@ jobs:
           ccache --show-stats
           ccache --print-stats | awk '$1 ~ /cache_hit/ { hits += $2 } END { exit !(hits > 0) }'
       - run: ctest --test-dir .build/ci --output-on-failure
-      - run: bash tests/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
+      - run: bash tests/smoke/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
       - if: matrix.sanitize == 'OFF'
-        run: bash tests/model-hash.sh .build/ci/whisper-transcribator .build/fixtures .build/model-hash
+        run: bash tests/smoke/model-hash.sh .build/ci/whisper-transcribator .build/fixtures .build/model-hash
       - run: |
-          sudo unshare --net bash tests/smoke.sh "$PWD/.build/ci/whisper-transcribator" \
+          sudo unshare --net bash tests/smoke/smoke.sh "$PWD/.build/ci/whisper-transcribator" \
             "$PWD/.build/fixtures/jfk.wav" "$PWD/.build/fixtures/ggml-tiny.bin" \
             "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline"
-          sudo unshare --net bash tests/streaming-smoke.sh "$PWD/.build/ci/whisper-transcribator" \
-            "$PWD/.build/ci/tests/wt-audio-tests" "$PWD/.build/fixtures/jfk.wav" \
+          sudo unshare --net bash tests/smoke/streaming-smoke.sh "$PWD/.build/ci/whisper-transcribator" \
+            "$PWD/.build/ci/tests/wt-audio-fixture" "$PWD/.build/fixtures/jfk.wav" \
             "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
             "$PWD/.build/offline-streaming"
   package:
@@ -82,13 +82,13 @@ jobs:
       - name: Build CPU archive (no model downloads or inference)
         run: docker build -f packaging/Dockerfile --target archive --output type=local,dest=.build/artifacts/cpu .
       - name: Verify archive, dependencies and doctor
-        run: bash tests/package.sh .build/artifacts/cpu
+        run: bash tests/packaging/package.sh .build/artifacts/cpu
       - name: Install QEMU for the loader check
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user
       - name: Check non-AVX2 backend loading (no inference, 30s limit)
-        run: bash tests/portable.sh .build/artifacts/cpu/unpacked .build/portable
+        run: bash tests/packaging/portable.sh .build/artifacts/cpu/unpacked .build/portable
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: native-cpu
@@ -108,9 +108,9 @@ jobs:
           name: native-cpu
           path: .build/artifacts/cpu
       - name: Verify the exact archive produced by package
-        run: bash tests/package.sh .build/artifacts/cpu
+        run: bash tests/packaging/package.sh .build/artifacts/cpu
       - name: Prepare public 11-second fixture and tiny weights
-        run: bash tests/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
+        run: bash tests/smoke/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
       - name: Run archive inference offline in clean Ubuntu
         run: |
           mkdir -p .build/clean-output
@@ -158,15 +158,15 @@ jobs:
           name: native-cpu
           path: .build/artifacts/cpu
       - name: Verify the exact archive produced by package
-        run: bash tests/package.sh .build/artifacts/cpu
+        run: bash tests/packaging/package.sh .build/artifacts/cpu
       - name: Install QEMU for opt-in inference
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user
       - name: Prepare public 11-second fixture and tiny weights
-        run: bash tests/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
+        run: bash tests/smoke/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
       - name: Run opt-in non-AVX2 inference (slow emulation, 10m limit)
-        run: bash tests/portable.sh .build/artifacts/cpu/unpacked .build/portable .build/fixtures
+        run: bash tests/packaging/portable.sh .build/artifacts/cpu/unpacked .build/portable .build/fixtures
   compatibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

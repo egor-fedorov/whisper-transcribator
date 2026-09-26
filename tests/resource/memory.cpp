@@ -1,6 +1,8 @@
 #include "audio/audio.hpp"
 #include "support/io.hpp"
 #include "support/options.hpp"
+#include "support/test.hpp"
+#include "support/wav.hpp"
 #include "transcript/jobs.hpp"
 #include "transcript/journal.hpp"
 #include "transcript/metadata.hpp"
@@ -13,11 +15,8 @@
 #include <unistd.h>
 
 using namespace wt;
+using namespace wt::test;
 namespace {
-void little(std::ostream& out, uint32_t value, int bytes) {
-    for (int i = 0; i < bytes; ++i)
-        out.put(static_cast<char>((value >> (i * 8)) & 255));
-}
 void scenario(const fs::path& root, int seconds) {
     fs::create_directories(root);
     auto path = root / "synthetic.wav";
@@ -89,25 +88,14 @@ long measure(const fs::path& root, int seconds) {
     return usage.ru_maxrss;
 }
 } // namespace
-int main(int argc, char** argv) {
-    if (argc != 2)
-        return 2;
-    try {
-        auto root = fs::absolute(argv[1]);
-        fs::create_directories(root);
-        auto pattern = (root / "run-XXXXXX").string();
-        if (!mkdtemp(pattern.data()))
-            throw std::runtime_error("mkdtemp failed");
-        root = pattern;
-        auto short_rss = measure(root / "short", 120);
-        auto long_rss = measure(root / "long", 3600);
-        std::cout << "Synthetic decoding + fake inference + TXT/SRT/VTT/JSON: 120s RSS "
-                  << short_rss << " KiB; 3600s RSS " << long_rss << " KiB\n";
-        if (long_rss > short_rss + 32 * 1024)
-            throw std::runtime_error("Memory grew by more than 32 MiB with recording length");
-        fs::remove_all(root);
-    } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
-        return 1;
-    }
+int main() {
+    return run_tests(
+        {{"bounded RSS with synthetic audio and fake inference", [](const fs::path& root) {
+              auto short_rss = measure(root / "short", 120);
+              auto long_rss = measure(root / "long", 3600);
+              std::cout << "Synthetic decoding + fake inference + TXT/SRT/VTT/JSON: 120s RSS "
+                        << short_rss << " KiB; 3600s RSS " << long_rss << " KiB\n";
+              if (long_rss > short_rss + 32 * 1024)
+                  throw std::runtime_error("Memory grew by more than 32 MiB with recording length");
+          }}});
 }

@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 binary=$1
-root=$2
 version=$3
 revision=$4
-mkdir -p "$root"
+mkdir -p "$2"
+root=$(mktemp -d "$2/run-XXXXXX")
+cleanup() {
+    local status=$?
+    if (( status == 0 )); then
+        rm -rf "$root"
+    else
+        printf 'CLI fixtures: %s\n' "$root" >&2
+    fi
+}
+trap cleanup EXIT
 export WHISPER_DOWNLOAD_ROOT="$root/models"
 unset WHISPER_MODEL
 expect() {
