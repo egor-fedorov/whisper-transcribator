@@ -1,6 +1,6 @@
 # Build And Release
 
-Version 0.3 is a native CLI. Build artifacts live under `.build/`; nothing is
+The 0.4 development line is a native CLI. Build artifacts live under `.build/`; nothing is
 published automatically. Do not move or delete local `models/`, `transcripts/`
 or `benchmark-results/` during release cleanup. The immutable `v0.2.0` tag is the
 historical Python implementation, not another active release line.
@@ -30,11 +30,13 @@ Host-native and dynamic portable configurations are mutually exclusive.
 
 ```bash
 docker build -f packaging/Dockerfile --target archive \
+  --build-arg WT_SOURCE_REVISION="$(git rev-parse HEAD)" \
+  --build-arg WT_SOURCE_DIRTY="$(test -z "$(git status --porcelain --untracked-files=no)" && echo false || echo true)" \
   --output type=local,dest=.build/artifacts/cpu .
 cd .build/artifacts/cpu
 sha256sum -c SHA256SUMS
 mkdir -p unpacked
-tar -xzf whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz -C unpacked
+tar -xzf whisper-transcribator-*-linux-x86_64-cpu.tar.gz -C unpacked
 ./unpacked/bin/whisper-transcribator doctor --device cpu --json
 ```
 
@@ -55,6 +57,8 @@ host compiler.
 CUDA_IMAGE=nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97
 docker build -f packaging/Dockerfile --target archive \
   --build-arg BUILD_IMAGE="$CUDA_IMAGE" --build-arg WT_CUDA=ON \
+  --build-arg WT_SOURCE_REVISION="$(git rev-parse HEAD)" \
+  --build-arg WT_SOURCE_DIRTY="$(test -z "$(git status --porcelain --untracked-files=no)" && echo false || echo true)" \
   --output type=local,dest=.build/artifacts/cuda .
 docker build -f packaging/Dockerfile --target runtime \
   --build-arg BUILD_IMAGE="$CUDA_IMAGE" --build-arg WT_CUDA=ON \
@@ -112,14 +116,15 @@ release with `gh workflow run ci.yml -f run_portable_inference=true`. It is not
 part of pull-request or push CI. The separate compiler jobs retain their short
 source-build integration and sanitizer checks.
 
-Compiler caches are keyed by toolchain, sanitizer configuration and dependency
-pins; tests always run, including a rebuild that verifies actual cache hits.
+Compiler caches are keyed by toolchain, sanitizer configuration and dependency pins; tests always run. The extra clean rebuild/cache-hit check requires the manual `verify_ccache` input. Buildx additionally caches unchanged packaging layers in separate CPU/CUDA GHA v2 scopes. Source-layer changes still rebuild their dependents. Cache export has a two-minute limit and is nonessential; a missing cache never skips checks or changes correctness requirements.
 CTest exercises interrupted HTTPS downloads using a loopback TLS server and a
 temporary trusted certificate; it does not download large model weights.
 Streaming tests repeat the public fixture into a short recording. Long-duration
 memory tests use synthetic audio and fake inference, not full lecture recognition.
 
 ## Prepare And Publish
+
+`main` currently reports `0.4.0-dev+g<revision>` (plus `.dirty` when applicable), not a published 0.4.0. Git-less source builds say `unknown`; Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For a future release, clear `WT_VERSION_SUFFIX` in the reviewed release commit and build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
 
 Keep the two archives and their original `SHA256SUMS` under
 `.build/artifacts/cpu/` and `.build/artifacts/cuda/`. Prepare from a clean checkout
@@ -128,11 +133,12 @@ checksums and every packaged project source against Git, then checks local and
 remote tag targets and CI. It never publishes automatically or overwrites assets.
 
 ```bash
-bash packaging/release.sh 0.3.0 .build/artifacts
-git tag -a v0.3.0 -m 'Release 0.3.0'
-git push origin v0.3.0
-bash packaging/release.sh 0.3.0 .build/artifacts --draft
-gh release view v0.3.0
+version=0.4.0 # only after the release commit and all gates above
+bash packaging/release.sh "$version" .build/artifacts
+git tag -a "v$version" -m "Release $version"
+git push origin "v$version"
+bash packaging/release.sh "$version" .build/artifacts --draft
+gh release view "v$version"
 ```
 
 The draft contains CPU/CUDA archives, combined checksums, release notes and the
@@ -141,13 +147,13 @@ not that CUDA inference ran: the short hardware smoke gate above remains mandato
 for the exact archive to be published. After reviewing the draft and the GPU check:
 
 ```bash
-gh release edit v0.3.0 --draft=false --latest
+gh release edit "v$version" --draft=false --latest
 ```
 
 If an upload fails, inspect the draft before retrying; the helper deliberately
 does not delete releases or use `--clobber`. GitHub Actions artifacts expire and
 are not a substitute for release assets. Dependency updates arrive through
-Dependabot; merging workflow changes with `gh` requires the `workflow` token scope.
+Dependabot for Actions and Docker base images. FetchContent/FFmpeg updates remain manual and must update verified SHA-256 pins together with versions; automatic pin maintenance is a separate follow-up. Merging workflow changes with `gh` requires the `workflow` token scope.
 
 Dependencies downloaded by CMake can be supplied offline via
 `FETCHCONTENT_SOURCE_DIR_WHISPER`, `FETCHCONTENT_SOURCE_DIR_CLI11` and
