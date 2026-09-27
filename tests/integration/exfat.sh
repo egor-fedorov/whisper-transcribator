@@ -2,7 +2,9 @@
 # Repeats publication, checkpoint and model-cache checks on exFAT disk images. Linux mounts them
 # through exfat-fuse and requires root or passwordless sudo, losetup, mkfs.exfat and
 # mount.exfat-fuse; macOS attaches them with hdiutil and needs no privileges.
-set -euo pipefail
+set -Eeuo pipefail
+# Diagnostics use the original stderr: Bash 3.2 runs traps with the failed command's redirections.
+exec 3>&2
 build=$(realpath "$1")
 fixtures=$(realpath "$2")
 mkdir -p "$3"
@@ -14,7 +16,12 @@ as_root() {
 mounts=()
 devices=()
 cleanup() {
-    local target device
+    local status=$? target device log
+    if ((status != 0)); then
+        for log in "$root"/*.log; do
+            if [[ -f $log ]]; then printf '== %s\n' "$log" >&3; tail -n 20 "$log" >&3; fi
+        done
+    fi
     for target in ${mounts[@]+"${mounts[@]}"}; do
         if [[ $(uname) == Darwin ]]; then
             hdiutil detach -quiet "$target" || hdiutil detach -quiet -force "$target" || true
@@ -25,13 +32,14 @@ cleanup() {
     for device in ${devices[@]+"${devices[@]}"}; do as_root losetup --detach "$device" || true; done
 }
 trap cleanup EXIT
+trap 'echo "exfat.sh: command failed at line $LINENO" >&3' ERR
 mount_exfat() {
     local image=$1 target=$2 device
     mkdir -p "$target"
     if [[ $(uname) == Darwin ]]; then
         # Like a USB drive on macOS: entries report the current user as owner and mode 0777.
-        hdiutil create -quiet -size 64m -fs ExFAT -volname WT -layout NONE "$image.dmg"
-        hdiutil attach -quiet -nobrowse -mountpoint "$target" "$image.dmg"
+        hdiutil create -size 64m -fs ExFAT -volname WT -layout NONE "$image.dmg" >/dev/null
+        hdiutil attach -nobrowse -mountpoint "$target" "$image.dmg" >/dev/null
     else
         # Like a drive attached for another user: entries report owner nobody and mode 0777.
         truncate --size 64M "$image.img"
