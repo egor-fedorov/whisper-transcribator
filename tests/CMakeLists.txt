@@ -47,6 +47,13 @@ wt_test(permissionless integration integration/permissionless.cpp)
 wt_test(model-concurrency integration integration/model-concurrency.cpp)
 set_tests_properties(integration/model-concurrency PROPERTIES TIMEOUT 30)
 
+# The TLS test server needs OpenSSL; macOS provides no headers, but Homebrew's keg-only one works.
+if(NOT OPENSSL_ROOT_DIR AND NOT DEFINED ENV{OPENSSL_ROOT_DIR})
+  wt_brew_prefix(openssl@3 WT_BREW_OPENSSL)
+  if(WT_BREW_OPENSSL)
+    set(OPENSSL_ROOT_DIR "${WT_BREW_OPENSSL}")
+  endif()
+endif()
 find_package(OpenSSL REQUIRED COMPONENTS SSL)
 find_package(Threads REQUIRED)
 # Prefer the command of the OpenSSL found above; macOS provides LibreSSL as openssl.

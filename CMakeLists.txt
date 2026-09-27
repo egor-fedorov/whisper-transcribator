@@ -34,14 +34,12 @@ function(wt_brew_prefix formula variable)
     endif()
   endif()
 endfunction()
-# macOS provides no OpenSSL headers.
-if(NOT OPENSSL_ROOT_DIR AND NOT DEFINED ENV{OPENSSL_ROOT_DIR})
-  wt_brew_prefix(openssl@3 WT_BREW_OPENSSL)
-  if(WT_BREW_OPENSSL)
-    set(OPENSSL_ROOT_DIR "${WT_BREW_OPENSSL}")
-  endif()
+# SHA-256 uses CommonCrypto from the macOS system library, so archives bundle no OpenSSL.
+set(WT_CRYPTO)
+if(NOT APPLE)
+  find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+  set(WT_CRYPTO OpenSSL::Crypto)
 endif()
-find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 configure_file(cmake/build-version.cmake.in generated/build-version.cmake @ONLY)
 include("${CMAKE_CURRENT_BINARY_DIR}/generated/build-version.cmake")
 add_custom_target(wt_version
@@ -56,7 +54,7 @@ add_library(wt_core STATIC
   src/transcript/jobs.cpp src/transcript/metadata.cpp src/transcript/outputs.cpp
   src/transcript/journal.cpp src/transcript/pipeline.cpp src/transcript/publication.cpp)
 target_include_directories(wt_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(wt_core PUBLIC CURL::libcurl OpenSSL::Crypto nlohmann_json::nlohmann_json)
+target_link_libraries(wt_core PUBLIC CURL::libcurl ${WT_CRYPTO} nlohmann_json::nlohmann_json)
 add_library(wt_engine STATIC
   src/audio/audio.cpp src/audio/timeline.cpp src/audio/recovery.cpp
   src/inference/runtime.cpp src/inference/whisper.cpp
