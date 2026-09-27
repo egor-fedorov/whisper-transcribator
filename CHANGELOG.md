@@ -2,6 +2,7 @@
 
 ## Unreleased
 - Build and verify a Linux aarch64 CPU archive (`linux-aarch64-cpu`, glibc 2.35+, CPU plugins from ARMv8.0 to ARMv9.2 with SVE2/SME) natively on GitHub arm64 runners, using Ubuntu 22.04's clang-15 without OpenMP. Record the target architecture in build metadata and require matching x86_64 CPU/CUDA and aarch64 CPU archives in release checks. CUDA remains x86_64-only; existing x86_64 check and archive names are unchanged.
+- Support outputs, checkpoints and the model cache on FAT32, exFAT and other filesystems without POSIX permissions or hard links, such as USB drives, SD cards and many FUSE/SMB mounts. No-clobber publication uses an atomic no-replace rename (`renameat2` with `RENAME_NOREPLACE`), falling back to hard links and finally to a locked existence check with a weaker guarantee. Checkpoints stay under the output directory with a one-time warning that their privacy depends on mount options; strict owner, mode, symlink and hard-link checks remain on filesystems that store permissions. CI repeats checkpoint, publication and model-cache checks on an exFAT image mounted through exfat-fuse.
 
 ## 0.4.0 - 2026-09-27
 - Recover damaged audio with `--decode-errors tolerant|strict` (tolerant by default), a configurable 30-second input-duration budget and an independent no-progress guard instead of packet-count limits. Retain checkpoints on failure and explain explicit restart/repair options. Record audio decoding policy version 1 and its settings in resume identity without migrating older checkpoints.

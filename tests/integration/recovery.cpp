@@ -107,8 +107,10 @@ void first_record_kill(const fs::path& root) {
                 journal.append(16, {"en", 0.001, {{0, 0.001, "orphan", 0}}});
             }
             fs::create_directories(directory);
-            fs::permissions(directory.parent_path(), fs::perms::owner_all);
-            fs::permissions(directory, fs::perms::owner_all);
+            // A mount for another owner (tests/integration/exfat.sh) refuses chmod.
+            std::error_code refused;
+            fs::permissions(directory.parent_path(), fs::perms::owner_all, refused);
+            fs::permissions(directory, fs::perms::owner_all, refused);
             if (manifest_exists) {
                 auto manifest = Json::parse(read_text(directory / "manifest.json"));
                 manifest["chunks"] = manifest["samples"] = 0;

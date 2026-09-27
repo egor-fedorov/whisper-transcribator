@@ -61,6 +61,12 @@ bash tests/smoke/streaming-smoke.sh .build/cpu/whisper-transcribator \
   .build/fixtures/ggml-tiny.bin .build/fixtures/ggml-silero-v6.2.0.bin .build/streaming-smoke
 ```
 
+On Linux with `exfatprogs`, `exfat-fuse` and root or passwordless sudo, repeat publication, checkpoint and model-cache checks on loop-mounted exFAT images after preparing the fixtures above. The default `integration/permissionless` test simulates such a filesystem instead:
+
+```bash
+bash tests/integration/exfat.sh .build/cpu .build/fixtures .build/exfat
+```
+
 Use a fresh smoke output directory for each run. Fixtures/weights are downloaded
 only during preparation. CI then disables networking for actual inference.
 Do not add private recordings, transcripts or model weights. Never run full
