@@ -73,12 +73,16 @@ test "$status" = 1
 grep -q 'Output exists' "$root/existing.log"
 transcribe --output-dir "$disk/transcripts" --overwrite 2>"$root/overwrite.log"
 
-# A checkpoint directory on another filesystem is never trusted on the output's behalf.
-mkdir -p "$disk/nested"
-mount_exfat "$root/nested-image" "$disk/nested/.whisper-transcribator"
+# A checkpoint directory on another filesystem is never trusted on the output's behalf. macOS
+# lets only the owner of a directory mount on it, so there the output directory is on the
+# regular filesystem and the checkpoint volume, ignoring ownership, appears to be yours.
+nested="$disk/nested"
+if [[ $(uname) == Darwin ]]; then nested="$root/nested"; fi
+mkdir -p "$nested"
+mount_exfat "$root/nested-image" "$nested/.whisper-transcribator"
 status=0
-transcribe --output-dir "$disk/nested" 2>"$root/nested.log" || status=$?
+transcribe --output-dir "$nested" 2>"$root/nested.log" || status=$?
 test "$status" = 1
 grep -q 'Checkpoint directory must be owned by you with mode 0700' "$root/nested.log"
-test ! -e "$disk/nested/jfk.txt"
+test ! -e "$nested/jfk.txt"
 echo "exFAT publication and checkpoint checks passed"

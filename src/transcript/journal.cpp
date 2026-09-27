@@ -23,19 +23,16 @@ namespace wt {
 // Checkpoint entries must be owned by this user with owner-only modes. Filesystems without POSIX
 // permissions (FAT, exFAT, some FUSE/SMB mounts) report a fixed owner and mode from mount
 // options, so a failed check is accepted only for attributes a probe file in the output
-// directory cannot keep either, and only on that filesystem. Where ownership is ignored (macOS
-// external volumes), entries appear to be owned by every user, so the probe always runs there.
-// Entry types, symlinks and hard links are always checked.
+// directory cannot keep either, and only on that filesystem. Where an entry's filesystem ignores
+// ownership (macOS external volumes), every user appears to own it, so the owner check alone
+// never accepts it. Entry types, symlinks and hard links are always checked.
 struct CheckpointPrivacy {
     fs::path output_directory;
-    bool ignores_owners;
     std::optional<StoredPermissions> stored;
     dev_t device = 0;
-    explicit CheckpointPrivacy(fs::path directory)
-        : output_directory(std::move(directory)),
-          ignores_owners(ownership_ignored(output_directory)) {}
-    bool accepts(const struct stat& st, bool owner_only) {
-        if (st.st_uid == geteuid() && owner_only && !ignores_owners)
+    explicit CheckpointPrivacy(fs::path directory) : output_directory(std::move(directory)) {}
+    bool accepts(const fs::path& path, const struct stat& st, bool owner_only) {
+        if (st.st_uid == geteuid() && owner_only && !ownership_ignored(path))
             return true;
         if (!stored) {
             struct stat output {};
@@ -61,7 +58,7 @@ void private_directory(const fs::path& path, CheckpointPrivacy& privacy) {
         throw std::runtime_error("Cannot create checkpoint directory: " + path.string());
     struct stat st {};
     if (lstat(path.c_str(), &st) || !S_ISDIR(st.st_mode) ||
-        !privacy.accepts(st, !(st.st_mode & 0077)))
+        !privacy.accepts(path, st, !(st.st_mode & 0077)))
         throw std::runtime_error("Checkpoint directory must be owned by you with mode 0700: " +
                                  path.string());
     if (created)
@@ -72,7 +69,7 @@ Json read_record(const fs::path& path, CheckpointPrivacy& privacy) {
     if (fd.get() < 0)
         throw std::runtime_error("Cannot read checkpoint: " + path.string());
     struct stat st {};
-    if (fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || !privacy.accepts(st, true) ||
+    if (fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || !privacy.accepts(path, st, true) ||
         st.st_size < 0 || st.st_size > 16 * 1024 * 1024)
         throw std::runtime_error("Invalid checkpoint file: " + path.string());
     std::string bytes(static_cast<size_t>(st.st_size), '\0');
@@ -170,7 +167,7 @@ bool safe_temporary(const fs::path& path, CheckpointPrivacy& privacy) {
         return false;
     struct stat st {};
     if (lstat(path.c_str(), &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
-        !privacy.accepts(st, (st.st_mode & 0777) == 0600) || st.st_size < 0 ||
+        !privacy.accepts(path, st, (st.st_mode & 0777) == 0600) || st.st_size < 0 ||
         st.st_size > 16 * 1024 * 1024)
         throw std::runtime_error("Unsafe checkpoint temporary file: " + path.string());
     return true;
@@ -284,7 +281,8 @@ struct Journal::Lock {
         : fd(open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600)) {
         struct stat st {};
         if (fd.get() < 0 || fstat(fd.get(), &st) || !S_ISREG(st.st_mode) ||
-            !privacy.accepts(st, true) || st.st_nlink != 1 || flock(fd.get(), LOCK_EX | LOCK_NB))
+            !privacy.accepts(path, st, true) || st.st_nlink != 1 ||
+            flock(fd.get(), LOCK_EX | LOCK_NB))
             throw std::runtime_error("Checkpoint is busy or lock is unsafe: " + path.string());
     }
 };
