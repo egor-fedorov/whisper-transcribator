@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 binary=$1
-version=$3
+# shellcheck disable=SC1090
+source "$3"
+version=$WT_PACKAGE_VERSION
 revision=$4
 mkdir -p "$2"
 root=$(mktemp -d "$2/run-XXXXXX")

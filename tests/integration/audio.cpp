@@ -2,10 +2,12 @@
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include "support/io.hpp"
+#include "support/report.hpp"
 #include "support/test.hpp"
 #include "support/wav.hpp"
 #include <algorithm>
 #include <cmath>
+#include <sys/resource.h>
 
 using namespace wt;
 using namespace wt::test;
@@ -78,6 +80,41 @@ void reader(const fs::path& root) {
 }
 } // namespace
 int main(int argc, char** argv) {
+    if (argc == 4 && std::string(argv[1]) == "--timeline") {
+        auto actual = decode_audio(argv[2]);
+        auto expected = decode_audio(argv[3]);
+        AudioReader estimate(argv[2]);
+        require(std::abs(estimate.duration() - expected.size() / 16000.0) < 0.1,
+                "duration must include delayed audio and gaps");
+        require(std::abs(int64_t(actual.size()) - int64_t(expected.size())) <= 32,
+                "timeline sample count: " + std::to_string(actual.size()) + " vs " +
+                    std::to_string(expected.size()));
+        double error = 0, energy = 0;
+        for (size_t i = 0; i < std::min(actual.size(), expected.size()); ++i) {
+            require(std::isfinite(actual[i]));
+            error += std::pow(actual[i] - expected[i], 2);
+            energy += std::pow(expected[i], 2);
+        }
+        require(energy > 0 && error / energy < 0.005,
+                "timeline PCM mismatch: " + std::to_string(error / energy));
+        return 0;
+    }
+    if (argc == 3 && std::string(argv[1]) == "--gap") {
+        AudioReader reader(argv[2]);
+        rusage before{}, after{};
+        require(getrusage(RUSAGE_SELF, &before) == 0);
+        auto prefix = reader.read(2 * 16000);
+        require(prefix.size() == 2 * 16000);
+        for (int i = 0; i < 10; ++i) {
+            auto gap = reader.read(65536);
+            require(gap.size() == 65536);
+            require(std::all_of(gap.begin(), gap.end(), [](float x) { return x == 0; }));
+        }
+        require(getrusage(RUSAGE_SELF, &after) == 0);
+        require(after.ru_maxrss <= before.ru_maxrss + 32 * 1024,
+                "timestamp gap allocated more than 32 MiB");
+        return 0;
+    }
     if (argc == 3 && std::string(argv[1]) == "--streams") {
         AudioReader selected(argv[2]);
         require(selected.stream_index() == 1 && selected.duration() > 0);
@@ -98,7 +135,9 @@ int main(int argc, char** argv) {
         auto boundary = expected.size();
         append(expected, decode_audio(argv[4]));
         auto actual = decode_audio(argv[2]);
-        require(actual.size() == expected.size(), "MPEG-TS sample count");
+        require(actual.size() == expected.size(),
+                "MPEG-TS sample count: " + std::to_string(actual.size()) + " vs " +
+                    std::to_string(expected.size()));
         double error = 0, energy = 0;
         for (size_t i = 0; i < actual.size(); ++i) {
             require(std::isfinite(actual[i]), "non-finite MPEG-TS PCM");

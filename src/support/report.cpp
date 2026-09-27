@@ -64,6 +64,11 @@ void finish_progress() {
     clear_line();
     last_phase.clear();
 }
+std::string format_seconds(double seconds) {
+    std::ostringstream text;
+    text << std::fixed << std::setprecision(1) << seconds;
+    return text.str();
+}
 FileProgress::FileProgress(std::string value, double duration)
     : label(std::move(value)), total(std::isfinite(duration) && duration > 0 ? duration : 0) {}
 void FileProgress::begin_window(int64_t samples, size_t count) {

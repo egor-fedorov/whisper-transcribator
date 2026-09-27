@@ -166,10 +166,34 @@ void legacy_output_set(const fs::path& root) {
             "Saved progress for the old three-format all exists");
     require(has_checkpoint(old_job));
 }
+void unsafe_temporaries(const fs::path& root) {
+    Fixture f(root);
+    auto directory = checkpoint_path(f.job);
+    fs::create_directories(directory);
+    fs::permissions(directory.parent_path(), fs::perms::owner_all);
+    fs::permissions(directory, fs::perms::owner_all);
+    auto temporary = directory / ".whisper-output-Ab123Z";
+    atomic_write(root / "unrelated", "preserve");
+    fs::create_symlink(root / "unrelated", temporary);
+    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
+            "Unsafe checkpoint temporary");
+    require(fs::is_symlink(temporary));
+    fs::remove(temporary);
+    fs::create_hard_link(root / "unrelated", temporary);
+    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
+            "Unsafe checkpoint temporary");
+    require(read_text(root / "unrelated") == "preserve" && fs::exists(temporary));
+    fs::remove(temporary);
+    atomic_write(directory / "unknown", "preserve");
+    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
+            "Checkpoint manifest missing");
+    require(read_text(directory / "unknown") == "preserve");
+}
 } // namespace
 int main() {
     return run_tests({
         {"legacy three-format checkpoint rejection", legacy_output_set},
+        {"unsafe temporary checkpoint files are preserved", unsafe_temporaries},
         {"early failures leave no saved progress", early_failures_leave_no_saved_progress},
         {"empty checkpoint recovery and unknown contents",
          empty_checkpoint_recovery_and_unknown_contents},

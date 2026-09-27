@@ -1,11 +1,13 @@
 #include "audio/audio.hpp"
 #include "audio/resampler.hpp"
+#include "audio/timeline.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include "support/io.hpp"
 #include "support/report.hpp"
 #include <algorithm>
 #include <memory>
+#include <optional>
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -47,6 +49,10 @@ struct FrameResampler::Impl {
 };
 FrameResampler::FrameResampler() : impl(std::make_unique<Impl>()) {}
 FrameResampler::~FrameResampler() = default;
+int64_t FrameResampler::delay() const {
+    return impl->context ? swr_get_delay(impl->context, 16000) : 0;
+}
+void FrameResampler::reset() { impl = std::make_unique<Impl>(); }
 std::vector<float> FrameResampler::drain() { return impl->convert(nullptr, 0); }
 std::vector<float> FrameResampler::convert(const AVFrame& frame) {
     check_cancelled();
@@ -84,12 +90,15 @@ struct AudioReader::Impl {
     AVDictionary* options = nullptr;
     AVCodecContext* codec = nullptr;
     FrameResampler resampler;
+    AudioTimeline timeline;
     AVPacket* packet = av_packet_alloc();
     AVFrame* frame = av_frame_alloc();
     int stream = -1;
     bool flushing = false, decoded = false, finished = false;
     std::vector<float> pending;
     size_t offset = 0;
+    int64_t silence = 0, origin = AV_NOPTS_VALUE, retained_start = 0;
+    bool retained = false, warned_reset = false;
     ~Impl() {
         av_dict_free(&options);
         av_frame_free(&frame);
@@ -97,19 +106,78 @@ struct AudioReader::Impl {
         avcodec_free_context(&codec);
         avformat_close_input(&format);
     }
+    void place(int64_t start, std::vector<float> pcm) {
+        // Keep the resampler's signed position, but never emit pre-origin samples.
+        auto end = std::max<int64_t>(0, timeline.end());
+        silence = std::max<int64_t>(0, start - end);
+        offset = start < end ? static_cast<size_t>(std::min<int64_t>(end - start, pcm.size())) : 0;
+        timeline.advance(start, pcm.size());
+        pending = std::move(pcm);
+    }
     void next() {
         pending.clear();
         offset = 0;
-        while (!finished && pending.empty()) {
+        while (!finished && !silence && offset == pending.size()) {
             check_cancelled();
+            if (retained) {
+                place(retained_start, resampler.convert(*frame));
+                av_frame_unref(frame);
+                retained = false;
+                continue;
+            }
             if (decoded) {
-                pending = resampler.drain();
+                place(timeline.end(), resampler.drain());
                 finished = pending.empty();
                 continue;
             }
             int code = avcodec_receive_frame(codec, frame);
             if (code >= 0) {
-                pending = resampler.convert(*frame);
+                auto* selected = format->streams[stream];
+                auto pts = frame->best_effort_timestamp;
+                if (pts == AV_NOPTS_VALUE)
+                    pts = frame->pts;
+                std::optional<int64_t> sample_pts;
+                if (pts != AV_NOPTS_VALUE) {
+                    auto time = av_rescale_q(pts, selected->time_base, AVRational{1, 16000});
+                    constexpr int64_t bound = INT64_MAX / 4;
+                    if (time < -bound || time > bound)
+                        throw std::runtime_error("Audio timestamp out of range");
+                    if (origin == AV_NOPTS_VALUE)
+                        origin = time - (timeline.end() + resampler.delay());
+                    if (origin < -bound || origin > bound)
+                        throw std::runtime_error("Audio timestamp out of range");
+                    sample_pts = time - origin;
+                }
+                auto delay = resampler.delay();
+                auto tolerance = std::max<int64_t>(
+                    1, av_rescale_q_rnd(1, selected->time_base, AVRational{1, 16000}, AV_ROUND_UP));
+                auto location = timeline.locate(sample_pts, delay, tolerance,
+                                                format->iformat->flags & AVFMT_TS_DISCONT);
+                if (location.reset && !warned_reset) {
+                    log_message(LogLevel::warning,
+                                "Audio timestamps reset; continuing on a contiguous timeline");
+                    warned_reset = true;
+                }
+                if (location.discontinuity) {
+                    log_message(
+                        LogLevel::debug,
+                        "Audio timestamp boundary: " + std::to_string(timeline.end() + delay) +
+                            " -> " + std::to_string(location.start) + "; rate " +
+                            std::to_string(frame->sample_rate));
+                    std::vector<float> tail;
+                    for (;;) {
+                        auto part = resampler.drain();
+                        if (part.empty())
+                            break;
+                        tail.insert(tail.end(), part.begin(), part.end());
+                    }
+                    place(timeline.end(), std::move(tail));
+                    resampler.reset();
+                    retained = true;
+                    retained_start = location.start;
+                    continue;
+                }
+                place(location.start - delay, resampler.convert(*frame));
                 av_frame_unref(frame);
                 continue;
             }
@@ -145,10 +213,24 @@ AudioReader::AudioReader(const fs::path& path, int stream) : impl(std::make_uniq
     d.format = avformat_alloc_context();
     if (!d.format)
         throw std::bad_alloc();
+    // Do not extrapolate packet timestamps from stale demuxer sample-rate metadata.
+    // Missing timestamps are advanced using each decoded frame's actual parameters.
+    d.format->flags |= AVFMT_FLAG_NOFILLIN;
     d.format->interrupt_callback = {[](void*) { return stop_signal ? 1 : 0; }, nullptr};
     check(av_dict_set(&d.options, "protocol_whitelist", "file", 0), "restrict media protocols");
     check(avformat_open_input(&d.format, path.c_str(), nullptr, &d.options), "open media");
     check(avformat_find_stream_info(d.format, nullptr), "read streams");
+    if (d.format->start_time != AV_NOPTS_VALUE)
+        d.origin = av_rescale_q(d.format->start_time, AV_TIME_BASE_Q, AVRational{1, 16000});
+    else
+        for (unsigned i = 0; i < d.format->nb_streams; ++i) {
+            auto* candidate = d.format->streams[i];
+            if (candidate->start_time != AV_NOPTS_VALUE) {
+                auto start =
+                    av_rescale_q(candidate->start_time, candidate->time_base, AVRational{1, 16000});
+                d.origin = d.origin == AV_NOPTS_VALUE ? start : std::min(d.origin, start);
+            }
+        }
     if (stream >= 0) {
         if (static_cast<unsigned>(stream) >= d.format->nb_streams ||
             d.format->streams[stream]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
@@ -167,14 +249,19 @@ AudioReader::AudioReader(const fs::path& path, int stream) : impl(std::make_uniq
     if (!d.codec)
         throw std::bad_alloc();
     check(avcodec_parameters_to_context(d.codec, parameters), "codec parameters");
+    d.codec->pkt_timebase = d.format->streams[d.stream]->time_base;
     check(avcodec_open2(d.codec, codec, nullptr), "open codec");
 }
 AudioReader::~AudioReader() = default;
 int AudioReader::stream_index() const { return impl->stream; }
 double AudioReader::duration() const {
     auto* stream = impl->format->streams[impl->stream];
-    if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
-        return stream->duration * av_q2d(stream->time_base);
+    if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0) {
+        auto start = stream->start_time != AV_NOPTS_VALUE && impl->origin != AV_NOPTS_VALUE
+                         ? stream->start_time * av_q2d(stream->time_base) - impl->origin / 16000.0
+                         : 0;
+        return std::max(0.0, start + stream->duration * av_q2d(stream->time_base));
+    }
     if (impl->format->duration != AV_NOPTS_VALUE && impl->format->duration > 0)
         return impl->format->duration / double(AV_TIME_BASE);
     return 0;
@@ -187,9 +274,15 @@ std::vector<float> AudioReader::read(size_t limit) {
     output.reserve(limit);
     auto& d = *impl;
     while (output.size() < limit) {
-        if (d.offset == d.pending.size())
+        if (!d.silence && d.offset == d.pending.size())
             d.next();
-        if (d.pending.empty())
+        if (d.silence) {
+            auto count = static_cast<size_t>(std::min<int64_t>(limit - output.size(), d.silence));
+            output.insert(output.end(), count, 0.0f);
+            d.silence -= count;
+            continue;
+        }
+        if (d.offset == d.pending.size())
             break;
         auto count = std::min(limit - output.size(), d.pending.size() - d.offset);
         output.insert(output.end(), d.pending.begin() + d.offset,
@@ -198,17 +291,23 @@ std::vector<float> AudioReader::read(size_t limit) {
     }
     return output;
 }
-void configure_audio_logging() {
-    av_log_set_callback([](void* ptr, int level, const char* format, va_list args) {
+void configure_audio_logging(bool verbose) {
+    av_log_set_level(verbose ? AV_LOG_VERBOSE : AV_LOG_WARNING);
+    av_log_set_callback([](void*, int level, const char* format, va_list args) {
         try {
+            if (level > av_log_get_level())
+                return;
             char line[2048];
-            int prefix = 1;
-            av_log_format_line2(ptr, level, format, args, line, sizeof(line), &prefix);
-            if (!trim(line).empty())
-                log_message(level <= AV_LOG_ERROR     ? LogLevel::error
+            vsnprintf(line, sizeof(line), format, args);
+            auto message = trim(line);
+            auto severity = level <= AV_LOG_ERROR     ? LogLevel::error
                             : level <= AV_LOG_WARNING ? LogLevel::warning
-                                                      : LogLevel::debug,
-                            trim(line));
+                                                      : LogLevel::debug;
+            if (level == AV_LOG_WARNING &&
+                message.rfind("Estimating duration from bitrate", 0) == 0)
+                severity = LogLevel::debug;
+            if (!message.empty())
+                log_message(severity, "FFmpeg: " + message);
         } catch (...) {
         }
     });
@@ -216,5 +315,17 @@ void configure_audio_logging() {
 std::string audio_backend_version() {
     return std::to_string(avformat_version()) + "/" + std::to_string(avcodec_version()) + "/" +
            std::to_string(swresample_version()) + "/" + std::to_string(avutil_version());
+}
+Json audio_diagnostics() {
+    auto version = [](unsigned value) {
+        return std::to_string(AV_VERSION_MAJOR(value)) + "." +
+               std::to_string(AV_VERSION_MINOR(value)) + "." +
+               std::to_string(AV_VERSION_MICRO(value));
+    };
+    return {{"version", av_version_info()},
+            {"avformat", version(avformat_version())},
+            {"avcodec", version(avcodec_version())},
+            {"avutil", version(avutil_version())},
+            {"swresample", version(swresample_version())}};
 }
 } // namespace wt

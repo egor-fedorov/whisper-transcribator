@@ -108,7 +108,7 @@ bool render_srt(std::ostream& stream, const TranscriptSource& source) {
     source.visit([&](const Segment& segment) {
         stream << ++index << '\n'
                << timestamp(segment.start) << " --> " << timestamp(segment.end) << '\n'
-               << segment.text << "\n\n";
+               << normalized_text(segment.text) << "\n\n";
     });
     return index != 0;
 }
@@ -137,7 +137,7 @@ bool render_json(std::ostream& stream, const Job& job, const Options& options,
     Json header = {
         {"schema_version", 2},
         {"source", job.source.string()},
-        {"model", options.model},
+        {"model", source.metadata.value("model", options.model)},
         {"language", source.languages.size() == 1 ? Json(source.languages.front()) : Json(nullptr)},
         {"languages", source.languages},
         {"language_probability", nullptr},
@@ -166,7 +166,7 @@ bool render_json(std::ostream& stream, const Job& job, const Options& options,
                       .dump();
         ++index;
     });
-    stream << "],\"run\":" << run_metadata(options).dump() << "}\n";
+    stream << "],\"run\":" << source.metadata.value("run", run_metadata(options)).dump() << "}\n";
     return any || index != 0;
 }
 } // namespace

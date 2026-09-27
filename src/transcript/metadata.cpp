@@ -9,6 +9,8 @@ namespace wt {
 Json run_metadata(const Options& options) {
     return {{"backend", "whisper.cpp"},
             {"version", WT_VERSION},
+            {"source_revision", WT_SOURCE_REVISION},
+            {"source_dirty", Json::parse(WT_SOURCE_DIRTY_JSON)},
             {"backend_revision", WT_WHISPER_REVISION},
             {"device", options.device},
             {"beam_size", options.beam_size},
@@ -21,6 +23,8 @@ Json run_metadata(const Options& options) {
             {"flash_attention", true},
             {"chunk_seconds", options.chunk_seconds},
             {"chunk_min_silence_ms", options.chunk_min_silence_ms},
+            {"audio_timeline_version", 1},
+            {"rendering_version", 1},
             {"chunking_version", chunking_version}};
 }
 Json job_destinations(const Job& job) {
@@ -35,13 +39,15 @@ Json job_fingerprint(const Job& job, const Options& options, const Json& backend
     auto hash = sha256(job.source);
     if (size != fs::file_size(job.source) || modified != fs::last_write_time(job.source))
         throw std::runtime_error("Input changed while hashing");
+    auto compatibility = run_metadata(options);
+    for (const auto* key : {"cpu_threads", "version", "source_revision", "source_dirty"})
+        compatibility.erase(key);
     return {{"source", job.source.string()},
             {"size", size},
             {"sha256", hash},
             {"outputs", job_destinations(job)},
-            {"run", run_metadata(options)},
+            {"run", compatibility},
             {"language", options.language},
-            {"model", options.model},
             {"backend", backend}};
 }
 } // namespace wt

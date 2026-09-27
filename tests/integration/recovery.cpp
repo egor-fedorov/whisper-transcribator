@@ -97,10 +97,52 @@ void repeated_interrupt(const fs::path&) {
     if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 143)
         throw std::runtime_error("Unexpected signal handling result");
 }
+void first_record_kill(const fs::path& root) {
+    for (bool manifest_exists : {false, true}) {
+        for (bool resume : {false, true}) {
+            Fixture f(root / (std::to_string(manifest_exists) + std::to_string(resume)));
+            auto directory = checkpoint_path(f.job);
+            if (manifest_exists) {
+                Journal journal(f.job, f.options, f.fingerprint());
+                journal.append(16, {"en", 0.001, {{0, 0.001, "orphan", 0}}});
+            }
+            fs::create_directories(directory);
+            fs::permissions(directory.parent_path(), fs::perms::owner_all);
+            fs::permissions(directory, fs::perms::owner_all);
+            if (manifest_exists) {
+                auto manifest = Json::parse(read_text(directory / "manifest.json"));
+                manifest["chunks"] = manifest["samples"] = 0;
+                manifest["last_hash"] = "";
+                manifest["languages"] = Json::array();
+                atomic_write(directory / "manifest.json", manifest.dump(), true);
+                fs::remove(directory / "chunk-0.json");
+            }
+            auto child = fork();
+            require(child >= 0);
+            if (!child) {
+                atomic_write_stream(
+                    directory / (manifest_exists ? "chunk-0.json" : "manifest.json"),
+                    [](auto& stream) {
+                        stream << "{partial" << std::flush;
+                        raise(SIGKILL);
+                    },
+                    true, true);
+                _exit(3);
+            }
+            int status = 0;
+            require(waitpid(child, &status, 0) == child);
+            require(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL);
+            f.options.resume = resume;
+            Journal journal(f.job, f.options, f.fingerprint());
+            require(journal.samples() == 0 && !has_checkpoint(f.job));
+        }
+    }
+}
 } // namespace
 int main() {
     return run_tests({
         {"second interrupt terminates immediately", repeated_interrupt},
         {"signal recovery", signal_recovery},
+        {"SIGKILL during first manifest and chunk writes", first_record_kill},
     });
 }

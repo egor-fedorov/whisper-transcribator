@@ -26,6 +26,10 @@ for flavor in cpu cuda; do
     digest=$(sha256sum <"$archive" | cut -d ' ' -f1)
     printf '%s  %s\n' "$digest" "$name" >"$temporary/$flavor.sha"
     cmp "$temporary/$flavor.sha" "$root/$flavor/SHA256SUMS" || fail "Checksum mismatch: $flavor"
+    tar -xOzf "$archive" ./share/build-metadata.env >"$temporary/metadata"
+    grep -Fxq "WT_PACKAGE_VERSION=$version" "$temporary/metadata" || fail "Refusing a development or mismatched archive: $flavor"
+    grep -Fxq "WT_SOURCE_REVISION=$commit" "$temporary/metadata" || fail "Archive revision differs from HEAD: $flavor"
+    grep -Fxq 'WT_SOURCE_DIRTY=false' "$temporary/metadata" || fail "Archive sources are dirty or unknown: $flavor"
     tar -xOzf "$archive" "./sources/whisper-transcribator-$version.tar.gz" >"$temporary/source.tar.gz"
     tar -tzf "$temporary/source.tar.gz" | sed '/\/$/d' | LC_ALL=C sort >"$temporary/actual"
     cmp "$temporary/expected" "$temporary/actual" || fail "Source file list differs from HEAD: $flavor"

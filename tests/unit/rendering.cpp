@@ -37,6 +37,10 @@ void paragraphs_and_vtt(const fs::path&) {
     require(vtt.rfind("WEBVTT\n\n", 0) == 0);
     require(vtt.find("00:00:09.000 --> 00:00:09.001") != std::string::npos);
     require(vtt.find("New &amp; &lt;tag&gt; --&gt; cue.") != std::string::npos);
+    auto srt = render("srt", segments);
+    require(srt.find("First line.\n\n") != std::string::npos);
+    require(srt.find("First\nline.") == std::string::npos);
+    require(srt.find("New & <tag> --> cue.") != std::string::npos);
 }
 void single_line(const fs::path&) {
     Options options;

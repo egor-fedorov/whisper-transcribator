@@ -1,5 +1,6 @@
 #pragma once
 #include "support/fs.hpp"
+#include "support/json.hpp"
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -18,5 +19,6 @@ class AudioReader {
     double duration() const;
 };
 std::string audio_backend_version();
-void configure_audio_logging();
+void configure_audio_logging(bool verbose = false);
+Json audio_diagnostics();
 } // namespace wt
