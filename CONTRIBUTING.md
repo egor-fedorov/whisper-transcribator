@@ -41,7 +41,8 @@ LeakSanitizer cannot run under ptrace-based sandboxes; run these checks normally
 rather than disabling leak detection. GCC and Clang are checked in CI with
 `-DWT_WERROR=ON` for project code and tests, not dependencies; GCC also runs natively
 on Linux aarch64 and Apple Clang on macOS arm64. Keep code free of architecture-specific
-assumptions and keep Linux- or macOS-only calls in small platform branches. FFmpeg 5.1 is
+assumptions and keep operating-system calls in `src/platform/`; `unit/platform-boundary`
+rejects system headers such as `<unistd.h>` or `<sys/stat.h>` elsewhere. FFmpeg 5.1 is
 the minimum supported version and is checked separately. Install `ffmpeg` and `jq`
 for synthetic media integration tests (skipped when the `ffmpeg` command's libavcodec differs
 from the linked one, as in archive builds), including Vorbis/MP3 at 44.1/48 kHz,
@@ -93,7 +94,8 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 - `src/inference/`: whisper.cpp device discovery, logging and a lazily initialized RAII session shared across files.
 - `src/models/`: pinned catalog, model cache, locking and HTTPS transfers.
 - `src/transcript/`: value types, job planning, windowing, metadata, checkpoint integrity and output rendering.
-- `src/support/`: plain options, filesystem/hash operations, cancellation, CPU limits and reporting.
+- `src/platform/`: operating-system files, locks, renames, signals and CPU limits behind a small interface; the `-posix.cpp` files implement it for Linux and macOS, and a native Windows port would add its own implementation files.
+- `src/support/`: plain options, atomic publication, hashing, cancellation and reporting.
 - `cmake/`: pinned dependencies and generated metadata.
 - `tests/unit/` and `tests/integration/`: focused component checks and cross-component recovery, audio, CLI and process scenarios.
 - `tests/resource/`: synthetic bounded-memory and planning-scale checks.
@@ -107,7 +109,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 
 Keep includes specific to their owner; do not restore an umbrella application header. Application code coordinates the modules. Audio and inference adapters contain upstream API calls; model-free transcript logic and support code must not include whisper, FFmpeg or CLI11 headers. The journal owns durable publication and receives a renderer callback. `transcript/publication.cpp` adapts the journal to a repeatable streaming segment source; format serializers and paragraph layout have no filesystem or journal dependency. Compatibility metadata excludes execution-only fields; original output metadata is frozen in the journal for byte-stable resumed publication. Changes in timeline, chunking or serialization behavior require an explicit algorithm-version and fixture review, not merely a new application version.
 
-Job planning validates inputs, output collisions and numbered mappings before preparing directories or publishing a new mapping. Journal recovery validates records against explicit candidate states without mutating a live journal. `support/fd.hpp` owns descriptor lifetimes only; checkpoint locks still fail immediately, while model-download locks wait cancellably.
+Job planning validates inputs, output collisions and numbered mappings before preparing directories or publishing a new mapping. Journal recovery validates records against explicit candidate states without mutating a live journal. `platform::File` owns descriptor lifetimes only; checkpoint locks still fail immediately, while model-download locks wait cancellably.
 
 Production build targets remain `wt_core`, `wt_engine` and the CLI. Source lists are explicit; register new headers in the standalone header compilation list in `tests/CMakeLists.txt`. Keep model-free checks in CTest and real inference in smoke scripts. Avoid adding a library or interface for every directory.
 

@@ -16,7 +16,7 @@ endfunction()
 
 wt_test(io unit unit/io.cpp)
 wt_test(assertions unit unit/assertions.cpp)
-wt_test(fd unit unit/fd.cpp)
+wt_test(file-handle unit unit/file-handle.cpp)
 wt_test(formatting unit unit/rendering.cpp)
 wt_test(jobs unit unit/jobs.cpp)
 wt_test(model-cache unit unit/model-cache.cpp)
@@ -29,6 +29,9 @@ wt_test(timeline unit unit/timeline.cpp)
 target_link_libraries(wt-timeline-tests PRIVATE wt_engine)
 wt_test(decode-errors unit unit/audio-recovery.cpp)
 target_link_libraries(wt-decode-errors-tests PRIVATE wt_engine)
+add_test(NAME unit/platform-boundary COMMAND "${CMAKE_COMMAND}" "-DWT_SOURCE=${CMAKE_SOURCE_DIR}"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/unit/platform-boundary.cmake")
+set_tests_properties(unit/platform-boundary PROPERTIES LABELS unit TIMEOUT 60)
 
 wt_test(audio integration integration/audio.cpp)
 target_link_libraries(wt-audio-tests PRIVATE wt_engine)
@@ -126,10 +129,12 @@ set(WT_CHECK_HEADERS
   inference/whisper.hpp
   models/download.hpp
   models/models.hpp
+  platform/cpu.hpp
+  platform/file.hpp
+  platform/posix.hpp
+  platform/system.hpp
   support/cancel.hpp
-  support/cpu.hpp
   support/error.hpp
-  support/fd.hpp
   support/fs.hpp
   support/hash.hpp
   support/io.hpp

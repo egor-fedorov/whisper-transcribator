@@ -1,4 +1,5 @@
 #include "support/report.hpp"
+#include "platform/system.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -7,7 +8,6 @@
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
-#include <unistd.h>
 
 namespace wt {
 namespace {
@@ -47,7 +47,7 @@ void report_progress(const std::string& phase, const std::string& detail, bool f
     if (quiet)
         return;
     auto now = std::chrono::steady_clock::now();
-    bool tty = isatty(STDERR_FILENO);
+    bool tty = platform::stderr_is_terminal();
     auto interval = tty ? std::chrono::milliseconds(250) : std::chrono::milliseconds(5000);
     if (!force && phase == last_phase && now - last_update < interval)
         return;

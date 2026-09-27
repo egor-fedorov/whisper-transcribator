@@ -1,12 +1,12 @@
 #include "models/download.hpp"
 #include "models/models.hpp"
+#include "platform/file.hpp"
 #include "support/fixtures.hpp"
 #include "support/io.hpp"
 #include "support/test.hpp"
 #include "transcript/journal.hpp"
 #include <iostream>
 #include <sstream>
-#include <unistd.h>
 
 using namespace wt;
 using namespace wt::test;
@@ -162,8 +162,8 @@ void model_cache_downloads_and_publishes(const fs::path& root) {
     int calls = 0;
     auto prepared = ensure_cached(model, root, false, [&](const Model&, const fs::path& path) {
         ++calls;
-        auto fd = open_partial_model(path);
-        require(lseek(fd.get(), 0, SEEK_END) == 1 && write(fd.get(), "bc", 2) == 2);
+        auto file = open_partial_model(path);
+        require(platform::seek_end(file) == uint64_t(1) && platform::write(file, "bc", 2) == 2);
     });
     require(calls == 1 && prepared.path == root / model.file && read_text(prepared.path) == "abc");
     require(!fs::exists(partial) && ensure_cached(model, root, true).hash == model.hash);
