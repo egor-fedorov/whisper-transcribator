@@ -43,7 +43,8 @@ rather than disabling leak detection. GCC and Clang are checked in CI with
 on Linux aarch64 and Apple Clang on macOS arm64. Keep code free of architecture-specific
 assumptions and keep Linux- or macOS-only calls in small platform branches. FFmpeg 5.1 is
 the minimum supported version and is checked separately. Install `ffmpeg` and `jq`
-for synthetic media integration tests, including Vorbis/MP3 at 44.1/48 kHz,
+for synthetic media integration tests (skipped when the `ffmpeg` command's libavcodec differs
+from the linked one, as in archive builds), including Vorbis/MP3 at 44.1/48 kHz,
 MPEG-TS format transitions, clock drift and timestamp jumps, compared against independent
 FFmpeg PCM references. The test executable needs `libvorbis` and `libmp3lame`
 encoders and the `noise` bitstream filter. Damaged MP3/AAC checks include consecutive

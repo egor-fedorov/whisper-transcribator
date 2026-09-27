@@ -10,18 +10,9 @@ RUN sed -n 's/^deb /deb-src /p' /etc/apt/sources.list > /etc/apt/sources.list.d/
     && if [ "$(dpkg --print-architecture)" = arm64 ]; then \
         apt-get install -y --no-install-recommends clang-15 libstdc++-12-dev; fi \
     && rm -rf /var/lib/apt/lists/*
-WORKDIR /src
-RUN curl -fsSL https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz -o ffmpeg.tar.xz \
-    && echo '05ee0b03119b45c0bdb4df654b96802e909e0a752f72e4fe3794f487229e5a41  ffmpeg.tar.xz' | sha256sum -c - \
-    && tar -xf ffmpeg.tar.xz
-WORKDIR /src/ffmpeg-8.0.1
-RUN ./configure --prefix=/opt/media --disable-everything --disable-autodetect \
-    --disable-programs --disable-doc --disable-debug --disable-network \
-    --disable-static --enable-shared --enable-swresample --enable-protocol=file \
-    --enable-demuxer=mov,matroska,wav,mp3,ogg,flac,aac,aiff,avi,asf,mpegps,mpegts \
-    --enable-parser=aac,aac_latm,mpegaudio,ac3,opus,vorbis,flac \
-    --enable-decoder=aac,aac_latm,mp1,mp2,mp3,flac,opus,vorbis,alac,ac3,eac3,wmav1,wmav2,wmapro,wmalossless,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,pcm_s16be,pcm_s24be,pcm_s32be,pcm_u8,pcm_alaw,pcm_mulaw \
-    && make -j4 && make install
+# The same decoding-only FFmpeg as the macOS archive; the script lists the enabled formats.
+COPY packaging/ffmpeg.sh /src/ffmpeg.sh
+RUN bash /src/ffmpeg.sh /src /opt/media
 RUN mkdir -p /opt/cuda-stubs \
     && ln -s /usr/local/cuda/lib64/stubs/libcuda.so /opt/cuda-stubs/libcuda.so.1
 ENV PKG_CONFIG_PATH=/opt/media/lib/pkgconfig LD_LIBRARY_PATH=/opt/media/lib:/opt/cuda-stubs

@@ -15,6 +15,9 @@ Model weights are downloaded separately and retain their upstream terms.
 
 aarch64 CPU archives are compiled with Ubuntu 22.04's `clang-15` against the same
 GCC C++ runtime and without OpenMP; they bundle no LLVM runtime library.
+The macOS archive bundles FFmpeg, whisper.cpp/GGML and their notices like the Linux archives. It
+links the system libcurl, libc++ and Apple frameworks (Metal, Accelerate, Foundation), which are
+part of macOS and not redistributed, and computes SHA-256 with CommonCrypto instead of OpenSSL.
 CPU archives do not include CUDA libraries. CUDA archives include redistributable
 runtime libraries, but **not** the NVIDIA driver or glibc. The archive contains
 `licenses/`, `sources/` and `share/system-sources.tsv`; the packaging script fails
@@ -36,4 +39,4 @@ before distribution. Do not discard the license/source directories when publishi
 The FFmpeg build enables local-file decoding for common lecture containers
 (MP4/MOV, Matroska/WebM, WAV, MP3, Ogg, FLAC, AAC, AIFF, AVI, ASF and MPEG).
 Not every codec inside those containers is supported. The exact decoder list
-is in [Dockerfile](../packaging/Dockerfile). No network media protocol is enabled.
+is in [ffmpeg.sh](../packaging/ffmpeg.sh), shared by the Linux and macOS archives. No network media protocol is enabled.
