@@ -51,7 +51,7 @@ Catalog names take precedence over local names. Use `./small` for a local file n
 
 Cache precedence: `--download-root`, `WHISPER_DOWNLOAD_ROOT`, then `${XDG_CACHE_HOME:-$HOME/.cache}/whisper-transcribator/models`. `WHISPER_MODEL` overrides the default model. Downloads use pinned revisions, TLS, size/SHA-256 checks, cancellable locks and atomic publication. Each prepared model is fully hashed once per invocation; `models list --json` also verifies cached weights without downloading. Corrupt published files are reported and preserved for explicit repair.
 
-Interrupted downloads retain private hash-specific `.part` files and resume automatically. A server ignoring Range causes a safe restart. Corrupt partial downloads are removed; partial files are not usable weights. `--local-files-only` forbids downloads, including VAD. For a custom CA bundle use `SSL_CERT_FILE`; do not disable TLS verification.
+Interrupted downloads retain private hash-specific `.part` files and resume automatically. A cache on FAT32/exFAT cannot keep them private; the final SHA-256 check still applies. A server ignoring Range causes a safe restart. Corrupt partial downloads are removed; partial files are not usable weights. `--local-files-only` forbids downloads, including VAD. For a custom CA bundle use `SSL_CERT_FILE`; do not disable TLS verification.
 
 ## Outputs And Resume
 ```bash
@@ -65,6 +65,8 @@ Interrupted downloads retain private hash-specific `.part` files and resume auto
 Audio buffers cover only the current window; outputs stream from saved segments. Smaller `--chunk-seconds` values can reduce buffers but increase repeated recognition of window tails. They do not impose a hard model memory cap. Resume verifies input/model hashes and significant settings; thread counts and equivalent model spellings may change. Checkpoint schema 3, timeline version 3 and chunking version 4 do not migrate older progress.
 
 See [long recordings and resume](docs/resume.md) for compatibility, timeline semantics, crash recovery, overwrite/skip behavior and numbered mappings. Existing outputs are never silently replaced. Successful publication removes journal payloads; lock files remain intentionally.
+
+Outputs, checkpoints and the model cache also work on FAT32, exFAT and other filesystems without POSIX permissions or hard links, such as USB drives, SD cards and many FUSE/SMB mounts. Checkpoints stay next to the outputs, but their privacy cannot be enforced there: a one-time warning says so, and the mount options decide who can read them. See [filesystems without permissions](docs/resume.md#filesystems-without-posix-permissions).
 
 Damaged audio is skipped with a warning by default (`--decode-errors tolerant`); use `strict` to stop on the first decoder error. The default limit is 30 seconds of input audio without a successful frame after errors; `--decode-error-limit-seconds 0` disables this time limit. Recovery cannot restore lost speech. See [damaged audio](docs/resume.md#damaged-audio) for safeguards and restart requirements when changing the policy.
 
