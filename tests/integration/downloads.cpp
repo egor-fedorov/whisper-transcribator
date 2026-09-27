@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include <openssl/ssl.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
@@ -96,8 +97,13 @@ class Server {
         require(getsockname(listener, reinterpret_cast<sockaddr*>(&address), &size) == 0);
         require(listen(listener, 8) == 0);
         url = "https://127.0.0.1:" + std::to_string(ntohs(address.sin_port));
+        // shutdown() of a listening socket does not interrupt accept() on macOS, so the worker
+        // waits for connections with a timeout and checks for the end of the test.
         worker = std::thread([&] {
             while (!stopping) {
+                pollfd ready{listener, POLLIN, 0};
+                if (poll(&ready, 1, 100) <= 0)
+                    continue;
                 auto fd = accept(listener, nullptr, nullptr);
                 if (fd < 0)
                     continue;
@@ -108,7 +114,6 @@ class Server {
     }
     ~Server() {
         stopping = true;
-        shutdown(listener, SHUT_RDWR);
         worker.join();
         close(listener);
     }
