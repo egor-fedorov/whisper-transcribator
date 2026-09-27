@@ -108,7 +108,7 @@ with narrowly scoped mounts once device permissions are configured.
 
 ## Gates
 
-1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks.
+1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks, and CTest on macOS arm64.
 2. Build x86_64 CPU/CUDA and aarch64 CPU archives. Inspect bundled dependencies, source packages,
    vendor notices and SHA256SUMS. No glibc or host driver may be bundled.
 3. Run `tests/smoke/prepare-smoke.sh` once, then `tests/smoke/smoke.sh` with networking disabled
@@ -120,6 +120,7 @@ with narrowly scoped mounts once device permissions are configured.
    and missing-plugin diagnostics, without downloading weights or running inference.
 5. On a trusted GPU machine, repeat the offline smoke with the CUDA archive and
    `cuda` as the last script argument; test the CUDA image with driver injection.
+   On an Apple silicon Mac, repeat it from a source build with `metal`.
 6. Scan the entire Git history for secrets. Review the diff and ensure private
    data/weights and generated artifacts remain ignored. Update release notes.
 7. Only after approval, tag and publish the verified artifacts and checksums.
@@ -134,6 +135,10 @@ every release still needs a successful run for its exact source commit.
 The aarch64 legs run natively on `ubuntu-24.04-arm` as `test (gcc, g++, OFF, aarch64)`,
 `package (aarch64)` and `smoke (aarch64)`; existing x86_64 check names are unchanged.
 Add the aarch64 checks to the branch protection rules after their first successful run.
+`test (macos-15, arm64)` builds from source with Homebrew dependencies and runs CTest, the
+`hdiutil` exFAT check and offline CPU smoke tests, with network access denied by
+`sandbox-exec`. It repeats the smoke with Metal only where the hosted runner exposes Metal,
+so Metal inference remains a manual gate. There is no macOS archive yet.
 
 The `package` job builds and verifies the archive, dependencies and `doctor`,
 including a model-free baseline-CPU loader check (non-AVX2 x86_64 or ARMv8.0) with a 30-second timeout. It never
