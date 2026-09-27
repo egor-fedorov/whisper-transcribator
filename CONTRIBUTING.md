@@ -21,7 +21,7 @@ cmake --build --preset asan -j4
 ctest --preset asan
 ```
 
-On macOS install the Xcode Command Line Tools and `brew install cmake ninja pkgconf ffmpeg openssl@3 jq`, then use the same CTest commands; CMake finds Homebrew's OpenSSL itself. The test scripts run under the system Bash 3.2: do not expand empty arrays under `set -u` or rely on GNU-only tools. `tests/smoke/model-hash.sh` needs `strace` and runs on Linux only.
+On macOS install the Xcode Command Line Tools and `brew install cmake ninja pkgconf ffmpeg ffmpeg-full openssl@3 jq`, then use the same CTest commands. CMake finds Homebrew's keg-only OpenSSL itself, and tests generate media with `ffmpeg-full` because Homebrew's `ffmpeg` has no libvorbis encoder; the application links `ffmpeg`. The test scripts run under the system Bash 3.2: do not expand empty arrays under `set -u` or rely on GNU-only tools. `tests/smoke/model-hash.sh` needs `strace` and runs on Linux only.
 
 Run a focused model-free group with CTest labels; the unfiltered command above still runs all required checks:
 
