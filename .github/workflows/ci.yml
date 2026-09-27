@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      verify_ccache:
+        description: Verify clean rebuild cache hits (extra build for each compiler)
+        type: boolean
+        default: false
       build_cuda:
         description: Build CUDA archive (hardware inference is a separate manual gate)
         type: boolean
@@ -45,18 +49,23 @@ jobs:
           restore-keys: |
             ccache-${{ runner.os }}-${{ runner.arch }}-${{ matrix.cc }}-${{ steps.compiler.outputs.version }}-${{ matrix.sanitize }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}-
       - run: |
-          echo "CCACHE_DIR=$PWD/.build/ccache" >> "$GITHUB_ENV"
-          echo "CCACHE_BASEDIR=$PWD" >> "$GITHUB_ENV"
-          echo "CCACHE_MAXSIZE=500M" >> "$GITHUB_ENV"
-      - run: find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-18 --dry-run --Werror {} +
-      - run: find tests packaging -type f -name '*.sh' -exec shellcheck {} +
-      - run: bash tests/packaging/release.sh
+          printf '%s\n' "CCACHE_DIR=$PWD/.build/ccache" "CCACHE_BASEDIR=$PWD" \
+            'CCACHE_MAXSIZE=500M' >> "$GITHUB_ENV"
+      - if: matrix.sanitize == 'OFF'
+        run: find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-18 --dry-run --Werror {} +
+      - if: matrix.sanitize == 'OFF'
+        run: find tests packaging -type f -name '*.sh' -exec shellcheck {} +
+      - if: matrix.sanitize == 'OFF'
+        run: bash tests/packaging/release.sh
       - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
       - run: cmake --build .build/ci -j2
-      - run: |
+      - run: ccache --show-stats
+      - name: Verify clean rebuild cache hits (manual only)
+        if: github.event_name == 'workflow_dispatch' && inputs.verify_ccache
+        run: |
           ccache --zero-stats
           cmake --build .build/ci --target clean
           cmake --build .build/ci -j2
