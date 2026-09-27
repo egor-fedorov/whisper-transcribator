@@ -1,6 +1,6 @@
 # Build And Release
 
-The 0.4 development line is a native CLI. Build artifacts live under `.build/`; nothing is
+The 0.4 release line is a native CLI. Build artifacts live under `.build/`; nothing is
 published automatically. Do not move or delete local `models/`, `transcripts/`
 or `benchmark-results/` during release cleanup. The immutable `v0.2.0` tag is the
 historical Python implementation, not another active release line.
@@ -124,7 +124,7 @@ memory tests use synthetic audio and fake inference, not full lecture recognitio
 
 ## Prepare And Publish
 
-`main` currently reports `0.4.0-dev+g<revision>` (plus `.dirty` when applicable), not a published 0.4.0. Git-less source builds say `unknown`; Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For a future release, clear `WT_VERSION_SUFFIX` in the reviewed release commit and build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
+The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
 
 Keep the two archives and their original `SHA256SUMS` under
 `.build/artifacts/cpu/` and `.build/artifacts/cuda/`. Prepare from a clean checkout
