@@ -35,6 +35,9 @@ void scenario(const fs::path& root, int seconds) {
         out << "data";
         little(out, bytes, 4);
         std::string block(sample_rate * 2, '\0');
+        // Keep inference and rendering active instead of taking the digital-silence shortcut.
+        for (size_t i = 0; i < block.size(); i += 2)
+            block[i] = 1;
         for (int i = 0; i < seconds; ++i)
             out << block;
     });

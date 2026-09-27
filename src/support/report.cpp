@@ -81,6 +81,10 @@ void FileProgress::begin_window(int64_t samples, size_t count) {
     update(0);
 }
 void FileProgress::commit(int64_t samples) {
+    if (base < 0) {
+        base = samples / 16000.0;
+        began = std::chrono::steady_clock::now();
+    }
     committed = samples / 16000.0;
     start = committed;
     window = 0;

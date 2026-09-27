@@ -16,7 +16,7 @@ for mode in plain vad; do
     extra=()
     if [[ $mode == plain ]]; then extra=(--no-vad); fi
     "$binary" "${common[@]}" "${extra[@]}" --output-dir "$root/$mode" >"$root/$mode.log" 2>&1
-    jq -e '.duration == 41 and .run.chunk_seconds == 30 and .run.chunking_version == 3
+    jq -e '.duration == 41 and .run.chunk_seconds == 30 and .run.chunking_version == 4
         and (.segments | length > 1)
         and all(.segments[]; .start >= 0 and .end >= .start and .end <= 41)
         and any(.segments[]; .start >= 30)' "$root/$mode/windows.json"
@@ -57,4 +57,20 @@ jq -e '.duration == 41 and (.segments | length > 1)' "$root/resume/windows.json"
 # Already committed segments must be retained exactly, not regenerated.
 diff <(jq -c --argjson boundary "$boundary" '[.segments[] | select(.end <= $boundary)]' "$root/plain/windows.json") \
      <(jq -c --argjson boundary "$boundary" '[.segments[] | select(.end <= $boundary)]' "$root/resume/windows.json")
+"$helper" --silence "$sample" "$root/silence.wav"
+for mode in plain vad; do
+    extra=()
+    if [[ $mode == plain ]]; then extra=(--no-vad); fi
+    status=0
+    "$binary" "$root/silence.wav" "${common[@]:1}" "${extra[@]}" \
+        --output-dir "$root/silent-$mode" >"$root/silent-$mode.log" 2>&1 || status=$?
+    test "$status" = 1
+    grep -q 'No transcript produced' "$root/silent-$mode.log"
+    test ! -e "$root/silent-$mode/silence.txt"
+    test ! -e "$root/silent-$mode/silence.json"
+    manifest=$(find "$root/silent-$mode/.whisper-transcribator" -name manifest.json -type f)
+    jq -e '.samples == 41 * 16000 and .finished and .languages == []' "$manifest"
+    test "$(grep -c '^Skipping digital silence:' "$root/silent-$mode.log")" = 2
+    if grep -Eq '^(Loading model:|Recognizing )' "$root/silent-$mode.log"; then exit 1; fi
+done
 echo "Windowed $device inference and resume smoke passed"

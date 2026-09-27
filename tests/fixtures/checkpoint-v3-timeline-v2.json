@@ -27,7 +27,7 @@
         "audio_timeline_version": 2,
         "timestamp_gaps": "auto",
         "rendering_version": 1,
-        "chunking_version": 3
+        "chunking_version": 4
       },
       "language": "auto",
       "backend": {"model_sha256": "fixture"}
@@ -54,7 +54,7 @@
         "audio_timeline_version": 2,
         "timestamp_gaps": "auto",
         "rendering_version": 1,
-        "chunking_version": 3
+        "chunking_version": 4
       }
     },
     "chunks": 1,
