@@ -81,18 +81,20 @@ Json install_snapshot(Fixture& f, const Json& snapshot) {
     return manifest;
 }
 void old_timeline_snapshot(const fs::path& root) {
-    auto snapshot = Json::parse(read_text(fs::path(WT_TEST_FIXTURES) / "checkpoint-v3.json"));
-    Fixture f(root);
-    auto manifest = install_snapshot(f, snapshot);
-    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
-            "/run/audio_timeline_version");
-    auto directory = checkpoint_path(f.job);
-    require(read_text(directory / "manifest.json") == manifest.dump());
-    require(read_text(directory / "chunk-0.json") == snapshot.at("chunk"));
+    for (const auto* file : {"checkpoint-v3.json", "checkpoint-v3-timeline-v2.json"}) {
+        auto snapshot = Json::parse(read_text(fs::path(WT_TEST_FIXTURES) / file));
+        Fixture f(root / file);
+        auto manifest = install_snapshot(f, snapshot);
+        rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
+                "/run/audio_timeline_version");
+        auto directory = checkpoint_path(f.job);
+        require(read_text(directory / "manifest.json") == manifest.dump());
+        require(read_text(directory / "chunk-0.json") == snapshot.at("chunk"));
+    }
 }
 void current_snapshot(const fs::path& root) {
     auto snapshot =
-        Json::parse(read_text(fs::path(WT_TEST_FIXTURES) / "checkpoint-v3-timeline-v2.json"));
+        Json::parse(read_text(fs::path(WT_TEST_FIXTURES) / "checkpoint-v3-timeline-v3.json"));
     Fixture f(root);
     auto manifest = install_snapshot(f, snapshot);
     require(manifest.at("fingerprint") == f.fingerprint());

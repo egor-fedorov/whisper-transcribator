@@ -13,7 +13,7 @@ int64_t add(int64_t a, int64_t b) {
 }
 } // namespace
 AudioPlacement AudioTimeline::locate(std::optional<int64_t> pts, int64_t delay, int64_t tolerance,
-                                     bool allow_reset, TimestampGaps gaps) {
+                                     bool transport, TimestampGaps gaps) {
     auto expected = add(position, delay);
     auto start = pts ? add(*pts, shift) : expected;
     constexpr auto bound = std::numeric_limits<int64_t>::max() / 4;
@@ -26,9 +26,9 @@ AudioPlacement AudioTimeline::locate(std::optional<int64_t> pts, int64_t delay, 
     if (started && delta >= -jitter && delta <= jitter)
         start = expected;
     else if (started && (delta < -jitter ||
-                         (allow_reset && gaps == TimestampGaps::automatic && delta > 160000))) {
-        if (!allow_reset)
-            throw std::runtime_error("Audio timestamp moved backwards by more than 100 ms");
+                         (transport && gaps == TimestampGaps::automatic && delta > 160000))) {
+        // A slow recording clock can accumulate negative drift in any container.
+        // Keep every decoded sample instead of trimming speech or failing the file.
         shift = add(shift, -delta);
         start = expected;
         reset = true;

@@ -16,7 +16,7 @@ class AudioTimeline {
   public:
     int64_t end() const { return position; }
     AudioPlacement locate(std::optional<int64_t> pts, int64_t delay, int64_t tolerance,
-                          bool allow_reset, TimestampGaps gaps = TimestampGaps::automatic);
+                          bool transport, TimestampGaps gaps = TimestampGaps::automatic);
     void advance(int64_t start, size_t count);
 };
 } // namespace wt

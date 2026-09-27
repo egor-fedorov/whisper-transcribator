@@ -64,7 +64,7 @@ Interrupted downloads retain private hash-specific `.part` files and resume auto
 
 `all` writes TXT, SRT, VTT and JSON from the same recognition. TXT/JSON text uses paragraph heuristics based on pauses, language changes and sentence endings, not an LLM rewrite. Lines are not wrapped to a fixed width. `--text-layout single-line` retains the old layout; `--paragraph-pause-ms` changes the 2000 ms pause threshold. Captions normalize whitespace; JSON segments retain raw recognized text. JSON schema 2 records per-segment languages and a multilingual summary; unavailable metrics are `null`.
 
-Audio buffers cover only the current window; outputs stream from saved segments. Smaller `--chunk-seconds` values can reduce buffers but increase repeated recognition of window tails. They do not impose a hard model memory cap. Resume verifies input/model hashes and significant settings; thread counts and equivalent model spellings may change. Checkpoint schema 3, timeline version 2 and chunking version 4 do not migrate older progress.
+Audio buffers cover only the current window; outputs stream from saved segments. Smaller `--chunk-seconds` values can reduce buffers but increase repeated recognition of window tails. They do not impose a hard model memory cap. Resume verifies input/model hashes and significant settings; thread counts and equivalent model spellings may change. Checkpoint schema 3, timeline version 3 and chunking version 4 do not migrate older progress.
 
 See [long recordings and resume](docs/resume.md) for compatibility, timeline semantics, crash recovery, overwrite/skip behavior and numbered mappings. Existing outputs are never silently replaced. Successful publication removes journal payloads; lock files remain intentionally.
 

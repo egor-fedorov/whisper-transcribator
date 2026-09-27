@@ -18,6 +18,28 @@ for source in "$root/delayed.mp4" "$root/gap.mkv" "$root/fractional.mkv"; do
         -af 'aresample=16000:async=1:first_pts=0' -ac 1 -c:a pcm_f32le "$root/reference.wav" -y
     "$binary" --timeline "$source" "$root/reference.wav"
 done
+
+# Slow recording clocks used to become fatal once negative drift exceeded 100 ms.
+# These are synthetic 198-second files, decoded only; no model or inference is used.
+for container in mkv mp4; do
+    codec=pcm_f32le
+    rate=16000
+    if [[ $container == mp4 ]]; then codec=aac; rate=44100; fi
+    source="$root/drift.$container"
+    "$ffmpeg" -hide_banner -loglevel error -f lavfi \
+        -i "sine=frequency=440:sample_rate=$rate:duration=198" \
+        -af 'asetpts=PTS*0.999' -c:a "$codec" "$source"
+    # No async correction: all decoded samples, not resampling to the drifting clock.
+    "$ffmpeg" -hide_banner -loglevel error -i "$source" \
+        -af 'aresample=16000' -ac 1 -c:a pcm_f32le "$root/drift-reference.wav" -y
+    "$binary" --pcm "$source" "$root/drift-reference.wav"
+    for policy in auto preserve; do
+        "$binary" --summary "$source" "$policy" >"$root/drift.json" 2>"$root/drift.log"
+        jq -e '.samples >= 198 * 16000 - 32 and .samples < 199 * 16000
+            and .estimate_before > 0 and .estimate_after == 0' "$root/drift.json"
+        test "$(grep -c 'Warning: Audio timestamp discontinuity corrected' "$root/drift.log")" = 1
+    done
+done
 "$ffmpeg" -hide_banner -loglevel error -f lavfi \
     -i 'sine=frequency=440:sample_rate=16000:duration=2' \
     -af 'asetnsamples=n=160:p=0,asetpts=PTS+gte(N\,16000)*86400/TB' \

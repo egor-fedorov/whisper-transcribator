@@ -15,11 +15,10 @@ void positions(const fs::path&) {
     require(timeline.locate(96000 + 6 * 16000, 0, 1, false).discontinuity);
     auto overlap = timeline.locate(95500, 0, 1, false);
     require(overlap.start == 96000 && !overlap.discontinuity);
-    rejects([&] { timeline.locate(1000, 0, 1, false); }, "backwards");
-    auto reset = timeline.locate(1000, 0, 1, true);
+    auto reset = timeline.locate(1000, 0, 1, false);
     require(reset.reset && reset.start == 96000);
     timeline.advance(reset.start, 1024);
-    require(!timeline.locate(2024, 0, 1, true).discontinuity);
+    require(!timeline.locate(2024, 0, 1, false).discontinuity);
     AudioTimeline preroll;
     require(preroll.locate(-1024, 0, 1, false).start == -1024);
     preroll.advance(-1024, 2048);
@@ -53,8 +52,9 @@ void jitter(const fs::path&) {
     for (int64_t delta : {-1600, -1599, 1599, 1600})
         require(!clock.locate(clock.end() + delta, 0, 1, false).discontinuity);
     require(clock.locate(clock.end() + 1601, 0, 1, false).discontinuity);
-    rejects([&] { clock.locate(clock.end() - 1601, 0, 1, false); }, "backwards");
     require(!clock.locate(clock.end() + 2000, 0, 2000, false).discontinuity);
+    auto reset = clock.locate(clock.end() - 1601, 0, 1, false);
+    require(reset.reset && reset.start == clock.end());
     // Small timestamp drift must accumulate against samples, not a moving PTS anchor.
     AudioTimeline drift;
     drift.locate(0, 0, 1, false);
@@ -63,6 +63,34 @@ void jitter(const fs::path&) {
         auto point = drift.locate(drift.end() + i * 100, 0, 1, false);
         require(point.discontinuity == (i == 17));
     }
+}
+void negative_drift(const fs::path&) {
+    for (bool transport : {false, true})
+        for (auto policy : {TimestampGaps::automatic, TimestampGaps::preserve}) {
+            for (int64_t ppm : {20, 100, 1000}) {
+                AudioTimeline clock;
+                int resets = 0;
+                constexpr int64_t block = 1600, blocks = 60000;
+                // Simulate 100 minutes without media, PCM buffers or inference.
+                for (int64_t i = 0; i < blocks; ++i) {
+                    auto pts = i * block * (1000000 - ppm) / 1000000;
+                    auto point = clock.locate(pts, 0, 1, transport, policy);
+                    require(point.start == i * block);
+                    if (point.reset)
+                        ++resets;
+                    clock.advance(point.start, block);
+                }
+                require(resets > 0 && resets < blocks / 1000);
+                require(clock.end() == blocks * block, "clock drift dropped PCM samples");
+            }
+            AudioTimeline reset;
+            reset.locate(0, 0, 1, transport, policy);
+            reset.advance(0, 160000);
+            auto point = reset.locate(0, 0, 1, transport, policy);
+            require(point.reset && point.start == 160000);
+            reset.advance(point.start, 1024);
+            require(!reset.locate(1024, 0, 1, transport, policy).discontinuity);
+        }
 }
 void gap_policy(const fs::path&) {
     for (bool transport : {false, true})
@@ -94,5 +122,6 @@ void gap_policy(const fs::path&) {
 int main() {
     return run_tests({{"timestamps, missing PTS, overlaps and discontinuities", positions},
                       {"codec jitter and accumulated clock drift", jitter},
+                      {"slow recording clocks preserve PCM in all containers", negative_drift},
                       {"transport gap policies and isolated outliers", gap_policy}});
 }
