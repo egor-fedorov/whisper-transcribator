@@ -27,9 +27,13 @@ wt_test(resampler unit unit/resampler.cpp)
 target_link_libraries(wt-resampler-tests PRIVATE wt_engine PkgConfig::AV)
 wt_test(timeline unit unit/timeline.cpp)
 target_link_libraries(wt-timeline-tests PRIVATE wt_engine)
+wt_test(decode-errors unit unit/audio-recovery.cpp)
+target_link_libraries(wt-decode-errors-tests PRIVATE wt_engine)
 
 wt_test(audio integration integration/audio.cpp)
 target_link_libraries(wt-audio-tests PRIVATE wt_engine)
+wt_test_target(audio-recovery integration/audio-recovery.cpp)
+target_link_libraries(wt-audio-recovery-tests PRIVATE wt_engine)
 wt_test(audio-logging integration integration/audio-logging.cpp)
 target_link_libraries(wt-audio-logging-tests PRIVATE wt_engine PkgConfig::AV)
 wt_test(rendering integration integration/rendering.cpp)
@@ -58,6 +62,9 @@ if(WT_TEST_FFMPEG)
   add_test(NAME integration/audio-timeline COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-timeline.sh"
     $<TARGET_FILE:wt-audio-tests> "${WT_TEST_FFMPEG}" $<TARGET_FILE:whisper-transcribator>)
   set_tests_properties(integration/audio-timeline PROPERTIES LABELS integration TIMEOUT 60)
+  add_test(NAME integration/audio-recovery COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-recovery.sh"
+    $<TARGET_FILE:wt-audio-tests> $<TARGET_FILE:wt-audio-recovery-tests> "${WT_TEST_FFMPEG}")
+  set_tests_properties(integration/audio-recovery PROPERTIES LABELS integration TIMEOUT 60)
 endif()
 add_test(NAME integration/cli COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/cli.sh"
   $<TARGET_FILE:whisper-transcribator> "${CMAKE_CURRENT_BINARY_DIR}/cli" "${CMAKE_BINARY_DIR}/generated/package.env" "${WT_WHISPER_REVISION}")
@@ -85,6 +92,7 @@ set(WT_CHECK_HEADERS
   app/commands.hpp
   audio/audio.hpp
   audio/resampler.hpp
+  audio/recovery.hpp
   audio/timeline.hpp
   inference/runtime.hpp
   inference/whisper.hpp

@@ -40,9 +40,11 @@ rather than disabling leak detection. GCC and Clang are checked in CI with
 `-DWT_WERROR=ON` for project code and tests, not dependencies. FFmpeg 5.1 is the
 minimum supported version and is checked separately. Install `ffmpeg` and `jq`
 for synthetic media integration tests, including Vorbis/MP3 at 44.1/48 kHz,
-MPEG-TS format transitions and timestamp jumps, compared against independent
+MPEG-TS format transitions, clock drift and timestamp jumps, compared against independent
 FFmpeg PCM references. The test executable needs `libvorbis` and `libmp3lame`
-encoders. These are test tools only, not runtime dependencies. `-DGGML_NATIVE=ON` is supported for local
+encoders and the `noise` bitstream filter. Damaged MP3/AAC checks compare PCM,
+exercise error budgets and verify byte-identical resume using fake inference
+that hashes decoded windows. These are test tools only, not runtime dependencies. `-DGGML_NATIVE=ON` is supported for local
 builds; portable packaging explicitly keeps it off.
 
 The optional inference check uses only a public 11-second JFK recording:

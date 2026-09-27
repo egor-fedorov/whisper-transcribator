@@ -23,6 +23,15 @@ Backward jumps beyond the jitter tolerance start a contiguous section in every c
 
 JSON `duration` is the end of the selected, policy-adjusted audio timeline, including its leading delay and preserved gaps. It is not the sum of speech durations and is not padded to the end of a longer video. Progress uses an estimate until decoding determines the actual end; an unknown or exceeded estimate suppresses ETA. Correcting a timestamp discontinuity also invalidates the original duration estimate, so percentages and ETA are withheld rather than calculated against an obsolete timeline.
 
+## Damaged Audio
+An `AVERROR_INVALIDDATA` result when submitting an audio packet or receiving a decoded frame is recoverable. The decoder's rejected data is skipped, not repaired. The application warns once per file that the transcript may be incomplete, reports individual recovery events in verbose mode, and prints the total recovered error count at decoding EOF. FFmpeg may also emit its own diagnostics. Do not interpret successful completion as proof that every spoken word survived the recording damage.
+
+Recovery stops at 8 decoder errors without a successful decoded frame, or 32 decoder errors within the most recent 128 input audio packets. These fixed budgets also bound repeated receive errors during draining. Successful packet submission alone does not reset the consecutive-error count. Files that never yield usable audio still fail. Other decoder errors, demuxer/read errors, invalid decoded parameters, allocation failures and cancellation are not converted into skipped data.
+
+Later valid timestamps follow the same timeline policy described above; gaps beyond the jitter tolerance are preserved, while missing timestamps cannot reconstruct the duration of lost audio. Recovery does not flush healthy decoder state or remove successfully decoded samples. A resumed job replays decoding and the same error budgets across its saved prefix, without repeating inference there. Severe corruption remains an error on resume; committed progress is retained and incomplete results are not published. Repairing/replacing the source changes its hash and requires an explicit fresh run.
+
+Audio decoding policy version 1 is part of checkpoint compatibility, independently of timeline version 3 and chunking version 4. Earlier checkpoints without this field are preserved but rejected; finish them with the original binary or explicitly restart.
+
 ## Restart An Interrupted Job
 ```bash
 ./bin/whisper-transcribator lecture.mp4 --output-dir transcripts --format all \
@@ -34,7 +43,7 @@ JSON `duration` is the end of the selected, policy-adjusted audio timeline, incl
 
 Each committed window is saved under the output directory's private `.whisper-transcribator/`. The journal contains transcript fragments and source paths, not audio or weights. Keep it on persistent storage; a Docker bind mount of `/output` also preserves checkpoints. Allow disk space for journal records and staged outputs. Disk errors fail the job.
 
-Resume verifies the input contents and paths, requested destinations, model/VAD SHA-256, selected audio stream, `--timestamp-gaps` policy, inference and formatting settings, backend versions, and timeline/chunking/rendering algorithm versions. An incompatibility reports changed field paths. It never silently discards progress.
+Resume verifies the input contents and paths, requested destinations, model/VAD SHA-256, selected audio stream, `--timestamp-gaps` policy, inference and formatting settings, backend versions, and decoding/timeline/chunking/rendering algorithm versions. An incompatibility reports changed field paths. It never silently discards progress.
 
 CPU thread counts, affinity and the spelling of model paths/catalog aliases do not determine compatibility. The actual model hashes do. Application version/Git revision are diagnostic metadata, not algorithm identifiers. `run` and top-level `model` describe the original job and remain frozen across resume so partially published JSON can be reconstructed byte-for-byte. Current execution settings appear in stderr; one resumed job may have used different CPU counts.
 

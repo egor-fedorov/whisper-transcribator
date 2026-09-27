@@ -1,4 +1,5 @@
 #include "audio/audio.hpp"
+#include "audio/recovery.hpp"
 #include "audio/resampler.hpp"
 #include "audio/timeline.hpp"
 #include "support/cancel.hpp"
@@ -99,6 +100,7 @@ struct AudioReader::Impl {
     AVCodecContext* codec = nullptr;
     FrameResampler resampler;
     AudioTimeline timeline;
+    DecodeRecovery recovery;
     AVPacket* packet = av_packet_alloc();
     AVFrame* frame = av_frame_alloc();
     int stream = -1;
@@ -109,6 +111,17 @@ struct AudioReader::Impl {
     double estimated_duration = 0;
     TimestampGaps gaps = TimestampGaps::automatic;
     bool retained = false, warned_reset = false, warned_gap = false, adjusted = false;
+    bool recover(int code, const char* operation) {
+        check_cancelled();
+        if (!recovery.recover(code))
+            return false;
+        if (recovery.errors() == 1)
+            log_message(LogLevel::warning, "Skipping invalid audio data rejected by the decoder; "
+                                           "the transcript may be incomplete");
+        log_message(LogLevel::debug, std::string("Recoverable audio decoder error: ") + operation +
+                                         "; total " + std::to_string(recovery.errors()));
+        return true;
+    }
     ~Impl() {
         av_dict_free(&options);
         av_frame_free(&frame);
@@ -142,6 +155,7 @@ struct AudioReader::Impl {
             }
             int code = avcodec_receive_frame(codec, frame);
             if (code >= 0) {
+                recovery.frame();
                 auto* selected = format->streams[stream];
                 auto pts = frame->best_effort_timestamp;
                 if (pts == AV_NOPTS_VALUE)
@@ -203,9 +217,15 @@ struct AudioReader::Impl {
                 continue;
             }
             if (code == AVERROR_EOF) {
+                if (recovery.errors())
+                    log_message(LogLevel::info, "Audio decoding completed with " +
+                                                    std::to_string(recovery.errors()) +
+                                                    " recoverable decoder errors");
                 decoded = true;
                 continue;
             }
+            if (recover(code, "receive frame"))
+                continue;
             if (code != AVERROR(EAGAIN))
                 check(code, "decode frame");
             if (flushing)
@@ -220,8 +240,11 @@ struct AudioReader::Impl {
                 check(avcodec_send_packet(codec, nullptr), "flush decoder");
             } else {
                 check(code, "read packet");
-                check(avcodec_send_packet(codec, packet), "decode packet");
+                recovery.packet();
+                code = avcodec_send_packet(codec, packet);
                 av_packet_unref(packet);
+                if (!recover(code, "send packet"))
+                    check(code, "decode packet");
             }
         }
     }

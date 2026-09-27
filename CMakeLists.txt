@@ -32,7 +32,8 @@ add_library(wt_core STATIC
 target_include_directories(wt_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(wt_core PUBLIC CURL::libcurl OpenSSL::Crypto nlohmann_json::nlohmann_json)
 add_library(wt_engine STATIC
-  src/audio/audio.cpp src/audio/timeline.cpp src/inference/runtime.cpp src/inference/whisper.cpp
+  src/audio/audio.cpp src/audio/timeline.cpp src/audio/recovery.cpp
+  src/inference/runtime.cpp src/inference/whisper.cpp
   src/app/doctor.cpp src/app/transcribe.cpp)
 target_link_libraries(wt_engine PUBLIC wt_core whisper PkgConfig::AV ${CMAKE_DL_LIBS})
 add_executable(whisper-transcribator src/app/main.cpp src/app/cli.cpp)

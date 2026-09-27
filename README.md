@@ -68,6 +68,8 @@ Audio buffers cover only the current window; outputs stream from saved segments.
 
 See [long recordings and resume](docs/resume.md) for compatibility, timeline semantics, crash recovery, overwrite/skip behavior and numbered mappings. Existing outputs are never silently replaced. Successful publication removes journal payloads; lock files remain intentionally.
 
+Isolated invalid audio packets can be skipped with a warning; severe corruption and read errors still fail without publishing incomplete results. Recovery cannot restore lost speech. See [damaged audio](docs/resume.md#damaged-audio) for error budgets and decoding-policy checkpoint compatibility.
+
 ## Diagnostics
 Status goes to stderr; command JSON stays on stdout. `--quiet` retains warnings/errors, while `--verbose` adds backend and checkpoint diagnostics without FFmpeg DEBUG/TRACE packet dumps. Terminal progress updates in place; redirected progress is rate-limited. The first SIGINT/SIGTERM stops gracefully; a second exits immediately with committed progress recoverable.
 
