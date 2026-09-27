@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       run_portable_inference:
-        description: Run slow non-AVX2 inference under QEMU before release
+        description: Run slow baseline-CPU inference (x86_64 without AVX2, ARMv8.0) under QEMU before release
         type: boolean
         default: false
 permissions:
@@ -24,17 +24,32 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    # Explicit names keep the existing required-check names stable.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - cc: gcc
+          - name: test (gcc, g++, OFF)
+            os: ubuntu-24.04
+            cc: gcc
             cxx: g++
             sanitize: 'OFF'
-          - cc: clang-18
+            lint: true
+          - name: test (clang-18, clang++-18, ON)
+            os: ubuntu-24.04
+            cc: clang-18
             cxx: clang++-18
             sanitize: 'ON'
+            lint: false
+          - name: test (gcc, g++, OFF, aarch64)
+            os: ubuntu-24.04-arm
+            cc: gcc
+            cxx: g++
+            sanitize: 'OFF'
+            lint: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: |
@@ -51,11 +66,11 @@ jobs:
       - run: |
           printf '%s\n' "CCACHE_DIR=$PWD/.build/ccache" "CCACHE_BASEDIR=$PWD" \
             'CCACHE_MAXSIZE=500M' >> "$GITHUB_ENV"
-      - if: matrix.sanitize == 'OFF'
+      - if: matrix.lint
         run: find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-18 --dry-run --Werror {} +
-      - if: matrix.sanitize == 'OFF'
+      - if: matrix.lint
         run: find tests packaging -type f -name '*.sh' -exec shellcheck {} +
-      - if: matrix.sanitize == 'OFF'
+      - if: matrix.lint
         run: bash tests/packaging/release.sh
       - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         env:
@@ -86,8 +101,22 @@ jobs:
             "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
             "$PWD/.build/offline-streaming"
   package:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The x86_64 leg keeps the existing required-check name.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: package
+            os: ubuntu-24.04
+            directory: cpu
+            artifact: native-cpu
+          - name: package (aarch64)
+            os: ubuntu-24.04-arm
+            directory: cpu-aarch64
+            artifact: native-cpu-aarch64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -97,54 +126,69 @@ jobs:
           context: .
           file: packaging/Dockerfile
           target: archive
-          outputs: type=local,dest=.build/artifacts/cpu
+          outputs: type=local,dest=.build/artifacts/${{ matrix.directory }}
           build-args: |
             WT_SOURCE_REVISION=${{ github.sha }}
             WT_SOURCE_DIRTY=false
-          cache-from: type=gha,version=2,scope=archive-cpu
-          cache-to: type=gha,version=2,scope=archive-cpu,mode=max,ignore-error=true,timeout=2m
+          cache-from: type=gha,version=2,scope=archive-${{ matrix.directory }}
+          cache-to: type=gha,version=2,scope=archive-${{ matrix.directory }},mode=max,ignore-error=true,timeout=2m
       - name: Verify archive, dependencies and doctor
-        run: bash tests/packaging/package.sh .build/artifacts/cpu
+        run: bash tests/packaging/package.sh .build/artifacts/${{ matrix.directory }}
       - name: Install QEMU for the loader check
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user
-      - name: Check non-AVX2 backend loading (no inference, 30s limit)
-        run: bash tests/packaging/portable.sh .build/artifacts/cpu/unpacked .build/portable
+      - name: Check baseline CPU backend loading (no inference, 30s limit)
+        run: bash tests/packaging/portable.sh .build/artifacts/${{ matrix.directory }}/unpacked .build/portable
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: native-cpu
+          name: ${{ matrix.artifact }}
           path: |
-            .build/artifacts/cpu/*.tar.gz
-            .build/artifacts/cpu/SHA256SUMS
+            .build/artifacts/${{ matrix.directory }}/*.tar.gz
+            .build/artifacts/${{ matrix.directory }}/SHA256SUMS
           retention-days: 7
           if-no-files-found: error
   smoke:
+    name: ${{ matrix.name }}
     needs: package
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: smoke
+            os: ubuntu-24.04
+            directory: cpu
+            artifact: native-cpu
+          - name: smoke (aarch64)
+            os: ubuntu-24.04-arm
+            directory: cpu-aarch64
+            artifact: native-cpu-aarch64
+    env:
+      ARCHIVE: .build/artifacts/${{ matrix.directory }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: native-cpu
-          path: .build/artifacts/cpu
+          name: ${{ matrix.artifact }}
+          path: ${{ env.ARCHIVE }}
       - name: Verify the exact archive produced by package
-        run: bash tests/packaging/package.sh .build/artifacts/cpu
+        run: bash tests/packaging/package.sh "$ARCHIVE"
       - name: Prepare public 11-second fixture and tiny weights
-        run: bash tests/smoke/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
+        run: bash tests/smoke/prepare-smoke.sh "$ARCHIVE/unpacked/bin/whisper-transcribator" .build/fixtures
       - name: Run archive inference offline in clean Ubuntu
         run: |
           mkdir -p .build/clean-output
           docker run --rm --network none --user "$(id -u):$(id -g)" \
-            -v "$PWD/.build/artifacts/cpu/unpacked:/app:ro" \
+            -v "$PWD/$ARCHIVE/unpacked:/app:ro" \
             -v "$PWD/.build/fixtures:/fixtures:ro" -v "$PWD/.build/clean-output:/output" \
             ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02 /app/bin/whisper-transcribator /fixtures/jfk.wav \
             --model /fixtures/ggml-tiny.bin --vad-model /fixtures/ggml-silero-v6.2.0.bin \
             --language en --device cpu --local-files-only --output-dir /output --format all
           jq -e '.run.backend == "whisper.cpp" and (.text | ascii_downcase | contains("country"))' .build/clean-output/jfk.json
       - name: Wrap the same archive in Docker (no recompilation)
-        run: docker build -f packaging/Dockerfile --target runtime-bundle -t whisper-transcribator:test .build/artifacts/cpu/unpacked
+        run: docker build -f packaging/Dockerfile --target runtime-bundle -t whisper-transcribator:test "$ARCHIVE/unpacked"
       - name: Check offline inference as the default non-root user
         run: |
           # Only public test fixtures are shared with the image's different default UID.
@@ -169,26 +213,41 @@ jobs:
             --language en --device cpu --local-files-only --output-dir /output --format all
           jq -e '.run.backend == "whisper.cpp" and (.segments | length > 0)' .build/docker-output/jfk.json
   portable-inference:
+    name: ${{ matrix.name }}
     if: github.event_name == 'workflow_dispatch' && inputs.run_portable_inference
     needs: package
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: portable-inference
+            os: ubuntu-24.04
+            directory: cpu
+            artifact: native-cpu
+          - name: portable-inference (aarch64)
+            os: ubuntu-24.04-arm
+            directory: cpu-aarch64
+            artifact: native-cpu-aarch64
+    env:
+      ARCHIVE: .build/artifacts/${{ matrix.directory }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: native-cpu
-          path: .build/artifacts/cpu
+          name: ${{ matrix.artifact }}
+          path: ${{ env.ARCHIVE }}
       - name: Verify the exact archive produced by package
-        run: bash tests/packaging/package.sh .build/artifacts/cpu
+        run: bash tests/packaging/package.sh "$ARCHIVE"
       - name: Install QEMU for opt-in inference
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user
       - name: Prepare public 11-second fixture and tiny weights
-        run: bash tests/smoke/prepare-smoke.sh .build/artifacts/cpu/unpacked/bin/whisper-transcribator .build/fixtures
-      - name: Run opt-in non-AVX2 inference (slow emulation, 10m limit)
-        run: bash tests/packaging/portable.sh .build/artifacts/cpu/unpacked .build/portable .build/fixtures
+        run: bash tests/smoke/prepare-smoke.sh "$ARCHIVE/unpacked/bin/whisper-transcribator" .build/fixtures
+      - name: Run opt-in baseline-CPU inference (slow emulation, 10m limit)
+        run: bash tests/packaging/portable.sh "$ARCHIVE/unpacked" .build/portable .build/fixtures
   compatibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
