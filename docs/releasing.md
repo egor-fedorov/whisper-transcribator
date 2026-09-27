@@ -193,6 +193,7 @@ Dependabot for Actions and Docker base images. FetchContent/FFmpeg updates remai
 Dependencies downloaded by CMake can be supplied offline via
 `FETCHCONTENT_SOURCE_DIR_WHISPER`, `FETCHCONTENT_SOURCE_DIR_CLI11` and
 `FETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON`; those local
-overrides are trusted and bypass archive hash verification. App build versions,
+overrides are trusted and bypass archive hash verification. They are also used unpatched:
+apply `cmake -DWT_WHISPER_SOURCE=DIR -P cmake/patch-whisper.cmake` to a whisper.cpp override. App build versions,
 FFmpeg pin and source package versions are recorded in the bundle. Apt security
 updates mean rebuilds need not have identical bytes.

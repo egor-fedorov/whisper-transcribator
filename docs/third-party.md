@@ -5,7 +5,7 @@ Model weights are downloaded separately and retain their upstream terms.
 
 | Component | Pin / origin | Notices in archive |
 | --- | --- | --- |
-| whisper.cpp / GGML | commit 927cfce34f31707e17f2bff35c349632fb9e2c3a | MIT, source archive |
+| whisper.cpp / GGML | commit 927cfce34f31707e17f2bff35c349632fb9e2c3a, one-line VAD thread patch | MIT, patched source archive |
 | CLI11 | 2.5.0 | BSD, source archive |
 | nlohmann JSON | 3.11.2, independent hash-pinned dependency | MIT, source archive |
 | FFmpeg | 8.0.1, no GPL/nonfree components | LGPL-2.1, source and configure log |
@@ -22,6 +22,10 @@ on an unrecognized library owner instead of silently omitting its notices.
 Distro source archives correspond to the selected binary package versions.
 GCC runtime exception notices are included; GCC source archives are not bundled.
 CUDA libraries remain subject to their vendor terms.
+
+`cmake/patch-whisper.cmake` makes whisper.cpp's built-in VAD use the requested CPU thread count
+instead of a fixed four; the build fails if the pinned code no longer matches. The archived
+whisper.cpp source is the patched tree that was compiled.
 
 CMake dependencies, FFmpeg and catalog models are hash-pinned. Apt security
 packages are intentionally refreshed, so builds are not claimed to be
