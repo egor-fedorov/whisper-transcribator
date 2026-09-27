@@ -66,6 +66,16 @@ cmake --build --preset cpu -j
 
 Archives and source builds include whisper.cpp's Metal backend, so `--device auto` runs on the GPU; `--device cpu` uses the CPU with Accelerate. A source build loads its whisper.cpp libraries from the build directory, so keep that directory. CI tests archives on macOS 14 and 15 and source builds on macOS 15, all on Apple silicon; Intel Macs are not supported by the archive and untested from source. The default APFS volume, like FAT and exFAT drives, ignores letter case: see [batch output names](docs/resume.md#batch-output-names).
 
+## Windows
+There is no native Windows build yet. WSL 2 runs a real Linux kernel, so the Linux archives work unchanged inside a WSL distribution: x86_64 on most PCs, aarch64 (releases after 0.4.0) on Windows on Arm. In PowerShell run `wsl --install -d Ubuntu-24.04`, open Ubuntu and follow [Install A Published Archive](#install-a-published-archive) there.
+
+- Windows drives appear under `/mnt/c` and so on; `wslpath 'C:\Users\me\lecture.mp4'` converts a path. Files there work but read and write more slowly than the Linux home directory. By default these drives store no POSIX permissions, so checkpoints next to outputs there print the [privacy warning](docs/resume.md#filesystems-without-posix-permissions), and folders created by Windows ignore letter case, as described for [batch output names](docs/resume.md#batch-output-names). The model cache stays in the Linux home directory by default.
+- For NVIDIA GPUs, install only the current Windows driver: WSL passes the GPU to Linux, where `nvidia-smi` should list it. Do not install an NVIDIA Linux driver inside WSL. Then use the `cuda` archive, which bundles the CUDA runtime.
+- WSL 2 limits Linux to half of the Windows memory by default. Large models may need more; raise `memory=` under `[wsl2]` in `%UserProfile%\.wslconfig` if needed.
+- Docker Desktop's WSL 2 backend also runs the [Docker image](#optional-docker).
+
+CI does not run WSL; WSL 2 is a Linux kernel in a virtual machine, and the same archives are tested on Ubuntu 22.04 and 24.04.
+
 ## Models And Offline Use
 ```bash
 ./bin/whisper-transcribator models list
