@@ -5,6 +5,7 @@
 #include "models/models.hpp"
 #include "support/cancel.hpp"
 #include "support/cpu.hpp"
+#include "support/error.hpp"
 #include "support/options.hpp"
 #include "support/report.hpp"
 #include "transcript/jobs.hpp"
@@ -17,12 +18,35 @@
 namespace wt {
 int transcribe(Options options) {
     configure_inference_logging();
-    configure_audio_logging();
+    configure_audio_logging(options.verbose);
     validate_language(options.language);
     auto jobs = prepare_jobs(options);
     if (jobs.empty()) {
         log_message(LogLevel::info, "No files to transcribe");
         return 0;
+    }
+    // Explicit stream selection is a command-wide usage constraint, not a model failure.
+    bool failed = false;
+    if (options.audio_stream >= 0) {
+        std::vector<Job> valid;
+        for (const auto& job : jobs) {
+            try {
+                AudioReader probe(job.source, options.audio_stream);
+                valid.push_back(job);
+            } catch (const UsageError& error) {
+                throw UsageError(job.source.string() + ": " + error.what());
+            } catch (const std::exception& error) {
+                check_cancelled();
+                log_message(LogLevel::error,
+                            "Failed: " + job.source.string() + ": " + error.what());
+                if (!options.continue_on_error)
+                    return 1;
+                failed = true;
+            }
+        }
+        jobs = std::move(valid);
+        if (jobs.empty())
+            return failed ? 1 : 0;
     }
     options.device = select_device(options.device);
     if (!options.cpu_threads)
@@ -40,7 +64,6 @@ int transcribe(Options options) {
                     {"ffmpeg", audio_backend_version()}};
     WhisperSession session(options, model, vad);
     auto cut = [&](const std::vector<float>& pcm) { return session.choose_cut(pcm); };
-    bool failed = false;
     size_t job_index = 0;
     for (const auto& job : jobs) {
         ++job_index;
@@ -73,10 +96,12 @@ int transcribe(Options options) {
             publish_outputs(job, job_options, journal);
             log_message(LogLevel::info,
                         "Done: " + job.source.filename().string() + "; elapsed " +
-                            std::to_string(std::chrono::duration<double>(
+                            format_seconds(std::chrono::duration<double>(
                                                std::chrono::steady_clock::now() - start)
                                                .count()) +
                             "s");
+        } catch (const UsageError&) {
+            throw;
         } catch (const std::exception& error) {
             check_cancelled();
             log_message(LogLevel::error, "Failed: " + job.source.string() + ": " + error.what());

@@ -62,4 +62,17 @@ void validate_language(const std::string& language) {
         throw UsageError("Unknown language: " + language);
 }
 std::string inference_backend_version() { return whisper_version(); }
+Json inference_diagnostics() {
+    Json result = {{"system_info", whisper_print_system_info()}, {"cpu_backend", nullptr}};
+    for (size_t i = 0; i < ggml_backend_reg_count(); ++i) {
+        auto reg = ggml_backend_reg_get(i);
+        if (std::string(ggml_backend_reg_name(reg)) != "CPU")
+            continue;
+        auto symbol = ggml_backend_reg_get_proc_address(reg, "ggml_backend_get_features");
+        Dl_info library{};
+        if (symbol && dladdr(reinterpret_cast<void*>(symbol), &library) && library.dli_fname)
+            result["cpu_backend"] = fs::path(library.dli_fname).filename().string();
+    }
+    return result;
+}
 } // namespace wt

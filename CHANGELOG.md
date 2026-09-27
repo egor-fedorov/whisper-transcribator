@@ -1,11 +1,11 @@
 # Changelog
 
 ## Unreleased
-- Identify development builds as 0.4.0-dev with source revision/dirty metadata, including Docker provenance.
+- Identify development builds as 0.4.0-dev with source revision/dirty metadata, including Docker provenance; report FFmpeg versions, CPU plugin and whisper system features in doctor.
 - Align audio to the container timeline, preserving delayed starts and packet gaps with bounded silence buffers; handle preroll, overlaps and transport timestamp resets without stale sample-rate extrapolation.
 - Use checkpoint schema 3 with separate compatibility and immutable publication metadata; allow CPU-count and equivalent model-spelling changes on resume, report incompatible fields and preserve older journals without migration.
 - Recover private temporary files left by a kill during the first manifest/chunk write while rejecting unsafe or unknown contents; add frozen schema-3, timestamp and crash regressions.
-- Normalize SRT whitespace and bound FFmpeg diagnostic verbosity.
+- Discover TS/MTS/M2TS/MKA/AIF/3GP/ASF files, validate explicit audio streams before model preparation, normalize SRT whitespace and reduce FFmpeg logging noise.
 - Simplify checkpoint recovery and descriptor ownership, isolate streaming formatters and read-only job planning, and strengthen failure/compatibility tests; run CI lint checks once and make the ccache clean-rebuild check opt-in.
 - Organize source code by responsibility and tests by execution scope, isolate the whisper session and checkpoint rendering, and check standalone headers; preserve CLI behavior, output formats and checkpoint compatibility.
 - Separate model-free archive packaging from native smoke tests using the same artifact; restrict slow non-AVX2 QEMU inference to an explicit manual workflow and keep only a quick loader check on pull requests.

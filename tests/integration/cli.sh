@@ -56,6 +56,10 @@ expect 0 doctor --device cpu --json
 grep -q 'whisper.cpp' "$root/stdout"
 grep -q "$revision" "$root/stdout"
 grep -Eq '"cpu_threads": [1-9][0-9]*' "$root/stdout"
+grep -q '"ffmpeg"' "$root/stdout"
+grep -q '"system_info"' "$root/stdout"
+grep -q '"cpu_backend"' "$root/stdout"
+grep -Fq "$WT_SOURCE_REVISION" "$root/stdout"
 expect 0 doctor --device cpu --cpu-threads 3 --json
 grep -q '"cpu_threads": 3' "$root/stdout"
 expect 1 "$root/missing.mp4" --local-files-only

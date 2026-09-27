@@ -9,9 +9,12 @@
 namespace wt {
 Json doctor(const Options& options) {
     configure_inference_logging();
-    configure_audio_logging();
+    configure_audio_logging(options.verbose);
     Json result = {
         {"version", WT_VERSION},
+        {"source_revision", WT_SOURCE_REVISION},
+        {"source_dirty", Json::parse(WT_SOURCE_DIRTY_JSON)},
+        {"ffmpeg", audio_diagnostics()},
         {"backend", "whisper.cpp"},
         {"backend_version", inference_backend_version()},
         {"backend_revision", WT_WHISPER_REVISION},
@@ -20,6 +23,7 @@ Json doctor(const Options& options) {
         {"errors", Json::array()}};
     try {
         result["device"] = select_device(options.device);
+        result.update(inference_diagnostics());
     } catch (const std::exception& error) {
         result["errors"].push_back(error.what());
     }
