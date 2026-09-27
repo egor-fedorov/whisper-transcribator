@@ -38,14 +38,16 @@ usage error instead of being ignored. No compatibility wrapper silently translat
 int8 into another precision. Use a local quantized GGML file if you intentionally
 choose that model; the CLI does not convert weights.
 
-## Unreleased Main
+## Upgrade To 0.4
 
 The native backend adds `--chunk-seconds` and `--resume`, not Python checkpoint
 imports or recovery of interrupted 0.3.0 inference. Checkpoint schema 3 / chunking
-version 4 / audio timeline version 3 reject earlier unfinished progress without migration: finish with the
+version 4 / audio timeline version 3 / decoding policy version 1 reject earlier incompatible development progress without migration: finish with the
 old binary or explicitly restart. See [long recordings and resume](resume.md).
 
 Container-relative timestamps preserve delayed audio and ordinary packet gaps, tolerate codec timestamp jitter, and correct large transport discontinuities by default. Use `--timestamp-gaps preserve` to retain intentional large forward gaps. Entirely zero-valued windows skip inference without losing checkpoint progress. Schema-2 checkpoints and schema-3 checkpoints using earlier timeline/chunking versions cannot be resumed under these rules. CPU counts and equivalent model spellings may change when resuming compatible schema-3 jobs; original output metadata remains frozen for reproducible publication.
+
+Decoder errors are tolerated with warnings by default; `--decode-errors strict` stops on the first error. The default no-successful-frame budget is 30 seconds of input audio; `--decode-error-limit-seconds 0` disables that time limit, not the independent no-progress guard. Both settings are part of checkpoint compatibility. Earlier draft checkpoints missing them cannot resume; use their original binary or explicitly restart without `--resume`.
 
 TXT and JSON aggregate text now use paragraphs by default; choose
 `--text-layout single-line` to retain the old layout. JSON schema 2 records

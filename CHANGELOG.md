@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+
+No changes yet.
+
+## 0.4.0 - 2026-09-27
 - Recover damaged audio with `--decode-errors tolerant|strict` (tolerant by default), a configurable 30-second input-duration budget and an independent no-progress guard instead of packet-count limits. Retain checkpoints on failure and explain explicit restart/repair options. Record audio decoding policy version 1 and its settings in resume identity without migrating older checkpoints.
 - Recover accumulated negative clock drift and backward timestamp jumps in all containers without dropping decoded samples; warn once and invalidate stale duration estimates. Audio timeline version 3 supersedes version 2 without checkpoint migration.
 - Skip Whisper and VAD for entirely zero-valued windows while retaining their timeline and resumable progress; chunking version 4 does not migrate previous checkpoints.
@@ -35,7 +39,7 @@
 - Include window size and chunking version in run metadata.
 - Add bounded-memory, checkpoint integrity, signal recovery and write-failure regressions, plus short offline windowed-inference and resume checks.
 
-These changes are available on `main`, not in the published 0.3.0 archives. Windowing limits recording-length-dependent buffers, not total model RAM or VRAM.
+Windowing limits recording-length-dependent buffers, not total model RAM or VRAM. JSON uses schema 2; checkpoints use schema 3 with decoding policy 1, timeline 3 and chunking 4. Earlier development checkpoints are not migrated. See the [release notes](docs/releases/0.4.0.md) for upgrade guidance and known limitations.
 
 ## 0.3.0 - 2026-09-26
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 project(whisper_transcribator VERSION 0.4.0 LANGUAGES C CXX)
-set(WT_VERSION_SUFFIX "-dev")
+set(WT_VERSION_SUFFIX "")
 set(WT_SOURCE_REVISION "" CACHE STRING "Source commit for builds without Git")
 set(WT_SOURCE_DIRTY "" CACHE STRING "Source dirty state: true, false or unknown")
 set(CMAKE_CXX_STANDARD 17)

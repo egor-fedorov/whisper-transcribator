@@ -1,16 +1,14 @@
 # whisper-transcribator
 A local C++17 CLI that turns the audio stream of a media file into TXT, SRT, WebVTT or JSON. One whisper.cpp backend, FFmpeg libraries for decoding, no Python runtime or external ffmpeg executable required.
 
-`main` is **0.4.0-dev**. Windowing, resume, paragraphs, WebVTT and portable CPU plugins are not in the published **0.3.0** archives. See [Unreleased changes](CHANGELOG.md); build from source to use the examples with new features below.
+**0.4.0** adds bounded audio windows, resume, paragraphs, WebVTT and portable CPU plugins. See the [release notes](docs/releases/0.4.0.md) for upgrade guidance and known limitations.
 
 ## Quick Start
-With a [source build](docs/releasing.md#cpu), transcribe one file or a directory:
+With an [extracted release archive](#install-a-published-archive), transcribe one file or a directory:
 
 ```bash
-cmake --preset cpu
-cmake --build --preset cpu -j4
-.build/cpu/whisper-transcribator lecture.mp4 -o lecture.txt --model small --language ru
-.build/cpu/whisper-transcribator --input-dir lectures --output-dir transcripts \
+./bin/whisper-transcribator lecture.mp4 -o lecture.txt --model small --language ru
+./bin/whisper-transcribator --input-dir lectures --output-dir transcripts \
   --naming numbered --skip-existing --model large-v3 --device cuda
 ```
 
@@ -24,7 +22,7 @@ FFmpeg chooses the best audio stream. `--audio-stream N` selects an absolute con
 Download from [Releases](https://github.com/egor-fedorov/whisper-transcribator/releases). Choose `cpu` or `cuda` for NVIDIA; CUDA runtime libraries are bundled, but a compatible driver is required.
 
 ```bash
-version=0.3.0
+version=0.4.0
 flavor=cpu
 archive="whisper-transcribator-${version}-linux-x86_64-${flavor}.tar.gz"
 url="https://github.com/egor-fedorov/whisper-transcribator/releases/download/v${version}"
@@ -36,7 +34,7 @@ tar -xzf "$archive" -C whisper-transcribator
 ./whisper-transcribator/bin/whisper-transcribator doctor --device "$flavor" --json
 ```
 
-Keep `bin/`, `lib/` and `share/` together: these are not universal static binaries. Archives target Linux x86_64, Ubuntu 22.04+ / glibc 2.35+. Published 0.3.0 requires a Haswell-class AVX2/FMA/F16C/BMI2 CPU; archives built from `main` select a compatible installed CPU plugin, including baseline x86_64. Keep all bundled plugins. See [build and release instructions](docs/releasing.md).
+Keep `bin/`, `lib/` and `share/` together: these are not universal static binaries. Archives target Linux x86_64, Ubuntu 22.04+ / glibc 2.35+ and select a compatible installed CPU plugin, including baseline x86_64 without AVX2. Keep all bundled plugins. See [build and release instructions](docs/releasing.md).
 
 ## Models And Offline Use
 ```bash

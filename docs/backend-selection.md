@@ -34,5 +34,5 @@ not a claim that Python arithmetic is slow: faster-whisper already uses native
 inference. Core file safety and model management are retained; the narrower
 0.3 feature scope is explicit in the [migration guide](migration.md).
 Bounded-memory decoding and resume were not part of the 0.3.0 rewrite. The
-unreleased implementation on `main` adds windowed inference and durable
+0.4.0 release adds windowed inference and durable
 checkpoints; see the README for usage and compatibility limits.
