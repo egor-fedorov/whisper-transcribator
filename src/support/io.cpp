@@ -15,6 +15,7 @@
 #include <unistd.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
+#include <sys/mount.h>
 #endif
 
 namespace wt {
@@ -132,6 +133,17 @@ bool set_mode(int fd, mode_t mode) {
     struct stat status {};
     return !fchmod(fd, mode) || (!fstat(fd, &status) && status.st_uid != geteuid());
 }
+} // namespace
+bool ownership_ignored(const fs::path& path) {
+#ifdef __APPLE__
+    struct statfs status {};
+    return !statfs(path.c_str(), &status) && (status.f_flags & MNT_IGNORE_OWNERSHIP);
+#else
+    (void)path;
+    return false;
+#endif
+}
+namespace {
 StoredPermissions probe_with_file(const fs::path& directory) {
     auto pattern = (directory / ".whisper-probe-XXXXXX").string();
     UniqueFd fd(mkstemp(pattern.data()));
@@ -144,7 +156,8 @@ StoredPermissions probe_with_file(const fs::path& directory) {
     unlink(pattern.c_str());
     if (!inspected)
         return {};
-    return {status.st_uid == geteuid(), changed && (status.st_mode & 0777) == 0600};
+    return {status.st_uid == geteuid() && !ownership_ignored(directory),
+            changed && (status.st_mode & 0777) == 0600};
 }
 } // namespace
 StoredPermissions (*probe_permissions)(const fs::path&) = probe_with_file;

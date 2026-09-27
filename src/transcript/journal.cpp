@@ -23,15 +23,19 @@ namespace wt {
 // Checkpoint entries must be owned by this user with owner-only modes. Filesystems without POSIX
 // permissions (FAT, exFAT, some FUSE/SMB mounts) report a fixed owner and mode from mount
 // options, so a failed check is accepted only for attributes a probe file in the output
-// directory cannot keep either, and only on that filesystem. Entry types, symlinks and hard
-// links are always checked.
+// directory cannot keep either, and only on that filesystem. Where ownership is ignored (macOS
+// external volumes), entries appear to be owned by every user, so the probe always runs there.
+// Entry types, symlinks and hard links are always checked.
 struct CheckpointPrivacy {
     fs::path output_directory;
+    bool ignores_owners;
     std::optional<StoredPermissions> stored;
     dev_t device = 0;
-    explicit CheckpointPrivacy(fs::path directory) : output_directory(std::move(directory)) {}
+    explicit CheckpointPrivacy(fs::path directory)
+        : output_directory(std::move(directory)),
+          ignores_owners(ownership_ignored(output_directory)) {}
     bool accepts(const struct stat& st, bool owner_only) {
-        if (st.st_uid == geteuid() && owner_only)
+        if (st.st_uid == geteuid() && owner_only && !ignores_owners)
             return true;
         if (!stored) {
             struct stat output {};

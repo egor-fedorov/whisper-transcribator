@@ -39,6 +39,9 @@ struct StoredPermissions {
     // attributes the filesystem cannot store.
     bool accepts(const struct stat& status, bool owner_only) const;
 };
+// Whether the filesystem of `path` ignores ownership, so that every local user acts as the owner
+// of its entries. macOS mounts external FAT and exFAT volumes this way by default.
+bool ownership_ignored(const fs::path& path);
 // Probes `directory` with a temporary file; tests replace it to simulate such filesystems.
 extern StoredPermissions (*probe_permissions)(const fs::path& directory);
 std::string read_text(const fs::path& path);
