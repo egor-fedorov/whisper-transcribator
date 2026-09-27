@@ -42,9 +42,11 @@ minimum supported version and is checked separately. Install `ffmpeg` and `jq`
 for synthetic media integration tests, including Vorbis/MP3 at 44.1/48 kHz,
 MPEG-TS format transitions, clock drift and timestamp jumps, compared against independent
 FFmpeg PCM references. The test executable needs `libvorbis` and `libmp3lame`
-encoders and the `noise` bitstream filter. Damaged MP3/AAC checks compare PCM,
-exercise error budgets and verify byte-identical resume using fake inference
-that hashes decoded windows. These are test tools only, not runtime dependencies. `-DGGML_NATIVE=ON` is supported for local
+encoders and the `noise` bitstream filter. Damaged MP3/AAC checks include consecutive
+bad packets, zeroed 4/16 KiB M4A blocks and one second of missing TS packets.
+They compare PCM, exercise time-based budgets and strict/restart behavior, and verify
+byte-identical resume using fake inference that hashes decoded windows. These are
+test tools only, not runtime dependencies. `-DGGML_NATIVE=ON` is supported for local
 builds; portable packaging explicitly keeps it off.
 
 The optional inference check uses only a public 11-second JFK recording:
@@ -76,7 +78,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 ## Layout
 
 - `src/app/`: CLI parsing, diagnostics and sequential job orchestration.
-- `src/audio/`: FFmpeg decoding, audio-stream selection, resampling and bounded container-timeline alignment. The timestamp policy is separately testable without FFmpeg.
+- `src/audio/`: FFmpeg decoding, audio-stream selection, resampling and bounded container-timeline alignment. Timestamp placement and decode-error budgets are independently testable policies; public headers do not expose FFmpeg headers.
 - `src/inference/`: whisper.cpp device discovery, logging and a lazily initialized RAII session shared across files.
 - `src/models/`: pinned catalog, model cache, locking and HTTPS transfers.
 - `src/transcript/`: value types, job planning, windowing, metadata, checkpoint integrity and output rendering.

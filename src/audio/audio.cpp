@@ -108,7 +108,7 @@ struct AudioReader::Impl {
     std::vector<float> pending;
     size_t offset = 0;
     int64_t silence = 0, origin = AV_NOPTS_VALUE, retained_start = 0;
-    double estimated_duration = 0;
+    double estimated_duration = 0, last_frame_duration = 0;
     TimestampGaps gaps = TimestampGaps::automatic;
     bool retained = false, warned_reset = false, warned_gap = false, adjusted = false;
     bool recover(int code, const char* operation) {
@@ -118,8 +118,11 @@ struct AudioReader::Impl {
         if (recovery.errors() == 1)
             log_message(LogLevel::warning, "Skipping invalid audio data rejected by the decoder; "
                                            "the transcript may be incomplete");
+        char message[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(code, message, sizeof(message));
         log_message(LogLevel::debug, std::string("Recoverable audio decoder error: ") + operation +
-                                         "; total " + std::to_string(recovery.errors()));
+                                         ": " + message + "; total " +
+                                         std::to_string(recovery.errors()));
         return true;
     }
     ~Impl() {
@@ -156,6 +159,8 @@ struct AudioReader::Impl {
             int code = avcodec_receive_frame(codec, frame);
             if (code >= 0) {
                 recovery.frame();
+                if (frame->sample_rate > 0 && frame->nb_samples > 0)
+                    last_frame_duration = double(frame->nb_samples) / frame->sample_rate;
                 auto* selected = format->streams[stream];
                 auto pts = frame->best_effort_timestamp;
                 if (pts == AV_NOPTS_VALUE)
@@ -228,6 +233,7 @@ struct AudioReader::Impl {
                 continue;
             if (code != AVERROR(EAGAIN))
                 check(code, "decode frame");
+            recovery.awaiting_input();
             if (flushing)
                 throw std::runtime_error("Decoder requested input after EOF");
             do {
@@ -237,10 +243,20 @@ struct AudioReader::Impl {
             } while (code >= 0 && packet->stream_index != stream);
             if (code == AVERROR_EOF) {
                 flushing = true;
-                check(avcodec_send_packet(codec, nullptr), "flush decoder");
+                code = avcodec_send_packet(codec, nullptr);
+                if (!recover(code, "flush decoder"))
+                    check(code, "flush decoder");
             } else {
                 check(code, "read packet");
-                recovery.packet();
+                double duration = last_frame_duration;
+                if (packet->duration > 0)
+                    duration = packet->duration * av_q2d(format->streams[stream]->time_base);
+                else if (codec->sample_rate > 0) {
+                    auto samples = av_get_audio_frame_duration(codec, packet->size);
+                    if (samples > 0)
+                        duration = double(samples) / codec->sample_rate;
+                }
+                recovery.packet(duration);
                 code = avcodec_send_packet(codec, packet);
                 av_packet_unref(packet);
                 if (!recover(code, "send packet"))
@@ -249,10 +265,12 @@ struct AudioReader::Impl {
         }
     }
 };
-AudioReader::AudioReader(const fs::path& path, int stream, TimestampGaps gaps)
+AudioReader::AudioReader(const fs::path& path, int stream, TimestampGaps gaps,
+                         DecodeErrorPolicy errors)
     : impl(std::make_unique<Impl>()) {
     check_cancelled();
     auto& d = *impl;
+    d.recovery = DecodeRecovery(errors);
     if (!d.frame || !d.packet)
         throw std::bad_alloc();
     d.gaps = gaps;

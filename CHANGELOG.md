@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-- Recover isolated invalid decoder packets/frames with a warning and bounded error budgets; retain checkpoints and fail without publishing on excessive corruption. Record audio decoding policy version 1 in resume identity without migrating older checkpoints.
+- Recover damaged audio with `--decode-errors tolerant|strict` (tolerant by default), a configurable 30-second input-duration budget and an independent no-progress guard instead of packet-count limits. Retain checkpoints on failure and explain explicit restart/repair options. Record audio decoding policy version 1 and its settings in resume identity without migrating older checkpoints.
 - Recover accumulated negative clock drift and backward timestamp jumps in all containers without dropping decoded samples; warn once and invalidate stale duration estimates. Audio timeline version 3 supersedes version 2 without checkpoint migration.
 - Skip Whisper and VAD for entirely zero-valued windows while retaining their timeline and resumable progress; chunking version 4 does not migrate previous checkpoints.
 - Tolerate codec timestamp jitter without resampler resets, restore MP3 gapless trimming and MPEG-TS duration estimates, and add `--timestamp-gaps auto|preserve` for large transport gaps. Timeline version 2 intentionally rejects older saved progress without migration.

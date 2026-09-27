@@ -16,6 +16,8 @@ struct Options {
     int chunk_min_silence_ms = 200;
     int audio_stream = -1;
     std::string timestamp_gaps = "auto";
+    std::string decode_errors = "tolerant";
+    int decode_error_limit_seconds = 30;
     bool resume = false;
     bool overwrite = false, skip_existing = false, continue_on_error = false;
     bool local_files_only = false, no_vad = false, json = false;

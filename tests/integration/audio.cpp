@@ -101,7 +101,8 @@ int main(int argc, char** argv) {
                   << '\n';
         return 0;
     }
-    if (argc == 4 && (std::string(argv[1]) == "--timeline" || std::string(argv[1]) == "--pcm")) {
+    if (argc == 4 && (std::string(argv[1]) == "--timeline" || std::string(argv[1]) == "--pcm" ||
+                      std::string(argv[1]) == "--recovered")) {
         auto actual = decode_audio(argv[2]);
         auto expected = decode_audio(argv[3]);
         AudioReader estimate(argv[2]);
@@ -111,6 +112,29 @@ int main(int argc, char** argv) {
         require(std::abs(int64_t(actual.size()) - int64_t(expected.size())) <= 32,
                 "timeline sample count: " + std::to_string(actual.size()) + " vs " +
                     std::to_string(expected.size()));
+        if (std::string(argv[1]) == "--recovered") {
+            // Gap resampler resets can change fractional phase. Check the healthy
+            // synthetic sine tail's energy/frequency, not sample-phase identity.
+            auto signal = [](const std::vector<float>& pcm) {
+                require(pcm.size() > 3 * 16000);
+                double energy = 0;
+                int crossings = 0;
+                // Exclude the encoder's low-energy end padding and filter drain.
+                for (size_t i = pcm.size() - 3 * 16000; i < pcm.size() - 16000; ++i) {
+                    require(std::isfinite(pcm[i]));
+                    energy += double(pcm[i]) * pcm[i];
+                    crossings += (pcm[i - 1] < 0) != (pcm[i] < 0);
+                }
+                return std::make_pair(energy, crossings);
+            };
+            auto a = signal(actual), e = signal(expected);
+            require(e.first > 0 && std::abs(a.first / e.first - 1) < 0.005,
+                    "healthy decoded tail energy differs from FFmpeg");
+            require(std::abs(a.second - e.second) <= 2,
+                    "healthy decoded tail frequency differs from FFmpeg: " +
+                        std::to_string(a.second) + " vs " + std::to_string(e.second));
+            return 0;
+        }
         double error = 0, energy = 0;
         for (size_t i = 0; i < std::min(actual.size(), expected.size()); ++i) {
             require(std::isfinite(actual[i]));

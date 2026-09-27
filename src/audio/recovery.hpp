@@ -1,18 +1,23 @@
 #pragma once
-#include <array>
-#include <cstddef>
 #include <cstdint>
 
 namespace wt {
+struct DecodeErrorPolicy {
+    bool strict = false;
+    int limit_seconds = 30;
+};
 class DecodeRecovery {
-    std::array<unsigned, 128> window{};
-    size_t slot = window.size() - 1;
-    unsigned recent = 0, consecutive = 0;
+    DecodeErrorPolicy policy;
+    double without_frame = 0;
+    unsigned stalled = 0;
+    bool damaged = false;
     uint64_t total = 0;
 
   public:
-    void packet();
-    void frame() { consecutive = 0; }
+    explicit DecodeRecovery(DecodeErrorPolicy policy = {});
+    void packet(double seconds);
+    void frame();
+    void awaiting_input() const;
     bool recover(int code);
     uint64_t errors() const { return total; }
 };

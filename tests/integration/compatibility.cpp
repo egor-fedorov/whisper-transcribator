@@ -60,6 +60,18 @@ void execution_settings(const fs::path& root) {
     auto changed = saved;
     changed["backend"]["model_sha256"] = "different weights";
     rejects([&] { Journal journal(f.job, f.options, changed); }, "/backend/model_sha256");
+    f.options.decode_errors = "strict";
+    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); }, "/run/decode_errors");
+    f.options.decode_errors = "tolerant";
+    f.options.decode_error_limit_seconds = 0;
+    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
+            "/run/decode_error_limit_seconds");
+    f.options.decode_error_limit_seconds = 30;
+    for (const auto* key : {"decode_errors", "decode_error_limit_seconds"}) {
+        changed = saved;
+        changed["run"].erase(key);
+        rejects([&] { Journal journal(f.job, f.options, changed); }, std::string("/run/") + key);
+    }
     f.options.timestamp_gaps = "preserve";
     rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); }, "/run/timestamp_gaps");
 }
