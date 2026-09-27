@@ -91,8 +91,9 @@ std::vector<fs::path> discover_inputs(const Options& o) {
         if (!fs::is_directory(directory))
             throw std::runtime_error("Input directory not found: " + directory.string());
         const std::set<std::string> extensions = {
-            ".aac", ".aiff", ".avi", ".flac", ".m4a", ".m4b",  ".m4v", ".mkv",  ".mov", ".mp3",
-            ".mp4", ".mpeg", ".mpg", ".oga",  ".ogg", ".opus", ".wav", ".webm", ".wma", ".wmv"};
+            ".aac", ".aiff", ".avi",  ".flac", ".m4a",  ".m4b", ".m4v",  ".mkv", ".mov",
+            ".mp3", ".mp4",  ".mpeg", ".mpg",  ".oga",  ".ogg", ".opus", ".wav", ".webm",
+            ".wma", ".wmv",  ".ts",   ".mts",  ".m2ts", ".mka", ".aif",  ".3gp", ".asf"};
         for (const auto& entry : fs::directory_iterator(directory)) {
             std::string extension = entry.path().extension().string();
             std::transform(extension.begin(), extension.end(), extension.begin(),

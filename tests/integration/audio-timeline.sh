@@ -2,6 +2,7 @@
 set -euo pipefail
 binary=$1
 ffmpeg=$2
+cli=$3
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 "$ffmpeg" -hide_banner -loglevel error -f lavfi -i 'color=s=16x16:r=1:d=7' \
@@ -24,3 +25,10 @@ done
 # The enormous timestamp gap must remain a counter, not a PCM allocation.
 # Sanitizer virtual address reservations prohibit ulimit -v; RSS is checked separately.
 "$binary" --gap "$root/huge-gap.mkv"
+status=0
+"$cli" "$root/delayed.mp4" --audio-stream 0 --local-files-only \
+    --download-root "$root/no-models" >"$root/stdout" 2>"$root/stderr" || status=$?
+test "$status" = 2
+grep -q -- '--audio-stream' "$root/stderr"
+test ! -e "$root/no-models"
+test ! -e "$root/.whisper-transcribator"

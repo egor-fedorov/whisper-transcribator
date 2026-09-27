@@ -149,6 +149,12 @@ void directory_ordering_and_discovery(const fs::path& root) {
     auto jobs = prepare_jobs(o);
     require(jobs.size() == 2);
     require(jobs[0].source.filename() == "a.MP4");
+    for (const auto* extension : {"ts", "MTS", "m2ts", "mka", "aif", "3gp", "asf"})
+        input(root, std::string("file-") + extension + "." + extension);
+    jobs = prepare_jobs(o);
+    require(jobs.size() == 9);
+    for (size_t i = 1; i < jobs.size(); ++i)
+        require(jobs[i - 1].source.filename().native() < jobs[i].source.filename().native());
 }
 void numbered_mapping_stability(const fs::path& root) {
 
