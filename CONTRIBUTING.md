@@ -37,7 +37,8 @@ Assertions report the calling file and line. Negative tests must name the expect
 ASan/UBSan instrument this project's code, not an audit of upstream dependencies.
 LeakSanitizer cannot run under ptrace-based sandboxes; run these checks normally,
 rather than disabling leak detection. GCC and Clang are checked in CI with
-`-DWT_WERROR=ON` for project code and tests, not dependencies. FFmpeg 5.1 is the
+`-DWT_WERROR=ON` for project code and tests, not dependencies; GCC also runs natively
+on Linux aarch64. Keep code free of architecture-specific assumptions. FFmpeg 5.1 is the
 minimum supported version and is checked separately. Install `ffmpeg` and `jq`
 for synthetic media integration tests, including Vorbis/MP3 at 44.1/48 kHz,
 MPEG-TS format transitions, clock drift and timestamp jumps, compared against independent

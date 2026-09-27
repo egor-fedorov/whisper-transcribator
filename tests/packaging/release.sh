@@ -36,27 +36,31 @@ printf '# Release\n' >docs/releases/0.3.0.md
 git add .
 git commit -qm 'Fixture'
 assets="$root/artifacts with spaces"
+targets=(cpu:x86_64:cpu cuda:x86_64:cuda cpu-aarch64:aarch64:cpu)
+# Set to a different architecture to mislabel the aarch64 archive's metadata.
+aarch64_metadata=aarch64
+repack_assets() {
+    local target directory arch flavor metadata_arch name
+    for target in "${targets[@]}"; do
+        IFS=: read -r directory arch flavor <<<"$target"
+        metadata_arch=$arch
+        if [[ $arch == aarch64 ]]; then metadata_arch=$aarch64_metadata; fi
+        rm -rf "$root/staged"
+        cp -a "$root/bundle" "$root/staged"
+        printf 'WT_TARGET_ARCH=%s\n' "$metadata_arch" >>"$root/staged/share/build-metadata.env"
+        mkdir -p "$assets/$directory"
+        name="whisper-transcribator-0.3.0-linux-$arch-$flavor.tar.gz"
+        tar -C "$root/staged" -czf "$assets/$directory/$name" .
+        (cd "$assets/$directory" && sha256sum "$name" >SHA256SUMS)
+    done
+}
 build_assets() {
-    local flavor name
     mkdir -p "$root/bundle/sources" "$root/bundle/share"
     printf 'WT_PACKAGE_VERSION=0.3.0\nWT_SOURCE_REVISION=%s\nWT_SOURCE_DIRTY=false\n' \
         "$(git rev-parse HEAD)" >"$root/bundle/share/build-metadata.env"
     git archive HEAD CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE \
         -o "$root/bundle/sources/whisper-transcribator-0.3.0.tar.gz"
-    for flavor in cpu cuda; do
-        mkdir -p "$assets/$flavor"
-        name="whisper-transcribator-0.3.0-linux-x86_64-$flavor.tar.gz"
-        tar -C "$root/bundle" -czf "$assets/$flavor/$name" .
-        (cd "$assets/$flavor" && sha256sum "$name" >SHA256SUMS)
-    done
-}
-repack_assets() {
-    local flavor name
-    for flavor in cpu cuda; do
-        name="whisper-transcribator-0.3.0-linux-x86_64-$flavor.tar.gz"
-        tar -C "$root/bundle" -czf "$assets/$flavor/$name" .
-        (cd "$assets/$flavor" && sha256sum "$name" >SHA256SUMS)
-    done
+    repack_assets
 }
 reject() {
     local message=$1
@@ -80,6 +84,13 @@ tar -czf "$root/bundle/sources/whisper-transcribator-0.3.0.tar.gz" CMakeLists.tx
 git show HEAD:src/main.cpp >src/main.cpp
 repack_assets
 reject 'Source differs' 0.3.0 "$assets"
+build_assets
+rm -r "$assets/cpu-aarch64"
+reject 'Missing archive' 0.3.0 "$assets"
+aarch64_metadata=x86_64
+build_assets
+reject 'Archive architecture differs from its name: cpu-aarch64' 0.3.0 "$assets"
+aarch64_metadata=aarch64
 build_assets
 reject 'Expected --check or --draft' 0.3.0 "$assets" --publish
 reject 'Expected a numeric X.Y.Z version' '../0.3.0' "$assets"
@@ -107,4 +118,5 @@ bash "$helper" 0.3.0 "$assets" --draft
 grep -Fxq -- '--draft' "$GH_TEST_LOG"
 grep -Fxq -- '--verify-tag' "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cpu/whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz" "$GH_TEST_LOG"
+grep -Fxq -- "$assets/cpu-aarch64/whisper-transcribator-0.3.0-linux-aarch64-cpu.tar.gz" "$GH_TEST_LOG"
 echo 'Release preparation checks passed'

@@ -19,28 +19,32 @@ trap 'rm -rf "$temporary"' EXIT
 inputs=(CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE)
 git ls-tree -r --name-only HEAD -- "${inputs[@]}" | LC_ALL=C sort >"$temporary/expected"
 assets=()
-for flavor in cpu cuda; do
-    name="whisper-transcribator-$version-linux-x86_64-$flavor.tar.gz"
-    archive="$root/$flavor/$name"
+# Artifact directory, target architecture and flavor of every published archive.
+targets=(cpu:x86_64:cpu cuda:x86_64:cuda cpu-aarch64:aarch64:cpu)
+for target in "${targets[@]}"; do
+    IFS=: read -r directory arch flavor <<<"$target"
+    name="whisper-transcribator-$version-linux-$arch-$flavor.tar.gz"
+    archive="$root/$directory/$name"
     [[ -s $archive ]] || fail "Missing archive: $archive"
     digest=$(sha256sum <"$archive" | cut -d ' ' -f1)
-    printf '%s  %s\n' "$digest" "$name" >"$temporary/$flavor.sha"
-    cmp "$temporary/$flavor.sha" "$root/$flavor/SHA256SUMS" || fail "Checksum mismatch: $flavor"
+    printf '%s  %s\n' "$digest" "$name" >"$temporary/$directory.sha"
+    cmp "$temporary/$directory.sha" "$root/$directory/SHA256SUMS" || fail "Checksum mismatch: $directory"
     tar -xOzf "$archive" ./share/build-metadata.env >"$temporary/metadata"
-    grep -Fxq "WT_PACKAGE_VERSION=$version" "$temporary/metadata" || fail "Refusing a development or mismatched archive: $flavor"
-    grep -Fxq "WT_SOURCE_REVISION=$commit" "$temporary/metadata" || fail "Archive revision differs from HEAD: $flavor"
-    grep -Fxq 'WT_SOURCE_DIRTY=false' "$temporary/metadata" || fail "Archive sources are dirty or unknown: $flavor"
+    grep -Fxq "WT_PACKAGE_VERSION=$version" "$temporary/metadata" || fail "Refusing a development or mismatched archive: $directory"
+    grep -Fxq "WT_SOURCE_REVISION=$commit" "$temporary/metadata" || fail "Archive revision differs from HEAD: $directory"
+    grep -Fxq 'WT_SOURCE_DIRTY=false' "$temporary/metadata" || fail "Archive sources are dirty or unknown: $directory"
+    grep -Fxq "WT_TARGET_ARCH=$arch" "$temporary/metadata" || fail "Archive architecture differs from its name: $directory"
     tar -xOzf "$archive" "./sources/whisper-transcribator-$version.tar.gz" >"$temporary/source.tar.gz"
     tar -tzf "$temporary/source.tar.gz" | sed '/\/$/d' | LC_ALL=C sort >"$temporary/actual"
-    cmp "$temporary/expected" "$temporary/actual" || fail "Source file list differs from HEAD: $flavor"
+    cmp "$temporary/expected" "$temporary/actual" || fail "Source file list differs from HEAD: $directory"
     while IFS= read -r file; do
         git show "HEAD:$file" >"$temporary/expected-file"
         tar -xOzf "$temporary/source.tar.gz" "$file" >"$temporary/actual-file"
-        cmp "$temporary/expected-file" "$temporary/actual-file" || fail "Source differs from HEAD: $flavor/$file"
+        cmp "$temporary/expected-file" "$temporary/actual-file" || fail "Source differs from HEAD: $directory/$file"
     done <"$temporary/expected"
     assets+=("$archive")
 done
-echo "CPU/CUDA checksums and packaged sources match $commit"
+echo "x86_64 CPU/CUDA and aarch64 CPU checksums and packaged sources match $commit"
 [[ $mode = --draft ]] || exit 0
 
 tag="v$version"
@@ -50,7 +54,7 @@ repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 run=$(gh run list --repo "$repo" --workflow ci.yml --branch main --event push \
     --commit "$commit" --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
 [[ $run =~ ^[0-9]+$ ]] || fail 'No successful main CI run for this commit'
-cat "$temporary/cpu.sha" "$temporary/cuda.sha" >"$temporary/SHA256SUMS"
+cat "$temporary/cpu.sha" "$temporary/cuda.sha" "$temporary/cpu-aarch64.sha" >"$temporary/SHA256SUMS"
 cp "$notes" "$temporary/notes.md"
 # Markdown backticks are literal, not shell command substitutions.
 # shellcheck disable=SC2016

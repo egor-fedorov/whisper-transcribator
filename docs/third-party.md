@@ -13,6 +13,8 @@ Model weights are downloaded separately and retain their upstream terms.
 | GCC runtimes | Ubuntu build compiler | GPL runtime exception notices |
 | CUDA runtime/cuBLAS, NCCL when linked | CUDA 12.8.1 build image | vendor package notices |
 
+aarch64 CPU archives are compiled with Ubuntu 22.04's `clang-15` against the same
+GCC C++ runtime and without OpenMP; they bundle no LLVM runtime library.
 CPU archives do not include CUDA libraries. CUDA archives include redistributable
 runtime libraries, but **not** the NVIDIA driver or glibc. The archive contains
 `licenses/`, `sources/` and `share/system-sources.tsv`; the packaging script fails

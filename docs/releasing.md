@@ -46,6 +46,32 @@ To wrap an already verified, unpacked archive without recompiling, use
 `docker build -f packaging/Dockerfile --target runtime-bundle -t whisper-transcribator:cpu .build/artifacts/cpu/unpacked`.
 This target's build context must be the unpacked archive, not the source checkout.
 
+## ARM64
+
+Linux aarch64 CPU archives use the same recipe on an arm64 host; CI builds them
+on GitHub-hosted `ubuntu-24.04-arm` runners. The pinned Ubuntu 22.04 base images
+are multi-architecture indexes, so these archives keep the glibc 2.35 baseline.
+Ubuntu 22.04's GCC 11 cannot compile ggml's `armv9.2` (SME) CPU variants, so the
+arm64 recipe uses the distribution's `clang-15` with `GGML_OPENMP=OFF`: Clang's
+OpenMP runtime would add `libomp` and the whole LLVM source package to the bundle.
+ggml's own thread pool was not slower than OpenMP in a local x86_64 comparison;
+the C++ runtime remains GCC's. The archive contains CPU plugins from `armv8.0` to
+`armv9.2` with SVE2/SME and selects one at startup.
+
+```bash
+docker build -f packaging/Dockerfile --target archive \
+  --build-arg WT_SOURCE_REVISION="$(git rev-parse HEAD)" \
+  --build-arg WT_SOURCE_DIRTY="$(test -z "$(git status --porcelain --untracked-files=no)" && echo false || echo true)" \
+  --output type=local,dest=.build/artifacts/cpu-aarch64 .
+bash tests/packaging/package.sh .build/artifacts/cpu-aarch64 # on the arm64 host
+```
+
+On an x86_64 host, `docker buildx build --platform linux/arm64` works through QEMU
+emulation but is much slower. CUDA archives remain x86_64-only; the recipe rejects
+`WT_CUDA=ON` on arm64. `share/build-metadata.env` records `WT_TARGET_ARCH`, and both
+`tests/packaging/package.sh` and the release helper reject an archive whose name
+and metadata disagree.
+
 ## CUDA
 
 Use the pinned CUDA 12.8 builder; only the runtime and driver are needed to run
@@ -83,14 +109,14 @@ with narrowly scoped mounts once device permissions are configured.
 ## Gates
 
 1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks.
-2. Build CPU and CUDA archives. Inspect bundled dependencies, source packages,
+2. Build x86_64 CPU/CUDA and aarch64 CPU archives. Inspect bundled dependencies, source packages,
    vendor notices and SHA256SUMS. No glibc or host driver may be bundled.
 3. Run `tests/smoke/prepare-smoke.sh` once, then `tests/smoke/smoke.sh` with networking disabled
    and a fresh output directory. Use the public 11-second fixture, not lectures.
 4. Check the CPU archive in clean Ubuntu 22.04 without Python/system FFmpeg, and
    the CPU runtime image. Confirm nonempty TXT/SRT/VTT/JSON and nonzero failure exits.
    Before release, opt into `tests/packaging/portable.sh BUNDLE OUTPUT FIXTURES` for inference
-   with QEMU's non-AVX2 `qemu64` CPU. Omitting `FIXTURES` only checks backend loading
+   with QEMU's non-AVX2 `qemu64` CPU (x86_64) or `cortex-a53` (ARMv8.0, aarch64). Omitting `FIXTURES` only checks backend loading
    and missing-plugin diagnostics, without downloading weights or running inference.
 5. On a trusted GPU machine, repeat the offline smoke with the CUDA archive and
    `cuda` as the last script argument; test the CUDA image with driver injection.
@@ -105,9 +131,12 @@ CI runs CPU/compiler/sanitizer/package checks; optional manual dispatch builds
 the CUDA archive but does not certify GPU inference. It does not publish assets
 or expose a personal GPU runner to pull requests. The first remote checks passed;
 every release still needs a successful run for its exact source commit.
+The aarch64 legs run natively on `ubuntu-24.04-arm` as `test (gcc, g++, OFF, aarch64)`,
+`package (aarch64)` and `smoke (aarch64)`; existing x86_64 check names are unchanged.
+Add the aarch64 checks to the branch protection rules after their first successful run.
 
 The `package` job builds and verifies the archive, dependencies and `doctor`,
-including a model-free non-AVX2 loader check with a 30-second timeout. It never
+including a model-free baseline-CPU loader check (non-AVX2 x86_64 or ARMv8.0) with a 30-second timeout. It never
 downloads models or performs speech recognition. The dependent `smoke` job
 downloads that exact archive, checks short native inference in clean Ubuntu, and
 wraps the same bundle in the non-root Docker runtime without recompiling.
@@ -116,7 +145,7 @@ release with `gh workflow run ci.yml -f run_portable_inference=true`. It is not
 part of pull-request or push CI. The separate compiler jobs retain their short
 source-build integration and sanitizer checks.
 
-Compiler caches are keyed by toolchain, sanitizer configuration and dependency pins; tests always run. The extra clean rebuild/cache-hit check requires the manual `verify_ccache` input. Buildx additionally caches unchanged packaging layers in separate CPU/CUDA GHA v2 scopes. Source-layer changes still rebuild their dependents. Cache export has a two-minute limit and is nonessential; a missing cache never skips checks or changes correctness requirements.
+Compiler caches are keyed by toolchain, sanitizer configuration and dependency pins; tests always run. The extra clean rebuild/cache-hit check requires the manual `verify_ccache` input. Buildx additionally caches unchanged packaging layers in separate x86_64 CPU, aarch64 CPU and CUDA GHA v2 scopes. Source-layer changes still rebuild their dependents. Cache export has a two-minute limit and is nonessential; a missing cache never skips checks or changes correctness requirements.
 CTest exercises interrupted HTTPS downloads using a loopback TLS server and a
 temporary trusted certificate; it does not download large model weights.
 Streaming tests repeat the public fixture into a short recording. Long-duration
@@ -126,10 +155,11 @@ memory tests use synthetic audio and fake inference, not full lecture recognitio
 
 The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
 
-Keep the two archives and their original `SHA256SUMS` under
-`.build/artifacts/cpu/` and `.build/artifacts/cuda/`. Prepare from a clean checkout
-of the release commit after its `main` CI has passed. The helper verifies both
-checksums and every packaged project source against Git, then checks local and
+Keep the three archives and their original `SHA256SUMS` under
+`.build/artifacts/cpu/`, `.build/artifacts/cuda/` and `.build/artifacts/cpu-aarch64/`
+(the `native-cpu-aarch64` CI artifact of the release commit). Prepare from a clean checkout
+of the release commit after its `main` CI has passed. The helper verifies every
+checksum, target architecture and packaged project source against Git, then checks local and
 remote tag targets and CI. It never publishes automatically or overwrites assets.
 
 ```bash
@@ -141,7 +171,7 @@ bash packaging/release.sh "$version" .build/artifacts --draft
 gh release view "v$version"
 ```
 
-The draft contains CPU/CUDA archives, combined checksums, release notes and the
+The draft contains x86_64 CPU/CUDA and aarch64 CPU archives, combined checksums, release notes and the
 source commit/CI link. This validates artifact integrity and source correspondence,
 not that CUDA inference ran: the short hardware smoke gate above remains mandatory
 for the exact archive to be published. After reviewing the draft and the GPU check:

@@ -1,8 +1,7 @@
 # Changelog
 
 ## Unreleased
-
-No changes yet.
+- Build and verify a Linux aarch64 CPU archive (`linux-aarch64-cpu`, glibc 2.35+, CPU plugins from ARMv8.0 to ARMv9.2 with SVE2/SME) natively on GitHub arm64 runners, using Ubuntu 22.04's clang-15 without OpenMP. Record the target architecture in build metadata and require matching x86_64 CPU/CUDA and aarch64 CPU archives in release checks. CUDA remains x86_64-only; existing x86_64 check and archive names are unchanged.
 
 ## 0.4.0 - 2026-09-27
 - Recover damaged audio with `--decode-errors tolerant|strict` (tolerant by default), a configurable 30-second input-duration budget and an independent no-progress guard instead of packet-count limits. Retain checkpoints on failure and explain explicit restart/repair options. Record audio decoding policy version 1 and its settings in resume identity without migrating older checkpoints.

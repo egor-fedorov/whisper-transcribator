@@ -19,12 +19,13 @@ Defaults: `small`, Russian, TXT paragraphs, device `auto`, beam size 5, VAD enab
 FFmpeg chooses the best audio stream. `--audio-stream N` selects an absolute container stream index, not an audio ordinal. Explicit selections are checked before model preparation. Captions follow the container timeline; `--timestamp-gaps auto` corrects large transport discontinuities, while `preserve` retains forward gaps. See [timeline rules](docs/resume.md#container-timeline).
 
 ## Install A Published Archive
-Download from [Releases](https://github.com/egor-fedorov/whisper-transcribator/releases). Choose `cpu` or `cuda` for NVIDIA; CUDA runtime libraries are bundled, but a compatible driver is required.
+Download from [Releases](https://github.com/egor-fedorov/whisper-transcribator/releases). Choose `cpu` or `cuda` for NVIDIA; CUDA runtime libraries are bundled, but a compatible driver is required. Releases after 0.4.0 also include a `linux-aarch64-cpu` archive for 64-bit ARM Linux (for example Raspberry Pi 4/5 with a 64-bit OS, AWS Graviton or Ampere); until then, [build it](docs/releasing.md#arm64) with the same recipe.
 
 ```bash
 version=0.4.0
+arch=x86_64 # or aarch64 (CPU only, releases after 0.4.0)
 flavor=cpu
-archive="whisper-transcribator-${version}-linux-x86_64-${flavor}.tar.gz"
+archive="whisper-transcribator-${version}-linux-${arch}-${flavor}.tar.gz"
 url="https://github.com/egor-fedorov/whisper-transcribator/releases/download/v${version}"
 curl -fLO "$url/$archive"
 curl -fLO "$url/SHA256SUMS"
@@ -34,7 +35,7 @@ tar -xzf "$archive" -C whisper-transcribator
 ./whisper-transcribator/bin/whisper-transcribator doctor --device "$flavor" --json
 ```
 
-Keep `bin/`, `lib/` and `share/` together: these are not universal static binaries. Archives target Linux x86_64, Ubuntu 22.04+ / glibc 2.35+ and select a compatible installed CPU plugin, including baseline x86_64 without AVX2. Keep all bundled plugins. See [build and release instructions](docs/releasing.md).
+Keep `bin/`, `lib/` and `share/` together: these are not universal static binaries. Archives target Linux x86_64 or aarch64 with glibc 2.35+ (Ubuntu 22.04+, Debian 12+ and derivatives such as 64-bit Raspberry Pi OS) and select a compatible installed CPU plugin: from baseline x86_64 without AVX2, or from ARMv8.0 up to SVE2/SME. 32-bit ARM is not supported; CUDA archives are x86_64-only. Keep all bundled plugins. See [build and release instructions](docs/releasing.md).
 
 ## Models And Offline Use
 ```bash
@@ -86,6 +87,8 @@ docker run --rm --user "$(id -u):$(id -g)" \
   -v "$PWD/models:/models" whisper-transcribator:cpu \
   --input-dir /input --output-dir /output --naming numbered --model small
 ```
+
+The image matches the build host's architecture: on arm64 hosts, including Docker Desktop on Apple Silicon, it runs natively instead of under x86_64 emulation.
 
 After downloading weights, add `--network none` to Docker and `--local-files-only` to the CLI; models may be mounted read-only. CUDA requires a CUDA build, an NVIDIA driver and NVIDIA Container Toolkit; see [CUDA verification](docs/releasing.md#cuda). Old root-owned volumes need explicit ownership repair on the host. Do not run untrusted media as root or mount unrelated directories.
 
