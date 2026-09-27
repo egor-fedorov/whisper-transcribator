@@ -15,7 +15,9 @@ set(WT_CLI11_VERSION 2.5.0)
 set(WT_JSON_VERSION 3.11.2)
 FetchContent_Declare(whisper
   URL https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/${WT_WHISPER_REVISION}
-  URL_HASH SHA256=41b664fee09e79176ac277b5237debec34f8d74af3c7d71f333f1ec67989ecde)
+  URL_HASH SHA256=41b664fee09e79176ac277b5237debec34f8d74af3c7d71f333f1ec67989ecde
+  PATCH_COMMAND "${CMAKE_COMMAND}" -DWT_WHISPER_SOURCE=<SOURCE_DIR>
+    -P "${CMAKE_CURRENT_LIST_DIR}/patch-whisper.cmake")
 set(CLI11_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(cli11

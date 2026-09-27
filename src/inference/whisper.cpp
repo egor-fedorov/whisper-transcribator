@@ -68,7 +68,7 @@ Transcript WhisperSession::recognize(const std::vector<float>& pcm,
     if (!context) {
         report_progress("Loading model", model.path.filename().string());
         auto params = whisper_context_default_params();
-        params.use_gpu = options.device == "cuda";
+        params.use_gpu = options.device != "cpu";
         params.flash_attn = true;
         context.reset(whisper_init_from_file_with_params(model.path.c_str(), params));
         check_cancelled();

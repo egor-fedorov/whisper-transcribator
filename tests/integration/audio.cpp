@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
             require(std::all_of(gap.begin(), gap.end(), [](float x) { return x == 0; }));
         }
         require(getrusage(RUSAGE_SELF, &after) == 0);
-        require(after.ru_maxrss <= before.ru_maxrss + 32 * 1024,
+        require(peak_rss_kib(after) <= peak_rss_kib(before) + 32 * 1024,
                 "timestamp gap allocated more than 32 MiB");
         return 0;
     }

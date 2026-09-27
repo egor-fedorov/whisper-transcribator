@@ -35,6 +35,24 @@ void duplicate_stems(const fs::path& root) {
     o.inputs.push_back((root / "a.wav").string());
     rejects([&] { prepare_jobs(o); }, "Output collision");
 }
+void outputs_published_earlier_in_the_run(const fs::path& root) {
+    Job first{root / "Lecture.wav", {{"text", root / "Lecture.txt"}}};
+    Job second{root / "lecture.wav", {{"text", root / "lecture.txt"}}};
+    Job unrelated{root / "other.wav", {{"text", root / "other.txt"}}};
+    PublishedOutputs published;
+    published.check(first);
+    atomic_write(root / "Lecture.txt", "first");
+    published.record(first);
+    // A hard link stands in for a filesystem that ignores letter case, as macOS does by default.
+    if (!fs::exists(root / "lecture.txt"))
+        fs::create_hard_link(root / "Lecture.txt", root / "lecture.txt");
+    rejects([&] { published.check(second); },
+            "Output collision: " + (root / "lecture.txt").string() + " is the same file as " +
+                (root / "Lecture.txt").string());
+    // Files not published by this run are left to the existing-output rules of planning.
+    atomic_write(root / "other.txt", "existing");
+    published.check(unrelated);
+}
 void output_symlinks_are_rejected_before_skip_and_overwrite(const fs::path& root) {
 
     auto o = input(root);
@@ -250,6 +268,7 @@ int main() {
         {"hardlink protection", hardlink_protection},
         {"symlink protection", symlink_protection},
         {"duplicate stems", duplicate_stems},
+        {"outputs published earlier in the run", outputs_published_earlier_in_the_run},
         {"output symlinks are rejected before skip and overwrite",
          output_symlinks_are_rejected_before_skip_and_overwrite},
         {"directory symlinks and output inode collisions",

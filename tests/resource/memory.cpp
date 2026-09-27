@@ -88,7 +88,7 @@ long measure(const fs::path& root, int seconds) {
     rusage usage{};
     if (wait4(child, &status, 0, &usage) != child || !WIFEXITED(status) || WEXITSTATUS(status))
         throw std::runtime_error("Memory scenario failed");
-    return usage.ru_maxrss;
+    return peak_rss_kib(usage);
 }
 } // namespace
 int main() {

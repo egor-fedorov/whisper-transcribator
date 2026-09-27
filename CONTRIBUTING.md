@@ -21,6 +21,8 @@ cmake --build --preset asan -j4
 ctest --preset asan
 ```
 
+On macOS install the Xcode Command Line Tools and `brew install cmake ninja pkgconf ffmpeg ffmpeg-full openssl@3 jq`, then use the same CTest commands. CMake finds Homebrew's keg-only OpenSSL itself, and tests generate media with `ffmpeg-full` because Homebrew's `ffmpeg` has no libvorbis encoder; the application links `ffmpeg`. The test scripts run under the system Bash 3.2: do not expand empty arrays under `set -u` or rely on GNU-only tools. `tests/smoke/model-hash.sh` needs `strace` and runs on Linux only.
+
 Run a focused model-free group with CTest labels; the unfiltered command above still runs all required checks:
 
 ```bash
@@ -38,8 +40,9 @@ ASan/UBSan instrument this project's code, not an audit of upstream dependencies
 LeakSanitizer cannot run under ptrace-based sandboxes; run these checks normally,
 rather than disabling leak detection. GCC and Clang are checked in CI with
 `-DWT_WERROR=ON` for project code and tests, not dependencies; GCC also runs natively
-on Linux aarch64. Keep code free of architecture-specific assumptions. FFmpeg 5.1 is the
-minimum supported version and is checked separately. Install `ffmpeg` and `jq`
+on Linux aarch64 and Apple Clang on macOS arm64. Keep code free of architecture-specific
+assumptions and keep Linux- or macOS-only calls in small platform branches. FFmpeg 5.1 is
+the minimum supported version and is checked separately. Install `ffmpeg` and `jq`
 for synthetic media integration tests, including Vorbis/MP3 at 44.1/48 kHz,
 MPEG-TS format transitions, clock drift and timestamp jumps, compared against independent
 FFmpeg PCM references. The test executable needs `libvorbis` and `libmp3lame`
@@ -61,7 +64,7 @@ bash tests/smoke/streaming-smoke.sh .build/cpu/whisper-transcribator \
   .build/fixtures/ggml-tiny.bin .build/fixtures/ggml-silero-v6.2.0.bin .build/streaming-smoke
 ```
 
-On Linux with `exfatprogs`, `exfat-fuse` and root or passwordless sudo, repeat publication, checkpoint and model-cache checks on loop-mounted exFAT images after preparing the fixtures above. The default `integration/permissionless` test simulates such a filesystem instead:
+On Linux with `exfatprogs`, `exfat-fuse` and root or passwordless sudo, or on macOS without extra privileges through `hdiutil`, repeat publication, checkpoint and model-cache checks on exFAT disk images after preparing the fixtures above. The default `integration/permissionless` test simulates such a filesystem instead:
 
 ```bash
 bash tests/integration/exfat.sh .build/cpu .build/fixtures .build/exfat

@@ -13,6 +13,10 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <sys/mount.h>
+#endif
 
 namespace wt {
 std::string env(const char* key) {
@@ -27,6 +31,20 @@ fs::path resolve_path(const fs::path& path) {
         text = env("HOME") + text.substr(1);
     }
     return fs::weakly_canonical(fs::absolute(text));
+}
+fs::path executable_path() {
+    std::error_code error;
+#ifdef __APPLE__
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string path(size, '\0');
+    if (_NSGetExecutablePath(path.data(), &size))
+        return {};
+    auto result = fs::canonical(path.c_str(), error);
+#else
+    auto result = fs::read_symlink("/proc/self/exe", error);
+#endif
+    return error ? fs::path{} : result;
 }
 bool same_file(const fs::path& a, const fs::path& b) {
     return resolve_path(a) == resolve_path(b) ||
@@ -115,6 +133,17 @@ bool set_mode(int fd, mode_t mode) {
     struct stat status {};
     return !fchmod(fd, mode) || (!fstat(fd, &status) && status.st_uid != geteuid());
 }
+} // namespace
+bool ownership_ignored(const fs::path& path) {
+#ifdef __APPLE__
+    struct statfs status {};
+    return !statfs(path.c_str(), &status) && (status.f_flags & MNT_IGNORE_OWNERSHIP);
+#else
+    (void)path;
+    return false;
+#endif
+}
+namespace {
 StoredPermissions probe_with_file(const fs::path& directory) {
     auto pattern = (directory / ".whisper-probe-XXXXXX").string();
     UniqueFd fd(mkstemp(pattern.data()));
@@ -127,7 +156,8 @@ StoredPermissions probe_with_file(const fs::path& directory) {
     unlink(pattern.c_str());
     if (!inspected)
         return {};
-    return {status.st_uid == geteuid(), changed && (status.st_mode & 0777) == 0600};
+    return {status.st_uid == geteuid() && !ownership_ignored(directory),
+            changed && (status.st_mode & 0777) == 0600};
 }
 } // namespace
 StoredPermissions (*probe_permissions)(const fs::path&) = probe_with_file;
@@ -138,9 +168,11 @@ int exclusive_rename(const char* from, const char* to) {
 #if defined(__linux__) && defined(RENAME_NOREPLACE)
     // Supported by ext4, XFS, Btrfs, tmpfs, FAT, exFAT and FUSE filesystems implementing it.
     return renameat2(AT_FDCWD, from, AT_FDCWD, to, RENAME_NOREPLACE);
+#elif defined(__APPLE__)
+    // Supported by APFS and HFS+; other filesystems fail with ENOTSUP.
+    return renamex_np(from, to, RENAME_EXCL);
 #else
-    // Add renamex_np(from, to, RENAME_EXCL) for macOS or MoveFileExW without
-    // MOVEFILE_REPLACE_EXISTING for Windows here.
+    // Add MoveFileExW without MOVEFILE_REPLACE_EXISTING for Windows here.
     (void)from;
     (void)to;
     errno = ENOSYS;
@@ -150,21 +182,32 @@ int exclusive_rename(const char* from, const char* to) {
 int rename_noreplace(const fs::path& from, const fs::path& to, const NoReplaceSteps& steps) {
     if (!steps.exclusive(from.c_str(), to.c_str()))
         return 0;
-    if (errno != EINVAL && errno != ENOSYS)
+    // ENOTSUP and EOPNOTSUPP are the same on Linux, not on macOS.
+    if (errno != EINVAL && errno != ENOSYS && errno != ENOTSUP)
         return -1;
     // A hard link cannot replace an existing name either (NFS, older kernels).
     if (!steps.link(from.c_str(), to.c_str()))
         return unlink(from.c_str());
-    // FAT and exFAT reject hard links with EPERM; FUSE and SMB mounts may report the others.
-    if (errno != EPERM && errno != EOPNOTSUPP && errno != ENOSYS)
+    // FAT and exFAT reject hard links with EPERM on Linux and ENOTSUP on macOS; FUSE and SMB
+    // mounts may report the others.
+    if (errno != EPERM && errno != EOPNOTSUPP && errno != ENOTSUP && errno != ENOSYS)
         return -1;
     return checked_rename(from, to);
+}
+int sync_file(int fd) {
+#ifdef F_FULLFSYNC
+    // macOS fsync() can leave data in the drive's cache; filesystems without F_FULLFSYNC (such as
+    // some network mounts) still get fsync().
+    if (!fcntl(fd, F_FULLFSYNC))
+        return 0;
+#endif
+    return fsync(fd);
 }
 void sync_directory(const fs::path& path) {
     UniqueFd fd(open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
     if (fd.get() < 0)
         throw std::runtime_error("Cannot open directory for sync: " + path.string());
-    int status = fsync(fd.get());
+    int status = sync_file(fd.get());
     fd.close();
     if (status)
         throw std::runtime_error("Cannot sync directory: " + path.string());
@@ -174,7 +217,7 @@ void publish_file(const fs::path& temporary, const fs::path& target, bool overwr
     UniqueFd fd(open(temporary.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
     if (fd.get() < 0)
         throw std::runtime_error("Cannot open staged output");
-    int status = set_mode(fd.get(), output_mode(target, overwrite)) ? fsync(fd.get()) : -1;
+    int status = set_mode(fd.get(), output_mode(target, overwrite)) ? sync_file(fd.get()) : -1;
     fd.close();
     if (status)
         throw std::runtime_error("Cannot flush staged output");
@@ -199,7 +242,7 @@ void atomic_write_stream(const fs::path& path, const std::function<void(std::ost
         write(stream);
         stream.flush();
         if (!set_mode(fd.get(), private_file ? 0600 : output_mode(path, overwrite)) ||
-            fsync(fd.get()))
+            sync_file(fd.get()))
             throw std::runtime_error("Cannot flush output");
         if (fd.close())
             throw std::runtime_error("Cannot close output");

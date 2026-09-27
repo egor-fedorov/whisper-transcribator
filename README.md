@@ -14,7 +14,7 @@ With an [extracted release archive](#install-a-published-archive), transcribe on
 
 Files run sequentially with one loaded model. A video track is neither required nor decoded. Directory discovery is non-recursive, case-insensitive by extension and sorted by filename bytes; explicit file arguments retain their order. Supported extensions include MP4/M4A, MKV/MKA, WAV/AIFF/AIF, MP3, FLAC, OGG/Opus, TS/MTS/M2TS, 3GP and ASF. Container support does not guarantee every possible embedded codec; packaged codecs are listed in [the recipe](packaging/Dockerfile). Explicit paths are not extension-filtered.
 
-Defaults: `small`, Russian, TXT paragraphs, device `auto`, beam size 5, VAD enabled and 120-second windows. `--cpu-threads 0` selects physical cores within Linux process affinity and visible cgroup CPU quotas; explicit positive counts override it. `--language auto` detects language per window. Explicit `--device cuda` fails if unavailable; `auto` reports CPU fallback.
+Defaults: `small`, Russian, TXT paragraphs, device `auto`, beam size 5, VAD enabled and 120-second windows. `--cpu-threads 0` selects physical cores within Linux process affinity and visible cgroup CPU quotas, or performance cores on macOS; explicit positive counts override it. `--language auto` detects language per window. `--device auto` prefers CUDA, then Metal on macOS, and reports CPU fallback; explicit `cuda` or `metal` fails if unavailable.
 
 FFmpeg chooses the best audio stream. `--audio-stream N` selects an absolute container stream index, not an audio ordinal. Explicit selections are checked before model preparation. Captions follow the container timeline; `--timestamp-gaps auto` corrects large transport discontinuities, while `preserve` retains forward gaps. See [timeline rules](docs/resume.md#container-timeline).
 
@@ -36,6 +36,19 @@ tar -xzf "$archive" -C whisper-transcribator
 ```
 
 Keep `bin/`, `lib/` and `share/` together: these are not universal static binaries. Archives target Linux x86_64 or aarch64 with glibc 2.35+ (Ubuntu 22.04+, Debian 12+ and derivatives such as 64-bit Raspberry Pi OS) and select a compatible installed CPU plugin: from baseline x86_64 without AVX2, or from ARMv8.0 up to SVE2/SME. 32-bit ARM is not supported; CUDA archives are x86_64-only. Keep all bundled plugins. See [build and release instructions](docs/releasing.md).
+
+## Build On macOS
+There is no macOS archive yet. On a Mac with Apple silicon, build from source with the Xcode Command Line Tools and [Homebrew](https://brew.sh):
+
+```bash
+brew install cmake ninja pkgconf ffmpeg openssl@3
+cmake --preset cpu
+cmake --build --preset cpu -j
+./.build/cpu/whisper-transcribator doctor --json
+./.build/cpu/whisper-transcribator lecture.m4a --output-dir transcripts --model small
+```
+
+The build includes whisper.cpp's Metal backend, so `--device auto` runs on the GPU; `--device cpu` uses the CPU with Accelerate. The executable loads its whisper.cpp libraries from the build directory, so keep that directory. CI tests macOS 15 on Apple silicon; Intel Macs build the same way but are not tested. The default APFS volume, like FAT and exFAT drives, ignores letter case: see [batch output names](docs/resume.md#batch-output-names).
 
 ## Models And Offline Use
 ```bash

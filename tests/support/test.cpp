@@ -10,7 +10,8 @@ TempDirectory::TempDirectory(const fs::path& parent) : owner(getpid()) {
     auto pattern = (parent / "whisper-test-XXXXXX").string();
     if (!mkdtemp(pattern.data()))
         throw std::runtime_error("mkdtemp failed");
-    path = pattern;
+    // Resolved like the paths under test: the macOS temporary directory is behind a symlink.
+    path = fs::canonical(pattern);
 }
 TempDirectory::~TempDirectory() {
     if (!retained && getpid() == owner) {

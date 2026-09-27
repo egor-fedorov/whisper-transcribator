@@ -6,9 +6,18 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <sys/resource.h>
 #include <sys/types.h>
 
 namespace wt::test {
+// Peak resident set size in KiB; macOS reports ru_maxrss in bytes, Linux in KiB.
+inline long peak_rss_kib(const rusage& usage) {
+#ifdef __APPLE__
+    return usage.ru_maxrss / 1024;
+#else
+    return usage.ru_maxrss;
+#endif
+}
 struct AssertionFailure : std::logic_error {
     using std::logic_error::logic_error;
 };

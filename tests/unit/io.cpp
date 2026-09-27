@@ -65,14 +65,17 @@ void rename_noreplace_keeps_existing_targets(const fs::path& root) {
     require(fs::is_empty(root / "directory") && read_text(root / "staged") == "new");
 }
 void rename_noreplace_falls_back_to_hard_links(const fs::path& root) {
-    for (auto exclusive : {failed_exclusive<EINVAL>, failed_exclusive<ENOSYS>}) {
+    // ENOTSUP is how macOS reports a filesystem without RENAME_EXCL.
+    for (auto exclusive :
+         {failed_exclusive<EINVAL>, failed_exclusive<ENOSYS>, failed_exclusive<ENOTSUP>}) {
         exclusive_calls = link_calls = 0;
         expect_no_replace(root / "staged", root / "target", {exclusive, counted_link});
         require(exclusive_calls == 2 && link_calls == 2);
     }
 }
 void rename_noreplace_falls_back_to_checked_rename(const fs::path& root) {
-    for (auto link : {failed_link<EPERM>, failed_link<EOPNOTSUPP>, failed_link<ENOSYS>}) {
+    for (auto link :
+         {failed_link<EPERM>, failed_link<EOPNOTSUPP>, failed_link<ENOTSUP>, failed_link<ENOSYS>}) {
         exclusive_calls = link_calls = 0;
         expect_no_replace(root / "staged", root / "target", {failed_exclusive<ENOSYS>, link});
         require(exclusive_calls == 2 && link_calls == 2);
