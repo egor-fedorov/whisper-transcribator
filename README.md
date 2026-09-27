@@ -68,6 +68,8 @@ Audio buffers cover only the current window; outputs stream from saved segments.
 
 See [long recordings and resume](docs/resume.md) for compatibility, timeline semantics, crash recovery, overwrite/skip behavior and numbered mappings. Existing outputs are never silently replaced. Successful publication removes journal payloads; lock files remain intentionally.
 
+Damaged audio is skipped with a warning by default (`--decode-errors tolerant`); use `strict` to stop on the first decoder error. The default limit is 30 seconds of input audio without a successful frame after errors; `--decode-error-limit-seconds 0` disables this time limit. Recovery cannot restore lost speech. See [damaged audio](docs/resume.md#damaged-audio) for safeguards and restart requirements when changing the policy.
+
 ## Diagnostics
 Status goes to stderr; command JSON stays on stdout. `--quiet` retains warnings/errors, while `--verbose` adds backend and checkpoint diagnostics without FFmpeg DEBUG/TRACE packet dumps. Terminal progress updates in place; redirected progress is rate-limited. The first SIGINT/SIGTERM stops gracefully; a second exits immediately with committed progress recoverable.
 

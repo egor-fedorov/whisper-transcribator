@@ -23,6 +23,19 @@ Backward jumps beyond the jitter tolerance start a contiguous section in every c
 
 JSON `duration` is the end of the selected, policy-adjusted audio timeline, including its leading delay and preserved gaps. It is not the sum of speech durations and is not padded to the end of a longer video. Progress uses an estimate until decoding determines the actual end; an unknown or exceeded estimate suppresses ETA. Correcting a timestamp discontinuity also invalidates the original duration estimate, so percentages and ETA are withheld rather than calculated against an obsolete timeline.
 
+## Damaged Audio
+`--decode-errors tolerant` is the default. Errors returned by audio packet submission or frame retrieval, including `AVERROR_INVALIDDATA` and `AVERROR_PATCHWELCOME`, are recoverable except for allocation failure and cancellation. `EAGAIN` and EOF remain decoder flow-control signals, not recoverable errors. Demuxer/read errors and invalid decoded parameters remain fatal. `--decode-errors strict` stops on the first decoder error.
+
+The decoder's rejected data is skipped, not repaired. The application warns once per file that the transcript may be incomplete, reports individual recovery events in verbose mode, and prints the total recovered error count at decoding EOF. FFmpeg may also emit its own diagnostics. Successful completion does not prove that every spoken word survived the recording damage.
+
+In tolerant mode, `--decode-error-limit-seconds 30` stops recovery when decoder errors leave 30 seconds of represented input audio without a successful decoded frame. Packet counts, wall-clock time and PTS jumps are not used as a corruption budget. Packet durations are preferred, then codec frame duration, then the last successful frame's duration. If none is available, that packet does not advance the time budget. Successful packet submission alone does not reset it; a decoded frame does. There is no whole-file error-percentage limit.
+
+Increase the limit for unusually damaged input, or set `--decode-error-limit-seconds 0` to disable the time limit. An independent guard always stops a stuck decoder after 1024 errors without either consuming another input packet or producing a frame. This guard also covers unknown packet durations and draining at EOF; cancellation remains available. Files that never yield usable audio still fail, and empty transcripts are not published.
+
+Later valid timestamps follow the timeline policy above; gaps beyond the jitter tolerance are preserved, while missing timestamps cannot reconstruct lost audio duration. Recovery does not flush healthy decoder state or remove successfully decoded samples. Resume replays decoding and its error policy across the saved prefix, without repeating inference there. A deterministic failure will recur with the same options: `--resume` alone cannot bypass damage. The error explains how to relax the policy or repair the input with ffmpeg. Changed decoding options or a repaired/replaced source require a new output destination or `--overwrite` **without** `--resume`. Committed progress remains intact until that explicit restart; a failed job does not publish partial results.
+
+Audio decoding policy version 1 and both decode options are part of checkpoint compatibility, independently of timeline version 3 and chunking version 4. Earlier checkpoints without these fields, including earlier drafts of the recovery policy, are preserved but rejected; finish them with the original binary or explicitly restart.
+
 ## Restart An Interrupted Job
 ```bash
 ./bin/whisper-transcribator lecture.mp4 --output-dir transcripts --format all \
@@ -34,7 +47,7 @@ JSON `duration` is the end of the selected, policy-adjusted audio timeline, incl
 
 Each committed window is saved under the output directory's private `.whisper-transcribator/`. The journal contains transcript fragments and source paths, not audio or weights. Keep it on persistent storage; a Docker bind mount of `/output` also preserves checkpoints. Allow disk space for journal records and staged outputs. Disk errors fail the job.
 
-Resume verifies the input contents and paths, requested destinations, model/VAD SHA-256, selected audio stream, `--timestamp-gaps` policy, inference and formatting settings, backend versions, and timeline/chunking/rendering algorithm versions. An incompatibility reports changed field paths. It never silently discards progress.
+Resume verifies the input contents and paths, requested destinations, model/VAD SHA-256, selected audio stream, timestamp-gap and decode-error policies, inference and formatting settings, backend versions, and decoding/timeline/chunking/rendering algorithm versions. An incompatibility reports changed field paths. It never silently discards progress.
 
 CPU thread counts, affinity and the spelling of model paths/catalog aliases do not determine compatibility. The actual model hashes do. Application version/Git revision are diagnostic metadata, not algorithm identifiers. `run` and top-level `model` describe the original job and remain frozen across resume so partially published JSON can be reconstructed byte-for-byte. Current execution settings appear in stderr; one resumed job may have used different CPU counts.
 

@@ -24,6 +24,9 @@ Json run_metadata(const Options& options) {
             {"chunk_seconds", options.chunk_seconds},
             {"chunk_min_silence_ms", options.chunk_min_silence_ms},
             {"audio_timeline_version", 3},
+            {"audio_decode_version", 1},
+            {"decode_errors", options.decode_errors},
+            {"decode_error_limit_seconds", options.decode_error_limit_seconds},
             {"timestamp_gaps", options.timestamp_gaps},
             {"rendering_version", 1},
             {"chunking_version", chunking_version}};

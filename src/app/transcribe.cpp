@@ -22,6 +22,7 @@ int transcribe(Options options) {
     validate_language(options.language);
     auto gaps =
         options.timestamp_gaps == "preserve" ? TimestampGaps::preserve : TimestampGaps::automatic;
+    DecodeErrorPolicy errors{options.decode_errors == "strict", options.decode_error_limit_seconds};
     auto jobs = prepare_jobs(options);
     if (jobs.empty()) {
         log_message(LogLevel::info, "No files to transcribe");
@@ -33,7 +34,7 @@ int transcribe(Options options) {
         std::vector<Job> valid;
         for (const auto& job : jobs) {
             try {
-                AudioReader probe(job.source, options.audio_stream, gaps);
+                AudioReader probe(job.source, options.audio_stream, gaps, errors);
                 valid.push_back(job);
             } catch (const UsageError& error) {
                 throw UsageError(job.source.string() + ": " + error.what());
@@ -76,7 +77,7 @@ int transcribe(Options options) {
             auto modified = fs::last_write_time(job.source);
             auto size = fs::file_size(job.source);
             report_progress("Reading audio streams", job.source.filename().string());
-            AudioReader reader(job.source, options.audio_stream, gaps);
+            AudioReader reader(job.source, options.audio_stream, gaps, errors);
             auto job_options = options;
             job_options.audio_stream = reader.stream_index();
             log_message(LogLevel::info, "Audio stream: " + std::to_string(reader.stream_index()));

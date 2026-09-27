@@ -41,6 +41,9 @@ expect 2 --chunk-seconds 29
 expect 2 --chunk-seconds 601
 expect 2 --chunk-min-silence-ms -1
 expect 2 --audio-stream -1
+expect 2 --decode-errors invalid
+expect 2 --decode-error-limit-seconds -1
+expect 2 --decode-error-limit-seconds 0.5
 expect 2 --text-layout invalid
 expect 2 --paragraph-pause-ms -1
 expect 2 --device magic
@@ -66,9 +69,13 @@ expect 2 --timestamp-gaps invalid
 grep -q 'timestamp-gaps' "$root/stderr"
 expect 0 --help
 grep -q -- '--timestamp-gaps' "$root/stdout"
+grep -q -- '--decode-errors' "$root/stdout"
+grep -q -- '--decode-error-limit-seconds' "$root/stdout"
 expect 1 "$root/missing.mp4" --local-files-only
 mkdir -p "$root/empty"
 expect 0 --input-dir "$root/empty" --local-files-only
+expect 0 --input-dir "$root/empty" --local-files-only --decode-errors tolerant --decode-error-limit-seconds 0
+expect 0 --input-dir "$root/empty" --local-files-only --decode-errors strict
 expect 0 --input-dir "$root/empty" --local-files-only --quiet
 test ! -s "$root/stderr"
 printf media >"$root/input.mp4"

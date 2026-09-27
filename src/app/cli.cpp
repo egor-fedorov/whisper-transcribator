@@ -116,6 +116,14 @@ int run_cli(int argc, char** argv) {
                        "auto joins forward transport timestamp jumps over 10s; preserve keeps gaps")
             ->check(CLI::IsMember({"auto", "preserve"}))
             ->capture_default_str();
+        app.add_option("--decode-errors", o.decode_errors,
+                       "tolerant skips damaged audio; strict stops on the first decoder error")
+            ->check(CLI::IsMember({"strict", "tolerant"}))
+            ->capture_default_str();
+        app.add_option("--decode-error-limit-seconds", o.decode_error_limit_seconds,
+                       "Tolerant mode: input audio without a good frame after errors; 0 disables")
+            ->check(CLI::NonNegativeNumber)
+            ->capture_default_str();
         app.add_option("--beam-size", o.beam_size, "Beam search width")
             ->check(CLI::Range(1, 8))
             ->capture_default_str();

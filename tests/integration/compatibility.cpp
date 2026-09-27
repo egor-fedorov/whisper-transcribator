@@ -52,7 +52,7 @@ void execution_settings(const fs::path& root) {
         require(journal.samples() == 16 && journal.output_metadata() == metadata);
     }
     for (const auto* key : {"audio_stream", "beam_size", "audio_timeline_version",
-                            "rendering_version", "chunking_version"}) {
+                            "audio_decode_version", "rendering_version", "chunking_version"}) {
         auto changed = saved;
         changed["run"][key] = 999;
         rejects([&] { Journal journal(f.job, f.options, changed); }, std::string("/run/") + key);
@@ -60,6 +60,18 @@ void execution_settings(const fs::path& root) {
     auto changed = saved;
     changed["backend"]["model_sha256"] = "different weights";
     rejects([&] { Journal journal(f.job, f.options, changed); }, "/backend/model_sha256");
+    f.options.decode_errors = "strict";
+    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); }, "/run/decode_errors");
+    f.options.decode_errors = "tolerant";
+    f.options.decode_error_limit_seconds = 0;
+    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
+            "/run/decode_error_limit_seconds");
+    f.options.decode_error_limit_seconds = 30;
+    for (const auto* key : {"decode_errors", "decode_error_limit_seconds"}) {
+        changed = saved;
+        changed["run"].erase(key);
+        rejects([&] { Journal journal(f.job, f.options, changed); }, std::string("/run/") + key);
+    }
     f.options.timestamp_gaps = "preserve";
     rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); }, "/run/timestamp_gaps");
 }
@@ -81,12 +93,15 @@ Json install_snapshot(Fixture& f, const Json& snapshot) {
     return manifest;
 }
 void old_timeline_snapshot(const fs::path& root) {
-    for (const auto* file : {"checkpoint-v3.json", "checkpoint-v3-timeline-v2.json"}) {
+    for (const auto* file : {"checkpoint-v3.json", "checkpoint-v3-timeline-v2.json",
+                             "checkpoint-v3-timeline-v3.json"}) {
         auto snapshot = Json::parse(read_text(fs::path(WT_TEST_FIXTURES) / file));
         Fixture f(root / file);
         auto manifest = install_snapshot(f, snapshot);
-        rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
-                "/run/audio_timeline_version");
+        auto field = std::string(file) == "checkpoint-v3-timeline-v3.json"
+                         ? "/run/audio_decode_version"
+                         : "/run/audio_timeline_version";
+        rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); }, field);
         auto directory = checkpoint_path(f.job);
         require(read_text(directory / "manifest.json") == manifest.dump());
         require(read_text(directory / "chunk-0.json") == snapshot.at("chunk"));
@@ -94,7 +109,7 @@ void old_timeline_snapshot(const fs::path& root) {
 }
 void current_snapshot(const fs::path& root) {
     auto snapshot =
-        Json::parse(read_text(fs::path(WT_TEST_FIXTURES) / "checkpoint-v3-timeline-v3.json"));
+        Json::parse(read_text(fs::path(WT_TEST_FIXTURES) / "checkpoint-v3-decoding-v1.json"));
     Fixture f(root);
     auto manifest = install_snapshot(f, snapshot);
     require(manifest.at("fingerprint") == f.fingerprint());
