@@ -267,6 +267,89 @@ jobs:
             --model /fixtures/ggml-tiny.bin --vad-model /fixtures/ggml-silero-v6.2.0.bin \
             --language en --device cpu --local-files-only --output-dir /output --format all
           jq -e '.run.backend == "whisper.cpp" and (.segments | length > 0)' .build/docker-output/jfk.json
+  package-macos:
+    name: package (macos-arm64)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install build and test tools (the archive bundles none of them)
+        run: brew install ninja pkgconf ffmpeg-full openssl@3 jq
+      - name: Build FFmpeg and the archive, test its binaries and package them
+        env:
+          WT_SOURCE_REVISION: ${{ github.sha }}
+          WT_SOURCE_DIRTY: 'false'
+        run: bash packaging/macos.sh .build/artifacts/macos-arm64
+      - name: Verify archive, dependencies, signatures and doctor
+        run: bash tests/packaging/package.sh .build/artifacts/macos-arm64
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-macos-arm64
+          path: |
+            .build/artifacts/macos-arm64/*.tar.gz
+            .build/artifacts/macos-arm64/SHA256SUMS
+          retention-days: 7
+          if-no-files-found: error
+  smoke-macos:
+    name: ${{ matrix.name }}
+    needs: package-macos
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: smoke (macos-arm64)
+            os: macos-15
+          # The oldest macOS the archive supports.
+          - name: smoke (macos-arm64, macOS 14)
+            os: macos-14
+    env:
+      ARCHIVE: .build/artifacts/macos-arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-macos-arm64
+          path: ${{ env.ARCHIVE }}
+      - name: Verify the exact archive produced by package
+        run: |
+          command -v jq >/dev/null || brew install jq
+          # The README checks one archive against the release's combined checksums.
+          { cat "$ARCHIVE/SHA256SUMS"; printf '%064d  whisper-transcribator-linux.tar.gz\n' 0; } >.build/combined
+          (cd "$ARCHIVE" && shasum -a 256 --check --ignore-missing ../../combined)
+          bash tests/packaging/package.sh "$ARCHIVE"
+      - name: Load only archive and macOS libraries, including Metal
+        run: |
+          DYLD_PRINT_LIBRARIES=1 "$ARCHIVE/unpacked/bin/whisper-transcribator" doctor --device metal --json \
+            >.build/doctor.json 2>.build/dyld.log
+          jq -e '.device == "metal" and .errors == []' .build/doctor.json
+          grep -q "unpacked/lib/libggml-metal.so" .build/dyld.log
+          if grep -E '/opt/homebrew|/usr/local' .build/dyld.log; then exit 1; fi
+      - name: Prepare public 11-second fixture and tiny weights
+        run: bash tests/smoke/prepare-smoke.sh "$ARCHIVE/unpacked/bin/whisper-transcribator" .build/fixtures
+      - name: Run archive inference on CPU and Metal without network access
+        run: |
+          for device in cpu metal; do
+            sandbox-exec -p '(version 1)(allow default)(deny network*)' bash tests/smoke/smoke.sh \
+              "$PWD/$ARCHIVE/unpacked/bin/whisper-transcribator" "$PWD/.build/fixtures/jfk.wav" \
+              "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
+              "$PWD/.build/smoke-$device" "$device"
+          done
+      - name: Check a browser-quarantined download (Gatekeeper without a Developer ID)
+        run: |
+          cp "$ARCHIVE"/*.tar.gz "$RUNNER_TEMP/download.tar.gz"
+          xattr -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;" "$RUNNER_TEMP/download.tar.gz"
+          mkdir "$RUNNER_TEMP/quarantined"
+          tar -xzf "$RUNNER_TEMP/download.tar.gz" -C "$RUNNER_TEMP/quarantined"
+          binary="$RUNNER_TEMP/quarantined/bin/whisper-transcribator"
+          echo "Quarantine after tar extraction: $(xattr -p com.apple.quarantine "$binary" 2>/dev/null || echo none)"
+          status=0
+          perl -e 'alarm 60; exec @ARGV' "$binary" --version || status=$?
+          echo "Quarantined run exit status: $status (informational)"
+          # The README step for browser downloads must always work.
+          xattr -dr com.apple.quarantine "$RUNNER_TEMP/quarantined"
+          "$binary" --version
   portable-inference:
     name: ${{ matrix.name }}
     if: github.event_name == 'workflow_dispatch' && inputs.run_portable_inference
