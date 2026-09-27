@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: |
           sudo apt-get update
-          sudo apt-get install -y ccache ninja-build clang-18 clang-format-18 libomp-18-dev ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck strace
+          sudo apt-get install -y ccache ninja-build clang-18 clang-format-18 libomp-18-dev ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev jq shellcheck strace exfatprogs exfat-fuse
       - id: compiler
         run: echo "version=$(${{ matrix.cxx }} -dumpfullversion -dumpversion)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -73,6 +73,8 @@ jobs:
           ccache --print-stats | awk '$1 ~ /cache_hit/ { hits += $2 } END { exit !(hits > 0) }'
       - run: ctest --test-dir .build/ci --output-on-failure
       - run: bash tests/smoke/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
+      - name: Check checkpoints, publication and model cache on exFAT (exfat-fuse)
+        run: bash tests/integration/exfat.sh .build/ci .build/fixtures .build/exfat
       - if: matrix.sanitize == 'OFF'
         run: bash tests/smoke/model-hash.sh .build/ci/whisper-transcribator .build/fixtures .build/model-hash
       - run: |
