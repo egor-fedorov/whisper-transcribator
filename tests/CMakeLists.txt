@@ -68,7 +68,22 @@ set_tests_properties(integration/downloads PROPERTIES LABELS integration TIMEOUT
 # Homebrew's ffmpeg lacks the libvorbis encoder used for test fixtures; ffmpeg-full has it.
 wt_brew_prefix(ffmpeg-full WT_BREW_FFMPEG)
 find_program(WT_TEST_FFMPEG ffmpeg HINTS "${WT_BREW_FFMPEG}/bin")
+# These tests compare decoding with the ffmpeg command, so it must use the linked decoders'
+# version. Archive recipes link their own FFmpeg and skip them, like builds without ffmpeg.
+set(WT_TEST_FFMPEG_MATCHES OFF)
 if(WT_TEST_FFMPEG)
+  execute_process(COMMAND "${WT_TEST_FFMPEG}" -hide_banner -version
+    OUTPUT_VARIABLE WT_TEST_FFMPEG_VERSION ERROR_QUIET)
+  string(REGEX MATCH "libavcodec +([0-9]+)\\. *([0-9]+)\\. *([0-9]+)" match "${WT_TEST_FFMPEG_VERSION}")
+  set(version "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+  if(match AND version VERSION_EQUAL AV_libavcodec_VERSION)
+    set(WT_TEST_FFMPEG_MATCHES ON)
+  else()
+    message(STATUS "Skipping FFmpeg decoding comparisons: ${WT_TEST_FFMPEG} uses libavcodec "
+      "${version}, the build links ${AV_libavcodec_VERSION}")
+  endif()
+endif()
+if(WT_TEST_FFMPEG_MATCHES)
   add_test(NAME integration/audio-changes COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-changes.sh"
     $<TARGET_FILE:wt-audio-tests> "${WT_TEST_FFMPEG}")
   set_tests_properties(integration/audio-changes PROPERTIES LABELS integration TIMEOUT 60)
