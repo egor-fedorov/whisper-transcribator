@@ -3,12 +3,14 @@
 #include "support/error.hpp"
 #include "support/fd.hpp"
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
 #include <sstream>
 #include <streambuf>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -86,7 +88,78 @@ mode_t output_mode(const fs::path& path, bool overwrite) {
     umask(mask);
     return overwrite && stat(path.c_str(), &status) == 0 ? status.st_mode & 0777 : 0666 & ~mask;
 }
+// Last resort for filesystems with neither atomic no-replace renames nor hard links. The check
+// and rename() are not atomic: the directory lock only excludes other publishers in this
+// program, so a file another program creates at `to` in between would still be replaced.
+int checked_rename(const fs::path& from, const fs::path& to) {
+    auto parent = to.parent_path().empty() ? fs::path(".") : to.parent_path();
+    UniqueFd directory(open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    int result = directory.get() < 0 ? -1 : 0;
+    while (!result && flock(directory.get(), LOCK_EX))
+        result = errno == EINTR ? 0 : -1;
+    struct stat status {};
+    if (!result && !lstat(to.c_str(), &status)) {
+        errno = EEXIST;
+        result = -1;
+    } else if (!result)
+        result = errno == ENOENT ? rename(from.c_str(), to.c_str()) : -1;
+    int error = errno;
+    directory.close();
+    errno = error;
+    return result;
+}
+// Sets the mode of a file this program created. A filesystem reporting another owner for it
+// cannot store owners or modes and may refuse (exFAT mounted for another user); its mount
+// options then decide the mode.
+bool set_mode(int fd, mode_t mode) {
+    struct stat status {};
+    return !fchmod(fd, mode) || (!fstat(fd, &status) && status.st_uid != geteuid());
+}
+StoredPermissions probe_with_file(const fs::path& directory) {
+    auto pattern = (directory / ".whisper-probe-XXXXXX").string();
+    UniqueFd fd(mkstemp(pattern.data()));
+    // Keep every check when the filesystem cannot be probed.
+    if (fd.get() < 0)
+        return {};
+    struct stat status {};
+    bool changed = fchmod(fd.get(), 0600) == 0, inspected = fstat(fd.get(), &status) == 0;
+    fd.close();
+    unlink(pattern.c_str());
+    if (!inspected)
+        return {};
+    return {status.st_uid == geteuid(), changed && (status.st_mode & 0777) == 0600};
+}
 } // namespace
+StoredPermissions (*probe_permissions)(const fs::path&) = probe_with_file;
+bool StoredPermissions::accepts(const struct stat& status, bool owner_only) const {
+    return (status.st_uid == geteuid() || !owner) && (owner_only || !mode);
+}
+int exclusive_rename(const char* from, const char* to) {
+#if defined(__linux__) && defined(RENAME_NOREPLACE)
+    // Supported by ext4, XFS, Btrfs, tmpfs, FAT, exFAT and FUSE filesystems implementing it.
+    return renameat2(AT_FDCWD, from, AT_FDCWD, to, RENAME_NOREPLACE);
+#else
+    // Add renamex_np(from, to, RENAME_EXCL) for macOS or MoveFileExW without
+    // MOVEFILE_REPLACE_EXISTING for Windows here.
+    (void)from;
+    (void)to;
+    errno = ENOSYS;
+    return -1;
+#endif
+}
+int rename_noreplace(const fs::path& from, const fs::path& to, const NoReplaceSteps& steps) {
+    if (!steps.exclusive(from.c_str(), to.c_str()))
+        return 0;
+    if (errno != EINVAL && errno != ENOSYS)
+        return -1;
+    // A hard link cannot replace an existing name either (NFS, older kernels).
+    if (!steps.link(from.c_str(), to.c_str()))
+        return unlink(from.c_str());
+    // FAT and exFAT reject hard links with EPERM; FUSE and SMB mounts may report the others.
+    if (errno != EPERM && errno != EOPNOTSUPP && errno != ENOSYS)
+        return -1;
+    return checked_rename(from, to);
+}
 void sync_directory(const fs::path& path) {
     UniqueFd fd(open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
     if (fd.get() < 0)
@@ -101,19 +174,15 @@ void publish_file(const fs::path& temporary, const fs::path& target, bool overwr
     UniqueFd fd(open(temporary.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
     if (fd.get() < 0)
         throw std::runtime_error("Cannot open staged output");
-    int status = fchmod(fd.get(), output_mode(target, overwrite));
-    if (!status)
-        status = fsync(fd.get());
+    int status = set_mode(fd.get(), output_mode(target, overwrite)) ? fsync(fd.get()) : -1;
     fd.close();
     if (status)
         throw std::runtime_error("Cannot flush staged output");
-    status = overwrite ? rename(temporary.c_str(), target.c_str())
-                       : link(temporary.c_str(), target.c_str());
+    status =
+        overwrite ? rename(temporary.c_str(), target.c_str()) : rename_noreplace(temporary, target);
     if (status)
         throw std::runtime_error("Cannot publish " + target.string() + ": " + std::strerror(errno));
     sync_directory(target.parent_path());
-    if (!overwrite && unlink(temporary.c_str()))
-        throw std::runtime_error("Cannot remove staged output");
     sync_directory(temporary.parent_path());
 }
 void atomic_write_stream(const fs::path& path, const std::function<void(std::ostream&)>& write,
@@ -129,13 +198,14 @@ void atomic_write_stream(const fs::path& path, const std::function<void(std::ost
         stream.exceptions(std::ios::badbit | std::ios::failbit);
         write(stream);
         stream.flush();
-        if (fchmod(fd.get(), private_file ? 0600 : output_mode(path, overwrite)) || fsync(fd.get()))
+        if (!set_mode(fd.get(), private_file ? 0600 : output_mode(path, overwrite)) ||
+            fsync(fd.get()))
             throw std::runtime_error("Cannot flush output");
         if (fd.close())
             throw std::runtime_error("Cannot close output");
         check_cancelled();
         int result =
-            overwrite ? rename(pattern.c_str(), path.c_str()) : link(pattern.c_str(), path.c_str());
+            overwrite ? rename(pattern.c_str(), path.c_str()) : rename_noreplace(pattern, path);
         if (result)
             throw std::runtime_error("Cannot publish " + path.string() + ": " +
                                      std::strerror(errno));
@@ -144,7 +214,6 @@ void atomic_write_stream(const fs::path& path, const std::function<void(std::ost
         unlink(pattern.c_str());
         throw;
     }
-    unlink(pattern.c_str());
     sync_directory(path.parent_path());
 }
 void atomic_write(const fs::path& path, const std::string& content, bool overwrite) {

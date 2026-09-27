@@ -45,7 +45,7 @@ Audio decoding policy version 1 and both decode options are part of checkpoint c
   --model large-v3 --device cuda --chunk-seconds 120 --resume
 ```
 
-Each committed window is saved under the output directory's private `.whisper-transcribator/`. The journal contains transcript fragments and source paths, not audio or weights. Keep it on persistent storage; a Docker bind mount of `/output` also preserves checkpoints. Allow disk space for journal records and staged outputs. Disk errors fail the job.
+Each committed window is saved under the output directory's private `.whisper-transcribator/`. The journal contains transcript fragments and source paths, not audio or weights. Keep it on persistent storage; a Docker bind mount of `/output` also preserves checkpoints. Allow disk space for journal records and staged outputs. Disk errors fail the job. On FAT32, exFAT and similar drives, see [filesystems without POSIX permissions](#filesystems-without-posix-permissions).
 
 Resume verifies the input contents and paths, requested destinations, model/VAD SHA-256, selected audio stream, timestamp-gap and decode-error policies, inference and formatting settings, backend versions, and decoding/timeline/chunking/rendering algorithm versions. An incompatibility reports changed field paths. It never silently discards progress.
 
@@ -57,11 +57,19 @@ The completed prefix is decoded and discarded without inference. There is no app
 - No checkpoint means `--resume` starts a new job. Existing committed progress requires explicit `--resume` or plain `--overwrite`.
 - Failed attempts before the first committed window are safely restarted, even after replacing a broken input. Known private temporary files left during the first manifest/chunk write are also recoverable. Unknown files, unsafe links and corrupt records are never silently removed.
 - `--overwrite` without `--resume` explicitly discards this job's journal. `--resume --overwrite` permits replacing outputs, but does not bypass journal compatibility checks.
+- Without `--overwrite`, publication never replaces an existing name. It uses an atomic no-replace rename (Linux `renameat2` with `RENAME_NOREPLACE`), which ext4, XFS, Btrfs, tmpfs, FAT and exFAT support. Where a filesystem rejects it, such as NFS, a hard link publishes the file instead. Only on filesystems with neither, it checks that the name is absent under a directory lock and then renames. That last fallback excludes other whisper-transcribator processes, but not another program creating the same name in between. `--overwrite` replaces outputs with an ordinary atomic rename.
 - Outputs are atomically published individually; the multi-format set is not a transaction. After partial publication, matching completed outputs are retained and missing ones are regenerated without inference. Externally changed outputs require explicit overwrite permission.
 - Successful publication removes checkpoint payloads. Small lock files remain deliberately: deleting a lock pathname while another process uses its inode can break mutual exclusion.
 - Checkpoint schema 3 / chunking version 4 / audio timeline version 3 do not migrate earlier journals, including schema-3 journals with older algorithm versions. Finish old jobs using their original binary, or explicitly restart with plain `--overwrite`. Old three-format `all` checkpoints require the previous binary, a new destination, or explicitly moving the old checkpoint aside.
 
 Completed transcripts are not modified by an upgrade. JSON output remains schema 2; this does not imply checkpoint compatibility. Published 0.3.0 used JSON schema 1 and has no resumable partial runs.
+
+## Filesystems Without POSIX Permissions
+FAT32, exFAT, NTFS without permission mapping and many FUSE or SMB mounts do not store file owners and modes: they report fixed values from mount options, so a directory created with mode 0700 may appear as 0777 or belong to another user. Checkpoints require an owner-only directory owned by you. When that check fails, a temporary file in the output directory shows whether the filesystem can store owners and modes. Only the attributes it cannot store are ignored, and only for checkpoint entries on the output directory's own filesystem, not a separately mounted directory inside it. Symlinks, hard links and unexpected file types are always rejected. On filesystems that store permissions, the strict checks are unchanged.
+
+The job then continues with one warning per output directory: checkpoint privacy cannot be enforced there, and the mount options decide who can read saved fragments. Mount such drives for your user only (for example with `uid=` and `umask=077`, or `dmask`/`fmask`) if other local users should not read transcripts in progress.
+
+Checkpoints deliberately stay next to the outputs instead of moving to a per-user state directory such as `~/.local/state`. Staged outputs must be on the destination filesystem to be published atomically. Resume keeps working when a drive moves to another machine or container. Docker users keep relying on a bind mount of `/output` to preserve progress. The published transcripts are exposed to the same mount options in either case. The model cache follows the same rule for partial downloads, whose final SHA-256 verification is unaffected.
 
 ## Batch Output Names
 Directory input is non-recursive and sorted by filename bytes, independent of locale. Explicit input arguments keep their order. Files are processed sequentially with one loaded model.

@@ -4,6 +4,7 @@
 #include "support/hash.hpp"
 #include "support/io.hpp"
 #include "support/options.hpp"
+#include "support/report.hpp"
 #include "transcript/metadata.hpp"
 #include <algorithm>
 #include <cerrno>
@@ -12,31 +13,63 @@
 #include <iostream>
 #include <optional>
 #include <regex>
+#include <set>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 namespace wt {
+// Checkpoint entries must be owned by this user with owner-only modes. Filesystems without POSIX
+// permissions (FAT, exFAT, some FUSE/SMB mounts) report a fixed owner and mode from mount
+// options, so a failed check is accepted only for attributes a probe file in the output
+// directory cannot keep either, and only on that filesystem. Entry types, symlinks and hard
+// links are always checked.
+struct CheckpointPrivacy {
+    fs::path output_directory;
+    std::optional<StoredPermissions> stored;
+    dev_t device = 0;
+    explicit CheckpointPrivacy(fs::path directory) : output_directory(std::move(directory)) {}
+    bool accepts(const struct stat& st, bool owner_only) {
+        if (st.st_uid == geteuid() && owner_only)
+            return true;
+        if (!stored) {
+            struct stat output {};
+            stored = stat(output_directory.c_str(), &output) ? StoredPermissions{}
+                                                             : probe_permissions(output_directory);
+            device = output.st_dev;
+            static std::set<fs::path> warned;
+            if ((!stored->owner || !stored->mode) && warned.insert(output_directory).second)
+                log_message(
+                    LogLevel::warning,
+                    "Checkpoint privacy cannot be enforced on this filesystem because it "
+                    "does not store POSIX owners and modes; saved transcript fragments in " +
+                        (output_directory / ".whisper-transcribator").string() +
+                        " are protected only by its mount options");
+        }
+        return st.st_dev == device && stored->accepts(st, owner_only);
+    }
+};
 namespace {
-void private_directory(const fs::path& path) {
+void private_directory(const fs::path& path, CheckpointPrivacy& privacy) {
     bool created = mkdir(path.c_str(), 0700) == 0;
     if (!created && errno != EEXIST)
         throw std::runtime_error("Cannot create checkpoint directory: " + path.string());
     struct stat st {};
-    if (lstat(path.c_str(), &st) || !S_ISDIR(st.st_mode) || st.st_uid != geteuid() ||
-        (st.st_mode & 0077))
+    if (lstat(path.c_str(), &st) || !S_ISDIR(st.st_mode) ||
+        !privacy.accepts(st, !(st.st_mode & 0077)))
         throw std::runtime_error("Checkpoint directory must be owned by you with mode 0700: " +
                                  path.string());
     if (created)
         sync_directory(path.parent_path());
 }
-Json read_record(const fs::path& path) {
+Json read_record(const fs::path& path, CheckpointPrivacy& privacy) {
     UniqueFd fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
     if (fd.get() < 0)
         throw std::runtime_error("Cannot read checkpoint: " + path.string());
     struct stat st {};
-    if (fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() || st.st_size < 0 ||
-        st.st_size > 16 * 1024 * 1024)
+    if (fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || !privacy.accepts(st, true) ||
+        st.st_size < 0 || st.st_size > 16 * 1024 * 1024)
         throw std::runtime_error("Invalid checkpoint file: " + path.string());
     std::string bytes(static_cast<size_t>(st.st_size), '\0');
     size_t offset = 0;
@@ -92,7 +125,7 @@ void validate_manifest(const Json& state) {
         !state.at("output_metadata").at("run").is_object())
         throw std::runtime_error("Invalid checkpoint manifest");
 }
-void visit_records(const fs::path& directory, const Json& state,
+void visit_records(const fs::path& directory, const Json& state, CheckpointPrivacy& privacy,
                    const std::function<void(const Segment&)>& consumer) {
     int64_t position = 0;
     std::string hash;
@@ -101,7 +134,7 @@ void visit_records(const fs::path& directory, const Json& state,
         state.at("fingerprint").at("run").at("chunk_seconds").get<int>() * int64_t(sample_rate);
     for (int64_t i = 0; i < state.at("chunks").get<int64_t>(); ++i) {
         check_cancelled();
-        auto record = read_record(directory / ("chunk-" + std::to_string(i) + ".json"));
+        auto record = read_record(directory / ("chunk-" + std::to_string(i) + ".json"), privacy);
         auto end = record.at("end_sample").get<int64_t>();
         auto lang = record.at("language").get<std::string>();
         if (record.at("index") != i || record.at("start_sample") != position || end <= position ||
@@ -127,27 +160,28 @@ void visit_records(const fs::path& directory, const Json& state,
         detected != state.at("languages").get<std::vector<std::string>>())
         throw std::runtime_error("Checkpoint commit mismatch");
 }
-bool safe_temporary(const fs::path& path) {
+bool safe_temporary(const fs::path& path, CheckpointPrivacy& privacy) {
     static const std::regex pattern("\\.whisper-output-[A-Za-z0-9]{6}");
     if (!std::regex_match(path.filename().string(), pattern))
         return false;
     struct stat st {};
-    if (lstat(path.c_str(), &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
-        st.st_nlink != 1 || (st.st_mode & 0777) != 0600 || st.st_size < 0 ||
+    if (lstat(path.c_str(), &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
+        !privacy.accepts(st, (st.st_mode & 0777) == 0600) || st.st_size < 0 ||
         st.st_size > 16 * 1024 * 1024)
         throw std::runtime_error("Unsafe checkpoint temporary file: " + path.string());
     return true;
 }
-void validate_empty_checkpoint(const fs::path& directory, const Json& state) {
+void validate_empty_checkpoint(const fs::path& directory, const Json& state,
+                               CheckpointPrivacy& privacy) {
     // Validate a possible orphan against a candidate state, never the live journal.
     for (const auto& entry : fs::directory_iterator(directory)) {
         if (entry.path() == directory / "manifest.json")
             continue;
-        if (safe_temporary(entry.path()))
+        if (safe_temporary(entry.path(), privacy))
             continue;
         if (entry.path() != directory / "chunk-0.json")
             throw std::runtime_error("Unknown empty checkpoint contents; use --overwrite");
-        auto record = read_record(entry.path());
+        auto record = read_record(entry.path(), privacy);
         auto candidate = state;
         candidate["chunks"] = 1;
         candidate["samples"] = record.at("end_sample");
@@ -155,18 +189,18 @@ void validate_empty_checkpoint(const fs::path& directory, const Json& state) {
         if (!record.at("language").get<std::string>().empty())
             candidate["languages"].push_back(record.at("language"));
         candidate["last_hash"] = sha256_text(record.dump());
-        visit_records(directory, candidate, [](const Segment&) {});
+        visit_records(directory, candidate, privacy, [](const Segment&) {});
     }
 }
 std::optional<Json> restore_checkpoint(const fs::path& directory, const Options& options,
-                                       const Json& fingerprint) {
+                                       const Json& fingerprint, CheckpointPrivacy& privacy) {
     auto completed = fs::path(directory.string() + ".completed");
     if (exists_entry(completed)) {
-        private_directory(completed);
+        private_directory(completed, privacy);
         discard_checkpoint(completed);
     }
     if (exists_entry(directory)) {
-        private_directory(directory);
+        private_directory(directory, privacy);
         if (options.overwrite && !options.resume)
             discard_checkpoint(directory);
     }
@@ -174,19 +208,19 @@ std::optional<Json> restore_checkpoint(const fs::path& directory, const Options&
     if (!exists_entry(manifest)) {
         if (exists_entry(directory)) {
             for (const auto& entry : fs::directory_iterator(directory))
-                if (!safe_temporary(entry.path()))
+                if (!safe_temporary(entry.path(), privacy))
                     throw std::runtime_error(
                         "Checkpoint manifest missing; use --overwrite to restart");
             discard_checkpoint(directory);
         }
         return std::nullopt;
     }
-    auto state = read_record(manifest);
+    auto state = read_record(manifest, privacy);
     validate_manifest(state);
-    visit_records(directory, state, [](const Segment&) {});
+    visit_records(directory, state, privacy, [](const Segment&) {});
     if (state.at("chunks") == 0 && !state.at("finished").get<bool>() &&
         state.at("published_hashes").empty()) {
-        validate_empty_checkpoint(directory, state);
+        validate_empty_checkpoint(directory, state, privacy);
         discard_checkpoint(directory);
         return std::nullopt;
     }
@@ -242,20 +276,21 @@ bool has_checkpoint(const Job& job) {
 }
 struct Journal::Lock {
     UniqueFd fd;
-    explicit Lock(const fs::path& path)
+    Lock(const fs::path& path, CheckpointPrivacy& privacy)
         : fd(open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600)) {
         struct stat st {};
         if (fd.get() < 0 || fstat(fd.get(), &st) || !S_ISREG(st.st_mode) ||
-            st.st_uid != geteuid() || st.st_nlink != 1 || flock(fd.get(), LOCK_EX | LOCK_NB))
+            !privacy.accepts(st, true) || st.st_nlink != 1 || flock(fd.get(), LOCK_EX | LOCK_NB))
             throw std::runtime_error("Checkpoint is busy or lock is unsafe: " + path.string());
     }
 };
 Journal::Journal(const Job& job, const Options& options, const Json& fingerprint)
     : directory(checkpoint_path(job)) {
-    private_directory(directory.parent_path());
+    privacy = std::make_unique<CheckpointPrivacy>(directory.parent_path().parent_path());
+    private_directory(directory.parent_path(), *privacy);
     reject_legacy_outputs(job);
-    lock = std::make_unique<Lock>(directory.string() + ".lock");
-    auto restored = restore_checkpoint(directory, options, fingerprint);
+    lock = std::make_unique<Lock>(directory.string() + ".lock", *privacy);
+    auto restored = restore_checkpoint(directory, options, fingerprint, *privacy);
     persisted = restored.has_value();
     if (restored)
         state = std::move(*restored);
@@ -325,7 +360,7 @@ void Journal::append(int64_t count, const Transcript& transcript) {
                    {"language", chunk_language},
                    {"segments", segments}};
     if (!persisted) {
-        private_directory(directory);
+        private_directory(directory, *privacy);
         save();
         persisted = true;
     }
@@ -343,7 +378,7 @@ void Journal::finish() {
     save();
 }
 void Journal::visit(const std::function<void(const Segment&)>& consumer) const {
-    visit_records(directory, state, consumer);
+    visit_records(directory, state, *privacy, consumer);
 }
 void Journal::publish(const Job& job, const Options& options, const RenderOutput& render) {
     if (!finished())

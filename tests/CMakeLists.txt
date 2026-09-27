@@ -43,6 +43,7 @@ target_compile_definitions(wt-compatibility-tests PRIVATE WT_TEST_FIXTURES="${CM
 wt_test(pipeline integration integration/pipeline.cpp)
 wt_test(publication integration integration/publication.cpp)
 wt_test(recovery integration integration/recovery.cpp)
+wt_test(permissionless integration integration/permissionless.cpp)
 wt_test(model-concurrency integration integration/model-concurrency.cpp)
 set_tests_properties(integration/model-concurrency PROPERTIES TIMEOUT 30)
 
