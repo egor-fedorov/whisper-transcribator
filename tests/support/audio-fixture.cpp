@@ -8,8 +8,8 @@
 using namespace wt;
 using namespace wt::test;
 int main(int argc, char** argv) {
-    if (argc != 4 || std::string(argv[1]) != "--repeat") {
-        std::cerr << "Usage: wt-audio-fixture --repeat SAMPLE OUTPUT\n";
+    if (argc != 4 || (std::string(argv[1]) != "--repeat" && std::string(argv[1]) != "--silence")) {
+        std::cerr << "Usage: wt-audio-fixture --repeat|--silence SAMPLE OUTPUT\n";
         return 2;
     }
     try {
@@ -17,6 +17,8 @@ int main(int argc, char** argv) {
         auto pcm = reader.read(30 * 16000);
         if (pcm.empty() || !reader.read(1).empty())
             throw std::runtime_error("fixture must be under 30 seconds");
+        if (std::string(argv[1]) == "--silence")
+            std::fill(pcm.begin(), pcm.end(), 0.0f);
         unsigned count = static_cast<unsigned>(pcm.size()) * 3 + 8 * 16000;
         std::string bytes = "RIFF";
         little(bytes, 36 + count * 2, 4);

@@ -7,6 +7,7 @@
 #include "support/wav.hpp"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <sys/resource.h>
 
 using namespace wt;
@@ -80,12 +81,33 @@ void reader(const fs::path& root) {
 }
 } // namespace
 int main(int argc, char** argv) {
-    if (argc == 4 && std::string(argv[1]) == "--timeline") {
+    configure_audio_logging();
+    if (argc == 4 && std::string(argv[1]) == "--summary") {
+        AudioReader reader(argv[2], -1,
+                           std::string(argv[3]) == "preserve" ? TimestampGaps::preserve
+                                                              : TimestampGaps::automatic);
+        auto before = reader.duration();
+        int64_t samples = 0;
+        for (;;) {
+            auto pcm = reader.read(65536);
+            if (pcm.empty())
+                break;
+            samples += static_cast<int64_t>(pcm.size());
+        }
+        std::cout << Json{{"samples", samples},
+                          {"estimate_before", before},
+                          {"estimate_after", reader.duration()}}
+                         .dump()
+                  << '\n';
+        return 0;
+    }
+    if (argc == 4 && (std::string(argv[1]) == "--timeline" || std::string(argv[1]) == "--pcm")) {
         auto actual = decode_audio(argv[2]);
         auto expected = decode_audio(argv[3]);
         AudioReader estimate(argv[2]);
-        require(std::abs(estimate.duration() - expected.size() / 16000.0) < 0.1,
-                "duration must include delayed audio and gaps");
+        if (std::string(argv[1]) == "--timeline")
+            require(std::abs(estimate.duration() - expected.size() / 16000.0) < 0.1,
+                    "duration must include delayed audio and gaps");
         require(std::abs(int64_t(actual.size()) - int64_t(expected.size())) <= 32,
                 "timeline sample count: " + std::to_string(actual.size()) + " vs " +
                     std::to_string(expected.size()));

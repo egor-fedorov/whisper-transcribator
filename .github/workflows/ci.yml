@@ -198,7 +198,7 @@ jobs:
             bash -euc '
               apt-get update
               apt-get install -y --no-install-recommends ca-certificates cmake ninja-build g++ git pkg-config \
-                ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev
+                ffmpeg jq libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev
               pkg-config --modversion libavformat | grep "^59\.27\."
               cmake -S /src -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON
               cmake --build /build -j2

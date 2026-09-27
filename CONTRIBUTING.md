@@ -38,9 +38,11 @@ ASan/UBSan instrument this project's code, not an audit of upstream dependencies
 LeakSanitizer cannot run under ptrace-based sandboxes; run these checks normally,
 rather than disabling leak detection. GCC and Clang are checked in CI with
 `-DWT_WERROR=ON` for project code and tests, not dependencies. FFmpeg 5.1 is the
-minimum supported version and is checked separately. Installing the `ffmpeg`
-executable enables an additional synthetic MPEG-TS transition test; it is a test
-tool only, not a runtime dependency. `-DGGML_NATIVE=ON` is supported for local
+minimum supported version and is checked separately. Install `ffmpeg` and `jq`
+for synthetic media integration tests, including Vorbis/MP3 at 44.1/48 kHz,
+MPEG-TS format transitions and timestamp jumps, compared against independent
+FFmpeg PCM references. The test executable needs `libvorbis` and `libmp3lame`
+encoders. These are test tools only, not runtime dependencies. `-DGGML_NATIVE=ON` is supported for local
 builds; portable packaging explicitly keeps it off.
 
 The optional inference check uses only a public 11-second JFK recording:
@@ -60,7 +62,8 @@ Do not add private recordings, transcripts or model weights. Never run full
 lectures for routine checks or benchmarks.
 
 The streaming smoke generates a 41-second fixture by repeating the public sample
-and inserting silence. It checks VAD boundaries and actual SIGTERM/resume. Pass
+and inserting silence. It checks VAD boundaries, actual SIGTERM/resume and
+inference bypass on fully zero-valued windows with and without VAD. Pass
 `cuda` as the final argument to either smoke script for a trusted GPU check.
 Model-free pipeline tests cover SIGINT/SIGTERM/SIGKILL, checkpoint corruption,
 incompatible settings, disk-write failures and interrupted multi-format output.

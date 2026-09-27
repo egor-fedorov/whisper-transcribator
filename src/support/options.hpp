@@ -15,6 +15,7 @@ struct Options {
     int chunk_seconds = 120;
     int chunk_min_silence_ms = 200;
     int audio_stream = -1;
+    std::string timestamp_gaps = "auto";
     bool resume = false;
     bool overwrite = false, skip_existing = false, continue_on_error = false;
     bool local_files_only = false, no_vad = false, json = false;

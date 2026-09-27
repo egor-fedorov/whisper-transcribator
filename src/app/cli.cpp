@@ -112,6 +112,10 @@ int run_cli(int argc, char** argv) {
         app.add_option("--audio-stream", o.audio_stream,
                        "Absolute container stream index; default selects the best audio stream")
             ->check(CLI::NonNegativeNumber);
+        app.add_option("--timestamp-gaps", o.timestamp_gaps,
+                       "auto joins forward transport timestamp jumps over 10s; preserve keeps gaps")
+            ->check(CLI::IsMember({"auto", "preserve"}))
+            ->capture_default_str();
         app.add_option("--beam-size", o.beam_size, "Beam search width")
             ->check(CLI::Range(1, 8))
             ->capture_default_str();

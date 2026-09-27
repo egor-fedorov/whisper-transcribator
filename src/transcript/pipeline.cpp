@@ -96,17 +96,27 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
         }
         if (journal.samples() > std::numeric_limits<int64_t>::max() - int64_t(buffer.size()))
             throw std::runtime_error("Audio sample counter overflow");
-        if (progress.recognizing)
-            progress.recognizing(journal.samples(), buffer.size());
-        log_message(
-            LogLevel::debug,
-            "Recognizing " + format_seconds(journal.samples() / double(sample_rate)) + "-" +
-                format_seconds((journal.samples() + int64_t(buffer.size())) / double(sample_rate)) +
-                "s");
-        auto transcript = recognize(buffer);
+        bool silent = std::all_of(buffer.begin(), buffer.end(), [](float x) { return x == 0; });
+        Transcript transcript{"", buffer.size() / double(sample_rate), {}};
+        size_t count = buffer.size();
+        if (silent)
+            log_message(LogLevel::debug,
+                        "Skipping digital silence: " + format_seconds(transcript.duration) + "s");
+        else {
+            if (progress.recognizing)
+                progress.recognizing(journal.samples(), buffer.size());
+            log_message(LogLevel::debug,
+                        "Recognizing " + format_seconds(journal.samples() / double(sample_rate)) +
+                            "-" +
+                            format_seconds((journal.samples() + int64_t(buffer.size())) /
+                                           double(sample_rate)) +
+                            "s");
+            transcript = recognize(buffer);
+            check_cancelled();
+            count = eof ? buffer.size()
+                        : committed_cut(buffer.size(), cut(buffer), transcript, guard_samples);
+        }
         check_cancelled();
-        size_t count = eof ? buffer.size()
-                           : committed_cut(buffer.size(), cut(buffer), transcript, guard_samples);
         if (!eof && count == buffer.size() && !transcript.segments.empty() && !warned) {
             log_message(LogLevel::warning, "No safe segment boundary; committing a full window. "
                                            "Boundary words may be less accurate.");

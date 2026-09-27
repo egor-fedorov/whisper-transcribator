@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Recover accumulated negative clock drift and backward timestamp jumps in all containers without dropping decoded samples; warn once and invalidate stale duration estimates. Audio timeline version 3 supersedes version 2 without checkpoint migration.
+- Skip Whisper and VAD for entirely zero-valued windows while retaining their timeline and resumable progress; chunking version 4 does not migrate previous checkpoints.
+- Tolerate codec timestamp jitter without resampler resets, restore MP3 gapless trimming and MPEG-TS duration estimates, and add `--timestamp-gaps auto|preserve` for large transport gaps. Timeline version 2 intentionally rejects older saved progress without migration.
 - Identify development builds as 0.4.0-dev with source revision/dirty metadata, including Docker provenance; report FFmpeg versions, CPU plugin and whisper system features in doctor.
 - Align audio to the container timeline, preserving delayed starts and packet gaps with bounded silence buffers; handle preroll, overlaps and transport timestamp resets without stale sample-rate extrapolation.
 - Use checkpoint schema 3 with separate compatibility and immutable publication metadata; allow CPU-count and equivalent model-spelling changes on resume, report incompatible fields and preserve older journals without migration.

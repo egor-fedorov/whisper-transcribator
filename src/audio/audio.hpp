@@ -1,4 +1,5 @@
 #pragma once
+#include "audio/timeline.hpp"
 #include "support/fs.hpp"
 #include "support/json.hpp"
 #include <cstddef>
@@ -12,7 +13,8 @@ class AudioReader {
     std::unique_ptr<Impl> impl;
 
   public:
-    explicit AudioReader(const fs::path& path, int stream = -1);
+    explicit AudioReader(const fs::path& path, int stream = -1,
+                         TimestampGaps gaps = TimestampGaps::automatic);
     ~AudioReader();
     std::vector<float> read(size_t limit);
     int stream_index() const;
