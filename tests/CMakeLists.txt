@@ -58,7 +58,9 @@ add_test(NAME integration/downloads COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/in
   $<TARGET_FILE:wt-download-tests> "${WT_TEST_OPENSSL}")
 set_tests_properties(integration/downloads PROPERTIES LABELS integration TIMEOUT 45)
 
-find_program(WT_TEST_FFMPEG ffmpeg)
+# Homebrew's ffmpeg lacks the libvorbis encoder used for test fixtures; ffmpeg-full has it.
+wt_brew_prefix(ffmpeg-full WT_BREW_FFMPEG)
+find_program(WT_TEST_FFMPEG ffmpeg HINTS "${WT_BREW_FFMPEG}/bin")
 if(WT_TEST_FFMPEG)
   add_test(NAME integration/audio-changes COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-changes.sh"
     $<TARGET_FILE:wt-audio-tests> "${WT_TEST_FFMPEG}")
