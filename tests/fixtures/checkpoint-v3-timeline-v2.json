@@ -1,0 +1,71 @@
+{
+  "manifest": {
+    "schema_version": 3,
+    "fingerprint": {
+      "source": "/fixture/source.wav",
+      "size": 19,
+      "sha256": "0b2811a070d712b1a30e85aa582f9c280699d2db61bac36594c0a50f02465ae0",
+      "outputs": {
+        "json": "/fixture/source.json",
+        "srt": "/fixture/source.srt",
+        "text": "/fixture/source.txt",
+        "vtt": "/fixture/source.vtt"
+      },
+      "run": {
+        "backend": "whisper.cpp",
+        "backend_revision": "927cfce34f31707e17f2bff35c349632fb9e2c3a",
+        "device": "auto",
+        "beam_size": 5,
+        "audio_stream": -1,
+        "text_layout": "paragraphs",
+        "paragraph_pause_ms": 2000,
+        "vad": true,
+        "vad_min_silence_ms": 2000,
+        "flash_attention": true,
+        "chunk_seconds": 120,
+        "chunk_min_silence_ms": 200,
+        "audio_timeline_version": 2,
+        "timestamp_gaps": "auto",
+        "rendering_version": 1,
+        "chunking_version": 3
+      },
+      "language": "auto",
+      "backend": {"model_sha256": "fixture"}
+    },
+    "output_metadata": {
+      "model": "./original-weights.bin",
+      "run": {
+        "backend": "whisper.cpp",
+        "version": "0.4.0-dev+unknown",
+        "source_revision": "unknown",
+        "source_dirty": null,
+        "backend_revision": "927cfce34f31707e17f2bff35c349632fb9e2c3a",
+        "device": "auto",
+        "beam_size": 5,
+        "cpu_threads": 8,
+        "audio_stream": -1,
+        "text_layout": "paragraphs",
+        "paragraph_pause_ms": 2000,
+        "vad": true,
+        "vad_min_silence_ms": 2000,
+        "flash_attention": true,
+        "chunk_seconds": 120,
+        "chunk_min_silence_ms": 200,
+        "audio_timeline_version": 2,
+        "timestamp_gaps": "auto",
+        "rendering_version": 1,
+        "chunking_version": 3
+      }
+    },
+    "chunks": 1,
+    "samples": 160000,
+    "languages": ["en"],
+    "last_hash": "af54445908686212563368c4c44d3c2f6e943f0f96f161ebad718c3269d83e95",
+    "finished": false,
+    "published_hashes": {}
+  },
+  "chunk": "{\"index\":0,\"start_sample\":0,\"end_sample\":160000,\"previous_hash\":\"\",\"language\":\"en\",\"segments\":[{\"start\":0.0,\"end\":5.0,\"text\":\"First line.\",\"no_speech_prob\":0.1}]}",
+  "text": "First line.\n",
+  "srt": "1\n00:00:00,000 --> 00:00:05,000\nFirst line.\n\n",
+  "vtt": "WEBVTT\n\n1\n00:00:00.000 --> 00:00:05.000\nFirst line.\n\n"
+}

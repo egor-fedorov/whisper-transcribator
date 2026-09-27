@@ -13,7 +13,7 @@ int64_t add(int64_t a, int64_t b) {
 }
 } // namespace
 AudioPlacement AudioTimeline::locate(std::optional<int64_t> pts, int64_t delay, int64_t tolerance,
-                                     bool allow_reset) {
+                                     bool allow_reset, TimestampGaps gaps) {
     auto expected = add(position, delay);
     auto start = pts ? add(*pts, shift) : expected;
     constexpr auto bound = std::numeric_limits<int64_t>::max() / 4;
@@ -21,14 +21,18 @@ AudioPlacement AudioTimeline::locate(std::optional<int64_t> pts, int64_t delay, 
         throw std::runtime_error("Audio timestamp out of range");
     bool reset = false;
     auto delta = start - expected;
-    if (started && delta < -1600) {
+    auto jitter = std::max<int64_t>(1600, tolerance);
+    // The first timestamp defines preroll/leading delay, not clock jitter.
+    if (started && delta >= -jitter && delta <= jitter)
+        start = expected;
+    else if (started && (delta < -jitter ||
+                         (allow_reset && gaps == TimestampGaps::automatic && delta > 160000))) {
         if (!allow_reset)
             throw std::runtime_error("Audio timestamp moved backwards by more than 100 ms");
         shift = add(shift, -delta);
         start = expected;
         reset = true;
-    } else if (delta >= -tolerance && delta <= tolerance)
-        start = expected;
+    }
     started = true;
     return {start, reset || start != expected, reset};
 }

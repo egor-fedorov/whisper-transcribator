@@ -62,6 +62,10 @@ grep -q '"cpu_backend"' "$root/stdout"
 grep -Fq "$WT_SOURCE_REVISION" "$root/stdout"
 expect 0 doctor --device cpu --cpu-threads 3 --json
 grep -q '"cpu_threads": 3' "$root/stdout"
+expect 2 --timestamp-gaps invalid
+grep -q 'timestamp-gaps' "$root/stderr"
+expect 0 --help
+grep -q -- '--timestamp-gaps' "$root/stdout"
 expect 1 "$root/missing.mp4" --local-files-only
 mkdir -p "$root/empty"
 expect 0 --input-dir "$root/empty" --local-files-only

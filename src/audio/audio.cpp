@@ -17,6 +17,14 @@ extern "C" {
 
 namespace wt {
 namespace {
+thread_local const void* decode_probe = nullptr;
+
+struct DecodeProbeLogging {
+    const void* previous = decode_probe;
+    explicit DecodeProbeLogging(const void* context) { decode_probe = context; }
+    ~DecodeProbeLogging() { decode_probe = previous; }
+};
+
 void check(int code, const char* operation) {
     check_cancelled();
     if (code < 0) {
@@ -98,7 +106,9 @@ struct AudioReader::Impl {
     std::vector<float> pending;
     size_t offset = 0;
     int64_t silence = 0, origin = AV_NOPTS_VALUE, retained_start = 0;
-    bool retained = false, warned_reset = false;
+    double estimated_duration = 0;
+    TimestampGaps gaps = TimestampGaps::automatic;
+    bool retained = false, warned_reset = false, warned_gap = false, adjusted = false;
     ~Impl() {
         av_dict_free(&options);
         av_frame_free(&frame);
@@ -152,11 +162,22 @@ struct AudioReader::Impl {
                 auto tolerance = std::max<int64_t>(
                     1, av_rescale_q_rnd(1, selected->time_base, AVRational{1, 16000}, AV_ROUND_UP));
                 auto location = timeline.locate(sample_pts, delay, tolerance,
-                                                format->iformat->flags & AVFMT_TS_DISCONT);
+                                                format->iformat->flags & AVFMT_TS_DISCONT, gaps);
+                if (location.reset)
+                    adjusted = true;
                 if (location.reset && !warned_reset) {
                     log_message(LogLevel::warning,
-                                "Audio timestamps reset; continuing on a contiguous timeline");
+                                "Audio timestamp discontinuity corrected; continuing on a "
+                                "contiguous timeline (use --timestamp-gaps preserve to retain "
+                                "forward gaps)");
                     warned_reset = true;
+                }
+                auto gap = location.start - (timeline.end() + delay);
+                if (gap > 10 * 16000 && !warned_gap) {
+                    log_message(LogLevel::warning, "Preserving audio timestamp gap of " +
+                                                       format_seconds(gap / 16000.0) +
+                                                       "s as silence");
+                    warned_gap = true;
                 }
                 if (location.discontinuity) {
                     log_message(
@@ -205,20 +226,26 @@ struct AudioReader::Impl {
         }
     }
 };
-AudioReader::AudioReader(const fs::path& path, int stream) : impl(std::make_unique<Impl>()) {
+AudioReader::AudioReader(const fs::path& path, int stream, TimestampGaps gaps)
+    : impl(std::make_unique<Impl>()) {
     check_cancelled();
     auto& d = *impl;
     if (!d.frame || !d.packet)
         throw std::bad_alloc();
-    d.format = avformat_alloc_context();
-    if (!d.format)
-        throw std::bad_alloc();
-    // Do not extrapolate packet timestamps from stale demuxer sample-rate metadata.
-    // Missing timestamps are advanced using each decoded frame's actual parameters.
-    d.format->flags |= AVFMT_FLAG_NOFILLIN;
-    d.format->interrupt_callback = {[](void*) { return stop_signal ? 1 : 0; }, nullptr};
-    check(av_dict_set(&d.options, "protocol_whitelist", "file", 0), "restrict media protocols");
-    check(avformat_open_input(&d.format, path.c_str(), nullptr, &d.options), "open media");
+    d.gaps = gaps;
+    auto open = [&](bool raw_timestamps) {
+        d.format = avformat_alloc_context();
+        if (!d.format)
+            throw std::bad_alloc();
+        if (raw_timestamps) {
+            d.format->flags |= AVFMT_FLAG_NOFILLIN;
+            d.format->skip_estimate_duration_from_pts = 1;
+        }
+        d.format->interrupt_callback = {[](void*) { return stop_signal ? 1 : 0; }, nullptr};
+        check(av_dict_set(&d.options, "protocol_whitelist", "file", 0), "restrict media protocols");
+        check(avformat_open_input(&d.format, path.c_str(), nullptr, &d.options), "open media");
+    };
+    open(false);
     check(avformat_find_stream_info(d.format, nullptr), "read streams");
     if (d.format->start_time != AV_NOPTS_VALUE)
         d.origin = av_rescale_q(d.format->start_time, AV_TIME_BASE_Q, AVRational{1, 16000});
@@ -241,6 +268,31 @@ AudioReader::AudioReader(const fs::path& path, int stream) : impl(std::make_uniq
         d.stream = av_find_best_stream(d.format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
     if (d.stream < 0)
         throw std::runtime_error("No audio stream in media file: " + path.string());
+    auto* selected = d.format->streams[d.stream];
+    if (selected->duration != AV_NOPTS_VALUE && selected->duration > 0) {
+        auto start = selected->start_time != AV_NOPTS_VALUE && d.origin != AV_NOPTS_VALUE
+                         ? selected->start_time * av_q2d(selected->time_base) - d.origin / 16000.0
+                         : 0;
+        d.estimated_duration =
+            std::max(0.0, start + selected->duration * av_q2d(selected->time_base));
+    } else if (d.format->duration != AV_NOPTS_VALUE && d.format->duration > 0)
+        d.estimated_duration = d.format->duration / double(AV_TIME_BASE);
+    if (std::string(d.format->iformat->name) == "mpegts") {
+        // Metadata probing needs normal timestamp filling. Decode in a fresh context
+        // so queued probe packets cannot carry stale sample-rate extrapolations.
+        auto id = selected->id;
+        avformat_close_input(&d.format);
+        av_dict_free(&d.options);
+        open(true);
+        {
+            DecodeProbeLogging logging(d.format);
+            check(avformat_find_stream_info(d.format, nullptr), "read streams");
+        }
+        if (static_cast<unsigned>(d.stream) >= d.format->nb_streams ||
+            d.format->streams[d.stream]->id != id ||
+            d.format->streams[d.stream]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
+            throw std::runtime_error("Audio stream changed while probing");
+    }
     const auto* parameters = d.format->streams[d.stream]->codecpar;
     const AVCodec* codec = avcodec_find_decoder(parameters->codec_id);
     if (!codec)
@@ -254,18 +306,7 @@ AudioReader::AudioReader(const fs::path& path, int stream) : impl(std::make_uniq
 }
 AudioReader::~AudioReader() = default;
 int AudioReader::stream_index() const { return impl->stream; }
-double AudioReader::duration() const {
-    auto* stream = impl->format->streams[impl->stream];
-    if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0) {
-        auto start = stream->start_time != AV_NOPTS_VALUE && impl->origin != AV_NOPTS_VALUE
-                         ? stream->start_time * av_q2d(stream->time_base) - impl->origin / 16000.0
-                         : 0;
-        return std::max(0.0, start + stream->duration * av_q2d(stream->time_base));
-    }
-    if (impl->format->duration != AV_NOPTS_VALUE && impl->format->duration > 0)
-        return impl->format->duration / double(AV_TIME_BASE);
-    return 0;
-}
+double AudioReader::duration() const { return impl->adjusted ? 0 : impl->estimated_duration; }
 std::vector<float> AudioReader::read(size_t limit) {
     if (!limit || limit > 600 * 16000)
         throw std::runtime_error("Invalid audio read size");
@@ -293,7 +334,7 @@ std::vector<float> AudioReader::read(size_t limit) {
 }
 void configure_audio_logging(bool verbose) {
     av_log_set_level(verbose ? AV_LOG_VERBOSE : AV_LOG_WARNING);
-    av_log_set_callback([](void*, int level, const char* format, va_list args) {
+    av_log_set_callback([](void* context, int level, const char* format, va_list args) {
         try {
             if (level > av_log_get_level())
                 return;
@@ -305,6 +346,10 @@ void configure_audio_logging(bool verbose) {
                                                       : LogLevel::debug;
             if (level == AV_LOG_WARNING &&
                 message.rfind("Estimating duration from bitrate", 0) == 0)
+                severity = LogLevel::debug;
+            if (context && context == decode_probe && level == AV_LOG_WARNING &&
+                message.rfind("start time for stream ", 0) == 0 &&
+                message.find("is not set in estimate_timings_from_pts") != std::string::npos)
                 severity = LogLevel::debug;
             if (!message.empty())
                 log_message(severity, "FFmpeg: " + message);

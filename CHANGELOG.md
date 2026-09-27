@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Tolerate codec timestamp jitter without resampler resets, restore MP3 gapless trimming and MPEG-TS duration estimates, and add `--timestamp-gaps auto|preserve` for large transport gaps. Timeline version 2 intentionally rejects older saved progress without migration.
 - Identify development builds as 0.4.0-dev with source revision/dirty metadata, including Docker provenance; report FFmpeg versions, CPU plugin and whisper system features in doctor.
 - Align audio to the container timeline, preserving delayed starts and packet gaps with bounded silence buffers; handle preroll, overlaps and transport timestamp resets without stale sample-rate extrapolation.
 - Use checkpoint schema 3 with separate compatibility and immutable publication metadata; allow CPU-count and equivalent model-spelling changes on resume, report incompatible fields and preserve older journals without migration.

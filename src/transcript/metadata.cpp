@@ -23,7 +23,8 @@ Json run_metadata(const Options& options) {
             {"flash_attention", true},
             {"chunk_seconds", options.chunk_seconds},
             {"chunk_min_silence_ms", options.chunk_min_silence_ms},
-            {"audio_timeline_version", 1},
+            {"audio_timeline_version", 2},
+            {"timestamp_gaps", options.timestamp_gaps},
             {"rendering_version", 1},
             {"chunking_version", chunking_version}};
 }

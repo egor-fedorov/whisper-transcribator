@@ -21,5 +21,6 @@ class FileProgress {
     void begin_window(int64_t samples, size_t count);
     void commit(int64_t samples);
     void update(int percent);
+    void invalidate_duration() { total = 0; }
 };
 } // namespace wt

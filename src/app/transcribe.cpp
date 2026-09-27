@@ -20,6 +20,8 @@ int transcribe(Options options) {
     configure_inference_logging();
     configure_audio_logging(options.verbose);
     validate_language(options.language);
+    auto gaps =
+        options.timestamp_gaps == "preserve" ? TimestampGaps::preserve : TimestampGaps::automatic;
     auto jobs = prepare_jobs(options);
     if (jobs.empty()) {
         log_message(LogLevel::info, "No files to transcribe");
@@ -31,7 +33,7 @@ int transcribe(Options options) {
         std::vector<Job> valid;
         for (const auto& job : jobs) {
             try {
-                AudioReader probe(job.source, options.audio_stream);
+                AudioReader probe(job.source, options.audio_stream, gaps);
                 valid.push_back(job);
             } catch (const UsageError& error) {
                 throw UsageError(job.source.string() + ": " + error.what());
@@ -74,7 +76,7 @@ int transcribe(Options options) {
             auto modified = fs::last_write_time(job.source);
             auto size = fs::file_size(job.source);
             report_progress("Reading audio streams", job.source.filename().string());
-            AudioReader reader(job.source, options.audio_stream);
+            AudioReader reader(job.source, options.audio_stream, gaps);
             auto job_options = options;
             job_options.audio_stream = reader.stream_index();
             log_message(LogLevel::info, "Audio stream: " + std::to_string(reader.stream_index()));
@@ -82,7 +84,12 @@ int transcribe(Options options) {
             Journal journal(job, job_options, fingerprint);
             FileProgress progress(std::to_string(job_index) + "/" + std::to_string(jobs.size()),
                                   reader.duration());
-            auto read = [&](size_t limit) { return reader.read(limit); };
+            auto read = [&](size_t limit) {
+                auto pcm = reader.read(limit);
+                if (!reader.duration())
+                    progress.invalidate_duration();
+                return pcm;
+            };
             auto recognize = [&](const std::vector<float>& pcm) {
                 return session.recognize(
                     pcm, [&] { progress.begin_window(journal.samples(), pcm.size()); },
