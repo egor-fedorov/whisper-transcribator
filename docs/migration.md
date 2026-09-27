@@ -42,10 +42,10 @@ choose that model; the CLI does not convert weights.
 
 The native backend adds `--chunk-seconds` and `--resume`, not Python checkpoint
 imports or recovery of interrupted 0.3.0 inference. Checkpoint schema 3 / chunking
-version 3 reject earlier unfinished progress without migration: finish with the
+version 4 / audio timeline version 2 reject earlier unfinished progress without migration: finish with the
 old binary or explicitly restart. See [long recordings and resume](resume.md).
 
-Container-relative timestamps now preserve delayed audio and packet gaps. Schema-2 checkpoints from older `main` builds cannot be resumed under this timeline. CPU counts and equivalent model spellings may change when resuming schema 3; original output metadata remains frozen for reproducible publication.
+Container-relative timestamps preserve delayed audio and ordinary packet gaps, tolerate codec timestamp jitter, and correct large transport discontinuities by default. Use `--timestamp-gaps preserve` to retain intentional large forward gaps. Entirely zero-valued windows skip inference without losing checkpoint progress. Schema-2 checkpoints and schema-3 checkpoints using earlier timeline/chunking versions cannot be resumed under these rules. CPU counts and equivalent model spellings may change when resuming compatible schema-3 jobs; original output metadata remains frozen for reproducible publication.
 
 TXT and JSON aggregate text now use paragraphs by default; choose
 `--text-layout single-line` to retain the old layout. JSON schema 2 records
