@@ -9,18 +9,30 @@
 #include <sys/types.h>
 
 namespace wt::test {
-inline void require(bool value, const std::string& message = "assertion failed") {
+struct AssertionFailure : std::logic_error {
+    using std::logic_error::logic_error;
+};
+inline void require(bool value, const std::string& message = "assertion failed",
+                    const char* file = __builtin_FILE(), int line = __builtin_LINE()) {
     if (!value)
-        throw std::runtime_error(message);
+        throw AssertionFailure(std::string(file) + ":" + std::to_string(line) + ": " + message);
 }
-template <class F> void rejects(F action) {
-    bool failed = false;
+template <class Error = std::runtime_error, class F>
+void rejects(F action, const std::string& reason, const char* file = __builtin_FILE(),
+             int line = __builtin_LINE()) {
+    require(!reason.empty(), "expected error reason must not be empty", file, line);
     try {
         action();
-    } catch (const std::exception&) {
-        failed = true;
+    } catch (const Error& error) {
+        require(std::string(error.what()).find(reason) != std::string::npos,
+                "expected error containing '" + reason + "', got: " + error.what(), file, line);
+        return;
+    } catch (const std::exception& error) {
+        require(false, "unexpected exception type: " + std::string(error.what()), file, line);
+    } catch (...) {
+        require(false, "unexpected non-standard exception", file, line);
     }
-    require(failed, "expected failure");
+    require(false, "expected failure containing: " + reason, file, line);
 }
 class TempDirectory {
     pid_t owner;

@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -49,8 +50,27 @@ fs::path output_path(const fs::path& raw) {
         throw std::runtime_error("Unsafe output symlink: " + path.string());
     return path;
 }
-} // namespace
-std::vector<Job> prepare_jobs(const Options& o) {
+struct Mapping {
+    fs::path path;
+    Json entries;
+};
+struct JobPlan {
+    std::vector<Job> pending;
+    std::set<fs::path> directories;
+    std::optional<Mapping> mapping;
+};
+bool mapping_matches(const Mapping& mapping) {
+    return nlohmann::json::parse(read_text(mapping.path)) == nlohmann::json(mapping.entries);
+}
+void publish_mapping(const Mapping& mapping) {
+    try {
+        atomic_write(mapping.path, mapping.entries.dump(2) + "\n");
+    } catch (const std::runtime_error&) {
+        if (!fs::exists(mapping.path) || !mapping_matches(mapping))
+            throw;
+    }
+}
+void validate_options(const Options& o) {
     if (o.inputs.empty() && o.input_dir.empty())
         throw UsageError("At least one input is required");
     if (!o.inputs.empty() && !o.input_dir.empty())
@@ -63,6 +83,8 @@ std::vector<Job> prepare_jobs(const Options& o) {
         throw UsageError("Numbered outputs require --output-dir without -o");
     if (!std::regex_match(o.prefix, std::regex("[A-Za-z0-9_-]+")))
         throw UsageError("Invalid --prefix: use letters, digits, underscore or hyphen");
+}
+std::vector<fs::path> discover_inputs(const Options& o) {
     std::vector<fs::path> inputs;
     if (!o.input_dir.empty()) {
         auto directory = resolve_path(o.input_dir);
@@ -87,6 +109,11 @@ std::vector<Job> prepare_jobs(const Options& o) {
         for (const auto& input : o.inputs)
             inputs.push_back(resolve_path(input));
     }
+    return inputs;
+}
+JobPlan plan_jobs(const Options& o) {
+    validate_options(o);
+    auto inputs = discover_inputs(o);
     PathIndex sources, outputs;
     for (const auto& path : inputs) {
         if (!fs::is_regular_file(path))
@@ -137,12 +164,10 @@ std::vector<Job> prepare_jobs(const Options& o) {
         }
         pending.push_back(job);
     }
-    std::set<fs::path> directories;
+    JobPlan plan;
     for (const auto& job : pending)
         for (const auto& [format, path] : job.outputs)
-            directories.insert(path.parent_path());
-    for (const auto& directory : directories)
-        probe_directory(directory);
+            plan.directories.insert(path.parent_path());
     if (o.naming == "numbered" && !jobs.empty()) {
         auto path = output_path(output_directory / (o.prefix + "_files.json"));
         if (sources.contains(Identity(path)))
@@ -155,11 +180,9 @@ std::vector<Job> prepare_jobs(const Options& o) {
             mapping.push_back(
                 {{"index", i + 1}, {"source", jobs[i].source.string()}, {"outputs", outputs}});
         }
-        auto matches = [&] {
-            return nlohmann::json::parse(read_text(path)) == nlohmann::json(mapping);
-        };
+        Mapping numbered{path, std::move(mapping)};
         if (fs::exists(path)) {
-            if (!matches())
+            if (!mapping_matches(numbered))
                 throw std::runtime_error(
                     "Input list changed; use a new --prefix (mapping preserved)");
         } else {
@@ -167,14 +190,19 @@ std::vector<Job> prepare_jobs(const Options& o) {
                 if (fs::exists(target))
                     throw std::runtime_error(
                         "Numbered results exist without their mapping; use a new --prefix");
-            try {
-                atomic_write(path, mapping.dump(2) + "\n");
-            } catch (const std::runtime_error&) {
-                if (!fs::exists(path) || !matches())
-                    throw;
-            }
+            plan.mapping = std::move(numbered);
         }
     }
-    return pending;
+    plan.pending = std::move(pending);
+    return plan;
+}
+} // namespace
+std::vector<Job> prepare_jobs(const Options& options) {
+    auto plan = plan_jobs(options);
+    for (const auto& directory : plan.directories)
+        probe_directory(directory);
+    if (plan.mapping)
+        publish_mapping(*plan.mapping);
+    return std::move(plan.pending);
 }
 } // namespace wt

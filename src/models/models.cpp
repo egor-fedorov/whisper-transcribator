@@ -74,40 +74,33 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
         throw std::runtime_error("Model missing in offline mode: " + target.string());
     fs::create_directories(root);
     struct Lock {
-        int fd;
+        UniqueFd fd;
         explicit Lock(const fs::path& path)
             : fd(open(path.c_str(), O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600)) {
-            if (fd < 0)
+            if (fd.get() < 0)
                 throw std::runtime_error("Cannot open model lock");
-            try {
-                struct stat st {};
-                if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1)
-                    throw std::runtime_error("Unsafe model lock");
-                bool announced = false;
-                while (flock(fd, LOCK_EX | LOCK_NB)) {
-                    if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR)
-                        throw std::runtime_error("Cannot acquire model lock");
-                    check_cancelled();
-                    if (!announced) {
-                        log_message(LogLevel::info,
-                                    "Waiting for model preparation: " + path.string());
-                        announced = true;
-                    }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
+            struct stat st {};
+            if (fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1)
+                throw std::runtime_error("Unsafe model lock");
+            bool announced = false;
+            while (flock(fd.get(), LOCK_EX | LOCK_NB)) {
+                if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR)
+                    throw std::runtime_error("Cannot acquire model lock");
                 check_cancelled();
-            } catch (...) {
-                close(fd);
-                throw;
+                if (!announced) {
+                    log_message(LogLevel::info, "Waiting for model preparation: " + path.string());
+                    announced = true;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
+            check_cancelled();
         }
-        ~Lock() { close(fd); }
     } lock(root / (model.file + ".lock"));
     if (fs::exists(target) || fs::is_symlink(target))
         return cached();
     auto temporary = partial_model_path(model, root);
-    int fd = open_partial_model(temporary);
-    close(fd);
+    auto fd = open_partial_model(temporary);
+    fd.close();
     sync_directory(root);
     if (fs::file_size(temporary) > model.bytes) {
         unlink(temporary.c_str());

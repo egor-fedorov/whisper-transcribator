@@ -1,3 +1,4 @@
+#include "support/error.hpp"
 #include "support/fixtures.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
@@ -24,18 +25,22 @@ void download_hash_and_offline_reuse(const fs::path& root) {
 void offline_missing_has_no_side_effects(const fs::path& root) {
 
     auto absent = root / "absent";
-    rejects([&] {
-        ensure_cached(model_fixture(), absent, true,
-                      [](auto&, auto&) { throw std::logic_error("network"); });
-    });
+    rejects(
+        [&] {
+            ensure_cached(model_fixture(), absent, true,
+                          [](auto&, auto&) { throw std::logic_error("network"); });
+        },
+        "Model missing in offline mode");
     require(!fs::exists(absent));
 }
 void corrupt_download_not_published(const fs::path& root) {
 
-    rejects([&] {
-        ensure_cached(model_fixture(), root, false,
-                      [](const auto&, const auto& path) { atomic_write(path, "xyz", true); });
-    });
+    rejects(
+        [&] {
+            ensure_cached(model_fixture(), root, false,
+                          [](const auto&, const auto& path) { atomic_write(path, "xyz", true); });
+        },
+        "Model size/SHA-256 verification failed");
     require(!fs::exists(root / model_fixture().file));
     for (const auto& item : fs::directory_iterator(root))
         require(item.path().extension() == ".lock");
@@ -43,8 +48,8 @@ void corrupt_download_not_published(const fs::path& root) {
 void corrupt_cache_not_deleted(const fs::path& root) {
 
     atomic_write(root / model_fixture().file, "bad");
-    rejects([&] { ensure_cached(model_fixture(), root, true); });
-    rejects([&] { ensure_cached(model_fixture(), root, false); });
+    rejects([&] { ensure_cached(model_fixture(), root, true); }, "Corrupt model cache");
+    rejects([&] { ensure_cached(model_fixture(), root, false); }, "Corrupt model cache");
     require(read_text(root / model_fixture().file) == "bad");
 }
 void cached_model_does_not_acquire_download_lock(const fs::path& root) {
@@ -63,8 +68,9 @@ void local_model_and_invalid_names(const fs::path& root) {
     atomic_write(root / "local.bin", "weights");
     auto prepared = prepare_model((root / "local.bin").string(), o);
     require(prepared.path == root / "local.bin" && prepared.hash == sha256(prepared.path));
-    rejects([&] { prepare_model(root.string(), o); });
-    rejects([&] { prepare_model("unknown", o); });
+    rejects<UsageError>([&] { prepare_model(root.string(), o); },
+                        "Expected a nonempty local GGML file");
+    rejects<UsageError>([&] { prepare_model("unknown", o); }, "Unknown model");
 }
 void catalog_and_listing_no_downloads(const fs::path& root) {
 

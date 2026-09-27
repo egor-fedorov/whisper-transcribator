@@ -60,16 +60,13 @@ int transcribe(Options options) {
             FileProgress progress(std::to_string(job_index) + "/" + std::to_string(jobs.size()),
                                   reader.duration());
             auto read = [&](size_t limit) { return reader.read(limit); };
-            auto recognize = [&](const std::vector<float>& pcm, const std::string&) {
+            auto recognize = [&](const std::vector<float>& pcm) {
                 return session.recognize(
                     pcm, [&] { progress.begin_window(journal.samples(), pcm.size()); },
                     [&](int value) { progress.update(value); });
             };
             run_chunks(journal, size_t(options.chunk_seconds) * sample_rate, read, recognize, cut,
-                       [&](int64_t samples, size_t, bool committed) {
-                           if (committed)
-                               progress.commit(samples);
-                       });
+                       {{}, [&](int64_t samples) { progress.commit(samples); }});
             if (size != fs::file_size(job.source) || modified != fs::last_write_time(job.source))
                 throw std::runtime_error("Input changed during transcription");
             report_progress("Publishing", job.source.filename().string());

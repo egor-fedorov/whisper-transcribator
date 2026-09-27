@@ -1,6 +1,7 @@
 #include "support/io.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
+#include "support/fd.hpp"
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -42,10 +43,10 @@ std::string read_text(const fs::path& path) {
 void probe_directory(const fs::path& path) {
     fs::create_directories(path);
     auto pattern = (path / ".whisper-probe-XXXXXX").string();
-    int fd = mkstemp(pattern.data());
-    if (fd < 0)
+    UniqueFd fd(mkstemp(pattern.data()));
+    if (fd.get() < 0)
         throw std::runtime_error("Cannot write directory: " + path.string());
-    close(fd);
+    fd.close();
     unlink(pattern.c_str());
 }
 namespace {
@@ -87,23 +88,23 @@ mode_t output_mode(const fs::path& path, bool overwrite) {
 }
 } // namespace
 void sync_directory(const fs::path& path) {
-    int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (fd < 0)
+    UniqueFd fd(open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+    if (fd.get() < 0)
         throw std::runtime_error("Cannot open directory for sync: " + path.string());
-    int status = fsync(fd);
-    close(fd);
+    int status = fsync(fd.get());
+    fd.close();
     if (status)
         throw std::runtime_error("Cannot sync directory: " + path.string());
 }
 void publish_file(const fs::path& temporary, const fs::path& target, bool overwrite) {
     check_cancelled();
-    int fd = open(temporary.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-    if (fd < 0)
+    UniqueFd fd(open(temporary.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+    if (fd.get() < 0)
         throw std::runtime_error("Cannot open staged output");
-    int status = fchmod(fd, output_mode(target, overwrite));
+    int status = fchmod(fd.get(), output_mode(target, overwrite));
     if (!status)
-        status = fsync(fd);
-    close(fd);
+        status = fsync(fd.get());
+    fd.close();
     if (status)
         throw std::runtime_error("Cannot flush staged output");
     status = overwrite ? rename(temporary.c_str(), target.c_str())
@@ -119,22 +120,19 @@ void atomic_write_stream(const fs::path& path, const std::function<void(std::ost
                          bool overwrite, bool private_file) {
     check_cancelled();
     auto pattern = (path.parent_path() / ".whisper-output-XXXXXX").string();
-    int fd = mkstemp(pattern.data());
-    if (fd < 0)
+    UniqueFd fd(mkstemp(pattern.data()));
+    if (fd.get() < 0)
         throw std::runtime_error("Cannot create temporary output: " + path.string());
     try {
-        FileBuffer buffer(fd);
+        FileBuffer buffer(fd.get());
         std::ostream stream(&buffer);
         stream.exceptions(std::ios::badbit | std::ios::failbit);
         write(stream);
         stream.flush();
-        if (fchmod(fd, private_file ? 0600 : output_mode(path, overwrite)) || fsync(fd))
+        if (fchmod(fd.get(), private_file ? 0600 : output_mode(path, overwrite)) || fsync(fd.get()))
             throw std::runtime_error("Cannot flush output");
-        if (close(fd)) {
-            fd = -1;
+        if (fd.close())
             throw std::runtime_error("Cannot close output");
-        }
-        fd = -1;
         check_cancelled();
         int result =
             overwrite ? rename(pattern.c_str(), path.c_str()) : link(pattern.c_str(), path.c_str());
@@ -142,8 +140,7 @@ void atomic_write_stream(const fs::path& path, const std::function<void(std::ost
             throw std::runtime_error("Cannot publish " + path.string() + ": " +
                                      std::strerror(errno));
     } catch (...) {
-        if (fd >= 0)
-            close(fd);
+        fd.close();
         unlink(pattern.c_str());
         throw;
     }

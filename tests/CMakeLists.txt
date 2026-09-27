@@ -15,6 +15,9 @@ function(wt_test name label source)
 endfunction()
 
 wt_test(io unit unit/io.cpp)
+wt_test(assertions unit unit/assertions.cpp)
+wt_test(fd unit unit/fd.cpp)
+wt_test(formatting unit unit/rendering.cpp)
 wt_test(jobs unit unit/jobs.cpp)
 wt_test(model-cache unit unit/model-cache.cpp)
 wt_test(boundaries unit unit/boundaries.cpp)
@@ -27,6 +30,8 @@ wt_test(audio integration integration/audio.cpp)
 target_link_libraries(wt-audio-tests PRIVATE wt_engine)
 wt_test(rendering integration integration/rendering.cpp)
 wt_test(journal integration integration/journal.cpp)
+wt_test(compatibility integration integration/compatibility.cpp)
+target_compile_definitions(wt-compatibility-tests PRIVATE WT_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 wt_test(pipeline integration integration/pipeline.cpp)
 wt_test(publication integration integration/publication.cpp)
 wt_test(recovery integration integration/recovery.cpp)
@@ -76,6 +81,7 @@ set(WT_CHECK_HEADERS
   support/cancel.hpp
   support/cpu.hpp
   support/error.hpp
+  support/fd.hpp
   support/fs.hpp
   support/hash.hpp
   support/io.hpp

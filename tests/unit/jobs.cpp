@@ -1,4 +1,5 @@
 #include "transcript/jobs.hpp"
+#include "support/error.hpp"
 #include "support/fixtures.hpp"
 #include "support/io.hpp"
 #include "support/test.hpp"
@@ -11,28 +12,28 @@ void source_protection(const fs::path& root) {
     auto o = input(root);
     o.output = o.inputs.front();
     o.overwrite = true;
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output would overwrite input");
 }
 void hardlink_protection(const fs::path& root) {
 
     auto o = input(root);
     fs::create_hard_link(o.inputs[0], root / "a.txt");
     o.overwrite = true;
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output would overwrite input");
 }
 void symlink_protection(const fs::path& root) {
 
     auto o = input(root);
     fs::create_symlink(o.inputs[0], root / "a.txt");
     o.overwrite = true;
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Unsafe output symlink");
 }
 void duplicate_stems(const fs::path& root) {
 
     auto o = input(root);
     atomic_write(root / "a.wav", "wav");
     o.inputs.push_back((root / "a.wav").string());
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output collision");
 }
 void output_symlinks_are_rejected_before_skip_and_overwrite(const fs::path& root) {
 
@@ -44,13 +45,13 @@ void output_symlinks_are_rejected_before_skip_and_overwrite(const fs::path& root
         for (bool overwrite : {false, true}) {
             o.overwrite = overwrite;
             o.skip_existing = true;
-            rejects([&] { prepare_jobs(o); });
+            rejects([&] { prepare_jobs(o); }, "Unsafe output symlink");
         }
     }
     require(read_text(root / "target") == "preserve");
     fs::remove(root / "a.txt");
     fs::create_symlink(root / "missing", root / "a.txt");
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Unsafe output symlink");
 }
 void directory_symlinks_and_output_inode_collisions(const fs::path& root) {
 
@@ -64,7 +65,7 @@ void directory_symlinks_and_output_inode_collisions(const fs::path& root) {
     atomic_write(root / "out/a.txt", "old");
     fs::create_hard_link(root / "out/a.txt", root / "out/b.txt");
     o.overwrite = true;
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output collision");
 }
 void numbered_mapping_symlink_is_rejected(const fs::path& root) {
 
@@ -74,7 +75,7 @@ void numbered_mapping_symlink_is_rejected(const fs::path& root) {
     prepare_jobs(o);
     fs::rename(root / "result_files.json", root / "mapping");
     fs::create_symlink(root / "mapping", root / "result_files.json");
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Unsafe output symlink");
 }
 void output_versus_another_input(const fs::path& root) {
 
@@ -82,13 +83,13 @@ void output_versus_another_input(const fs::path& root) {
     atomic_write(root / "a.txt", "text input");
     o.inputs.push_back((root / "a.txt").string());
     o.overwrite = true;
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output would overwrite input");
 }
 void existing_outputs_are_not_silently_skipped(const fs::path& root) {
 
     auto o = input(root);
     atomic_write(root / "a.txt", "text");
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output exists; use --overwrite");
     o.skip_existing = true;
     require(prepare_jobs(o).empty());
     o.overwrite = true;
@@ -113,7 +114,7 @@ void empty_output_is_not_complete(const fs::path& root) {
     auto o = input(root);
     atomic_write(root / "a.txt", "");
     o.skip_existing = true;
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output exists; use --overwrite");
 }
 void all_requires_complete_set(const fs::path& root) {
 
@@ -122,10 +123,10 @@ void all_requires_complete_set(const fs::path& root) {
     o.format = "all";
     o.skip_existing = true;
     atomic_write(root / "a.txt", "text");
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output exists; use --overwrite");
     atomic_write(root / "a.srt", "srt");
     atomic_write(root / "a.json", "{}");
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Output exists; use --overwrite");
     atomic_write(root / "a.vtt", "WEBVTT");
     require(prepare_jobs(o).empty());
 }
@@ -162,7 +163,7 @@ void numbered_mapping_stability(const fs::path& root) {
     atomic_write(root / "b.mp4", "b");
     o.inputs.insert(o.inputs.begin(), (root / "b.mp4").string());
     o.overwrite = true;
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Input list changed");
     require(read_text(path) == mapping);
 }
 void numbered_orphan_results(const fs::path& root) {
@@ -172,7 +173,7 @@ void numbered_orphan_results(const fs::path& root) {
     o.output_dir = root.string();
     o.skip_existing = true;
     atomic_write(root / "result_001.txt", "text");
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Numbered results exist without their mapping");
 }
 void numbered_mapping_ignores_object_key_order(const fs::path& root) {
 
@@ -190,26 +191,55 @@ void invalid_option_combinations(const fs::path& root) {
 
     auto o = input(root);
     o.input_dir = root.string();
-    rejects([&] { prepare_jobs(o); });
+    rejects<UsageError>([&] { prepare_jobs(o); }, "Use files or --input-dir");
     o.input_dir.clear();
     o.format = "all";
-    rejects([&] { prepare_jobs(o); });
+    rejects<UsageError>([&] { prepare_jobs(o); }, "--format all requires");
     o.format = "text";
     o.prefix = "../escape";
-    rejects([&] { prepare_jobs(o); });
+    rejects<UsageError>([&] { prepare_jobs(o); }, "Invalid --prefix");
 }
 void missing_input_and_empty_directory(const fs::path& root) {
 
     Options o;
     o.inputs = {(root / "absent").string()};
-    rejects([&] { prepare_jobs(o); });
+    rejects([&] { prepare_jobs(o); }, "Input file not found");
     o.inputs.clear();
     o.input_dir = root.string();
     require(prepare_jobs(o).empty());
 }
+void invalid_plan_does_not_prepare_outputs(const fs::path& root) {
+    auto options = input(root);
+    atomic_write(root / "a.wav", "second input");
+    options.inputs.push_back((root / "a.wav").string());
+    options.output_dir = (root / "not-created").string();
+    rejects([&] { prepare_jobs(options); }, "Output collision");
+    require(!fs::exists(options.output_dir));
+}
+void mapping_validation_precedes_write_probe(const fs::path& root) {
+    auto options = input(root);
+    options.naming = "numbered";
+    options.output_dir = (root / "out").string();
+    prepare_jobs(options);
+    auto mapping = read_text(root / "out/result_files.json");
+    atomic_write(root / "b.mp4", "other input");
+    options.inputs.push_back((root / "b.mp4").string());
+    fs::permissions(root / "out", fs::perms::owner_read | fs::perms::owner_exec);
+    try {
+        rejects([&] { prepare_jobs(options); }, "Input list changed");
+    } catch (...) {
+        fs::permissions(root / "out", fs::perms::owner_all);
+        throw;
+    }
+    fs::permissions(root / "out", fs::perms::owner_all);
+    require(read_text(root / "out/result_files.json") == mapping);
+}
 } // namespace
 int main() {
     return run_tests({
+        {"invalid plan leaves no output directories", invalid_plan_does_not_prepare_outputs},
+        {"mapping is validated before checking write access",
+         mapping_validation_precedes_write_probe},
         {"source protection", source_protection},
         {"hardlink protection", hardlink_protection},
         {"symlink protection", symlink_protection},

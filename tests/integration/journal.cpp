@@ -12,9 +12,10 @@ void early_failures_leave_no_saved_progress(const fs::path& root) {
     {
         Journal journal(early.job, early.options, early.fingerprint());
         Audio audio;
-        rejects([&] { run(early, journal, audio, 0); });
+        rejects([&] { run(early, journal, audio, 0); }, "injected inference failure");
         require(!has_checkpoint(early.job));
-        rejects([&] { Journal busy(early.job, early.options, early.fingerprint()); });
+        rejects([&] { Journal busy(early.job, early.options, early.fingerprint()); },
+                "Checkpoint is busy or lock is unsafe");
     }
     atomic_write(early.job.source, "replacement input", true);
     {
@@ -35,9 +36,19 @@ void empty_checkpoint_recovery_and_unknown_contents(const fs::path& root) {
     zero_manifest["last_hash"] = "";
     atomic_write(zero_path / "manifest.json", zero_manifest.dump(), true);
     atomic_write(zero_path / "unknown", "preserve");
-    rejects([&] { Journal journal(zero.job, zero.options, zero.fingerprint()); });
+    rejects([&] { Journal journal(zero.job, zero.options, zero.fingerprint()); },
+            "Unknown empty checkpoint contents");
     require(read_text(zero_path / "unknown") == "preserve");
     fs::remove(zero_path / "unknown");
+    auto orphan = read_text(zero_path / "chunk-0.json");
+    auto invalid = Json::parse(orphan);
+    invalid["start_sample"] = 1;
+    atomic_write(zero_path / "chunk-0.json", invalid.dump(), true);
+    rejects([&] { Journal journal(zero.job, zero.options, zero.fingerprint()); },
+            "Corrupt checkpoint sequence");
+    require(read_text(zero_path / "manifest.json") == zero_manifest.dump());
+    require(read_text(zero_path / "chunk-0.json") == invalid.dump());
+    atomic_write(zero_path / "chunk-0.json", orphan, true);
     atomic_write(zero.job.source, "replacement", true);
     {
         Journal journal(zero.job, zero.options, zero.fingerprint());
@@ -62,19 +73,21 @@ void incompatible_and_corrupted_checkpoints(const fs::path& root) {
     for (const auto& field : {"source", "sha256", "backend", "run", "language", "model"}) {
         auto changed = original;
         changed[field] = "changed";
-        rejects([&] { Journal journal(corrupt.job, corrupt.options, changed); });
+        rejects([&] { Journal journal(corrupt.job, corrupt.options, changed); },
+                "Checkpoint is incompatible");
     }
     corrupt.options.overwrite = false;
     auto modified = fs::last_write_time(corrupt.job.source);
     atomic_write(corrupt.job.source, "same bytes", true);
     fs::last_write_time(corrupt.job.source, modified);
-    rejects([&] { Journal journal(corrupt.job, corrupt.options, corrupt.fingerprint()); });
+    rejects([&] { Journal journal(corrupt.job, corrupt.options, corrupt.fingerprint()); },
+            "Checkpoint is incompatible");
     atomic_write(corrupt.job.source, "fake audio", true);
     {
         Journal journal(corrupt.job, corrupt.options, original);
         Audio shortened;
         shortened.total = 8;
-        rejects([&] { run(corrupt, journal, shortened); });
+        rejects([&] { run(corrupt, journal, shortened); }, "Audio ends before checkpoint position");
         require(shortened.recognized == 0);
     }
     auto chunk = checkpoint_path(corrupt.job) / "chunk-0.json";
@@ -83,16 +96,19 @@ void incompatible_and_corrupted_checkpoints(const fs::path& root) {
     auto legacy = Json::parse(manifest_bytes);
     legacy["schema_version"] = 1;
     atomic_write(manifest_path, legacy.dump(), true);
-    rejects([&] { Journal journal(corrupt.job, corrupt.options, original); });
+    rejects([&] { Journal journal(corrupt.job, corrupt.options, original); },
+            "Incompatible checkpoint schema");
     require(Json::parse(read_text(manifest_path))["schema_version"] == 1);
     atomic_write(manifest_path, manifest_bytes, true);
     auto saved = read_text(chunk);
     auto edited = Json::parse(saved);
     edited["segments"][0]["text"] = "tampered";
     atomic_write(chunk, edited.dump(), true);
-    rejects([&] { Journal journal(corrupt.job, corrupt.options, original); });
+    rejects([&] { Journal journal(corrupt.job, corrupt.options, original); },
+            "Checkpoint commit mismatch");
     atomic_write(chunk, "{", true);
-    rejects([&] { Journal journal(corrupt.job, corrupt.options, original); });
+    rejects<Json::parse_error>([&] { Journal journal(corrupt.job, corrupt.options, original); },
+                               "parse error");
     atomic_write(chunk, saved, true);
     atomic_write(checkpoint_path(corrupt.job) / "chunk-1.json", "incomplete orphan");
     {
@@ -117,7 +133,8 @@ void write_failure_before_manifest_commit(const fs::path& root) {
         saved_manifest = read_text(manifest);
         fs::remove(manifest);
         fs::create_directory(manifest);
-        rejects([&] { journal.append(16, {"en", 0.001, {{0, 0.001, "uncommitted", 0}}}); });
+        rejects([&] { journal.append(16, {"en", 0.001, {{0, 0.001, "uncommitted", 0}}}); },
+                "Cannot publish");
     }
     fs::remove(manifest);
     atomic_write(manifest, saved_manifest);
@@ -132,7 +149,8 @@ void write_failure_before_manifest_commit(const fs::path& root) {
 void checkpoint_symlink_rejection(const fs::path& root) {
     Fixture links(root / "links");
     fs::create_symlink(root, root / "links/.whisper-transcribator");
-    rejects([&] { Journal journal(links.job, links.options, links.fingerprint()); });
+    rejects([&] { Journal journal(links.job, links.options, links.fingerprint()); },
+            "Checkpoint directory must be owned by you");
 }
 void legacy_output_set(const fs::path& root) {
     Fixture f(root);
@@ -144,13 +162,9 @@ void legacy_output_set(const fs::path& root) {
         Journal old(old_job, options, job_fingerprint(old_job, options, Json::object()));
         old.append(sample_rate, {"en", 1, {{0, 1, "saved", 0}}});
     }
-    bool rejected = false;
-    try {
-        Journal newer(job, options, job_fingerprint(job, options, Json::object()));
-    } catch (const std::exception&) {
-        rejected = true;
-    }
-    require(rejected && has_checkpoint(old_job));
+    rejects([&] { Journal newer(job, options, job_fingerprint(job, options, Json::object())); },
+            "Saved progress for the old three-format all exists");
+    require(has_checkpoint(old_job));
 }
 } // namespace
 int main() {

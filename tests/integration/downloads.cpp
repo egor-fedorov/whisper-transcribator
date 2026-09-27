@@ -115,8 +115,8 @@ class Server {
 void prefix(const Model& model, const fs::path& root) {
     fs::create_directories(root);
     auto path = partial_model_path(model, root);
-    int fd = open_partial_model(path);
-    close(fd);
+    auto fd = open_partial_model(path);
+    require(fd.close() == 0);
     atomic_write(path, payload.substr(0, 8), true);
 }
 void transfers(const fs::path& root, const fs::path& cert, const fs::path& key) {
@@ -133,16 +133,18 @@ void transfers(const fs::path& root, const fs::path& cert, const fs::path& key) 
         require(!fs::exists(partial_model_path(m, directory)));
     }
     auto cut = model("cut");
-    rejects([&] { ensure_cached(cut, root / "cut", false); });
+    rejects([&] { ensure_cached(cut, root / "cut", false); }, "Model download failed");
     require(fs::file_size(partial_model_path(cut, root / "cut")) == 8);
-    rejects([&] { ensure_cached(cut, root / "cut", true); });
+    rejects([&] { ensure_cached(cut, root / "cut", true); }, "Model missing in offline mode");
     require(read_text(ensure_cached(cut, root / "cut", false).path) == payload);
     auto wrong = model("wrong");
     prefix(wrong, root / "wrong");
-    rejects([&] { ensure_cached(wrong, root / "wrong", false); });
+    // libcurl may reject the range before the application's response callback.
+    rejects([&] { ensure_cached(wrong, root / "wrong", false); }, "range");
     require(read_text(partial_model_path(wrong, root / "wrong")) == payload.substr(0, 8));
     auto bad = model("bad");
-    rejects([&] { ensure_cached(bad, root / "bad", false); });
+    rejects([&] { ensure_cached(bad, root / "bad", false); },
+            "Model size/SHA-256 verification failed");
     require(!fs::exists(partial_model_path(bad, root / "bad")) &&
             !fs::exists(root / "bad/fixture.bin"));
     auto cancelled = model("cancel");
@@ -157,18 +159,18 @@ void transfers(const fs::path& root, const fs::path& cert, const fs::path& key) 
     auto tls = model("tls");
     {
         ScopedEnv untrusted("SSL_CERT_FILE", std::nullopt);
-        rejects([&] { ensure_cached(tls, root / "tls", false); });
+        rejects([&] { ensure_cached(tls, root / "tls", false); }, "Model download failed");
     }
     require(!fs::exists(root / "tls/fixture.bin"));
     auto unsafe = model("unsafe");
     fs::create_directories(root / "unsafe");
     atomic_write(root / "victim", "preserve");
     fs::create_symlink(root / "victim", partial_model_path(unsafe, root / "unsafe"));
-    rejects([&] { ensure_cached(unsafe, root / "unsafe", false); });
+    rejects([&] { ensure_cached(unsafe, root / "unsafe", false); }, "Unsafe partial model file");
     require(read_text(root / "victim") == "preserve");
     fs::remove(partial_model_path(unsafe, root / "unsafe"));
     fs::create_hard_link(root / "victim", partial_model_path(unsafe, root / "unsafe"));
-    rejects([&] { ensure_cached(unsafe, root / "unsafe", false); });
+    rejects([&] { ensure_cached(unsafe, root / "unsafe", false); }, "Unsafe partial model file");
     require(read_text(root / "victim") == "preserve");
     require(server.ranges >= 5);
 }

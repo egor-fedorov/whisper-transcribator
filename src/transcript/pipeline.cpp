@@ -96,14 +96,14 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
         }
         if (journal.samples() > std::numeric_limits<int64_t>::max() - int64_t(buffer.size()))
             throw std::runtime_error("Audio sample counter overflow");
-        if (progress)
-            progress(journal.samples(), buffer.size(), false);
+        if (progress.recognizing)
+            progress.recognizing(journal.samples(), buffer.size());
         log_message(
             LogLevel::debug,
             "Recognizing " + std::to_string(journal.samples() / double(sample_rate)) + "-" +
                 std::to_string((journal.samples() + int64_t(buffer.size())) / double(sample_rate)) +
                 "s");
-        auto transcript = recognize(buffer, "");
+        auto transcript = recognize(buffer);
         check_cancelled();
         size_t count = eof ? buffer.size()
                            : committed_cut(buffer.size(), cut(buffer), transcript, guard_samples);
@@ -122,8 +122,8 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
         buffer.erase(buffer.begin(), buffer.begin() + count);
         log_message(LogLevel::debug,
                     "Checkpoint: " + std::to_string(journal.samples() / double(sample_rate)) + "s");
-        if (progress)
-            progress(journal.samples(), 0, true);
+        if (progress.committed)
+            progress.committed(journal.samples());
     }
 }
 } // namespace wt

@@ -49,7 +49,7 @@ void scenario(const fs::path& root, int seconds) {
     run_chunks(
         journal, size_t(options.chunk_seconds) * sample_rate,
         [&](size_t n) { return reader.read(n); },
-        [&](const auto& pcm, const auto&) {
+        [&](const auto& pcm) {
             if (pcm.size() > size_t(options.chunk_seconds) * sample_rate)
                 throw std::runtime_error("Unbounded PCM window");
             processed += static_cast<int64_t>(pcm.size());

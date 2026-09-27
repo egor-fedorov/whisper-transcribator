@@ -9,7 +9,7 @@ void atomic_no_clobber_and_replacement(const fs::path& root) {
 
     auto path = root / "result";
     atomic_write(path, "original");
-    rejects([&] { atomic_write(path, "new"); });
+    rejects([&] { atomic_write(path, "new"); }, "Cannot publish");
     require(read_text(path) == "original");
     atomic_write(path, "new", true);
     require(read_text(path) == "new");

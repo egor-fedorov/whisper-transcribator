@@ -22,7 +22,7 @@ add_library(wt_core STATIC
   src/support/report.cpp src/support/cpu.cpp
   src/models/models.cpp src/models/download.cpp
   src/transcript/jobs.cpp src/transcript/metadata.cpp src/transcript/outputs.cpp
-  src/transcript/journal.cpp src/transcript/pipeline.cpp)
+  src/transcript/journal.cpp src/transcript/pipeline.cpp src/transcript/publication.cpp)
 target_include_directories(wt_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(wt_core PUBLIC CURL::libcurl OpenSSL::Crypto nlohmann_json::nlohmann_json)
 add_library(wt_engine STATIC

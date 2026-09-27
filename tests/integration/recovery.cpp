@@ -28,7 +28,7 @@ void signal_test(Fixture& f, int signal) {
             int calls = 0;
             run_chunks(
                 journal, 16, [&](size_t n) { return audio.read(n); },
-                [&](const auto& pcm, const auto& language) {
+                [&](const auto& pcm) {
                     if (calls++ == 1) {
                         sigset_t blocked, previous;
                         sigemptyset(&blocked);
@@ -46,7 +46,7 @@ void signal_test(Fixture& f, int signal) {
                         sigprocmask(SIG_SETMASK, &previous, nullptr);
                         check_cancelled();
                     }
-                    return audio.recognize(pcm, language);
+                    return audio.recognize(pcm);
                 },
                 [](const auto& pcm) { return pcm.size(); });
         } catch (const Cancelled&) {

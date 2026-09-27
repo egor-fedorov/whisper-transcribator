@@ -48,13 +48,12 @@ std::vector<float> Audio::read(size_t limit) {
         sample = static_cast<float>(cursor++);
     return result;
 }
-Transcript Audio::recognize(const std::vector<float>& pcm, const std::string& language) {
+Transcript Audio::recognize(const std::vector<float>& pcm) {
     require(!pcm.empty());
     for (size_t i = 1; i < pcm.size(); ++i)
         require(pcm[i] == pcm[i - 1] + 1, "non-contiguous PCM");
     peak = std::max(peak, pcm.size());
     recognized += static_cast<int64_t>(pcm.size());
-    require(language.empty(), "auto language must not be locked to a previous window");
     double duration = pcm.size() / double(sample_rate);
     Transcript result{"en", duration, {}};
     for (size_t i = 0; i < pcm.size(); i += 4)
@@ -67,10 +66,10 @@ void run(Fixture& f, Journal& journal, Audio& audio, int fail_at) {
     int calls = 0;
     run_chunks(
         journal, 16, [&](size_t n) { return audio.read(n); },
-        [&](const auto& pcm, const auto& language) {
+        [&](const auto& pcm) {
             if (calls++ == fail_at)
                 throw std::runtime_error("injected inference failure");
-            return audio.recognize(pcm, language);
+            return audio.recognize(pcm);
         },
         [](const auto& pcm) { return pcm.size() - 4; }, {}, 4);
     publish_outputs(f.job, f.options, journal);

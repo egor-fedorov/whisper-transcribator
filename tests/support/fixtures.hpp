@@ -22,7 +22,7 @@ struct Audio {
     int64_t total = 35, cursor = 0, recognized = 0;
     size_t peak = 0;
     std::vector<float> read(size_t limit);
-    Transcript recognize(const std::vector<float>& pcm, const std::string& language);
+    Transcript recognize(const std::vector<float>& pcm);
 };
 void run(Fixture& fixture, Journal& journal, Audio& audio, int fail_at = -1);
 } // namespace wt::test

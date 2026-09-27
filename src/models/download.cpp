@@ -13,26 +13,23 @@
 #include <unistd.h>
 
 namespace wt {
-int open_partial_model(const fs::path& path) {
-    int fd = open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600);
+UniqueFd open_partial_model(const fs::path& path) {
+    UniqueFd fd(open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600));
     struct stat st {};
-    if (fd < 0 || fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
+    if (fd.get() < 0 || fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
         st.st_nlink != 1 || (st.st_mode & 0077)) {
-        if (fd >= 0)
-            close(fd);
         throw std::runtime_error("Unsafe partial model file: " + path.string());
     }
     return fd;
 }
 namespace {
 struct Transfer {
-    int fd;
+    UniqueFd fd;
     const Model& model;
     uint64_t offset = 0, written = 0;
     long status = 0;
     bool range_valid = false;
     std::string error;
-    ~Transfer() { close(fd); }
 };
 size_t headers(char* bytes, size_t size, size_t count, void* opaque) noexcept {
     auto& t = *static_cast<Transfer*>(opaque);
@@ -82,7 +79,7 @@ size_t body(char* bytes, size_t size, size_t count, void* opaque) noexcept {
         }
         size_t done = 0;
         while (done < length) {
-            auto n = write(t.fd, bytes + done, length - done);
+            auto n = write(t.fd.get(), bytes + done, length - done);
             if (n < 0 && errno == EINTR)
                 continue;
             if (n <= 0) {
@@ -112,7 +109,7 @@ void fetch_https(const Model& model, const fs::path& target) {
     };
     static Global global;
     Transfer transfer{open_partial_model(target), model, 0, 0, 0, false, {}};
-    auto end = lseek(transfer.fd, 0, SEEK_END);
+    auto end = lseek(transfer.fd.get(), 0, SEEK_END);
     if (end < 0 || static_cast<uint64_t>(end) > model.bytes)
         throw std::runtime_error(
             "Invalid partial model size; remove this partial file explicitly: " + target.string());
@@ -178,14 +175,14 @@ void fetch_https(const Model& model, const fs::path& target) {
                 }
             });
         auto code = curl_easy_perform(curl.get());
-        if (fsync(transfer.fd))
+        if (fsync(transfer.fd.get()))
             throw std::runtime_error("Cannot sync partial model");
         check_cancelled();
         long status = 0;
         curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
         if (attempt == 0 && transfer.offset && (status == 200 || status == 416)) {
             log_message(LogLevel::info, "Server cannot resume this range; restarting download");
-            if (ftruncate(transfer.fd, 0) || lseek(transfer.fd, 0, SEEK_SET) < 0)
+            if (ftruncate(transfer.fd.get(), 0) || lseek(transfer.fd.get(), 0, SEEK_SET) < 0)
                 throw std::runtime_error("Cannot restart partial model");
             transfer.offset = transfer.written = 0;
             transfer.status = 0;
