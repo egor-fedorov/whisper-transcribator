@@ -25,12 +25,12 @@ status=0
 test "$status" = 1
 test ! -e "$root/batch/broken.txt"
 test -s "$root/batch/jfk.txt"
-before=$(sha256sum "$root/batch/jfk.txt")
+cp "$root/batch/jfk.txt" "$root/before.txt"
 cp "$sample" "$root/broken.wav"
 "$binary" "$root/broken.wav" "$sample" --continue-on-error --skip-existing \
     --output-dir "$root/batch" "${common[@]}" >"$root/retry.log" 2>&1
 test -s "$root/batch/broken.txt"
-test "$before" = "$(sha256sum "$root/batch/jfk.txt")"
+cmp "$root/before.txt" "$root/batch/jfk.txt"
 grep -q '^Skipping complete result:' "$root/retry.log"
 mkdir -p "$root/sequential"
 cp "$sample" "$root/sequential/01.wav"

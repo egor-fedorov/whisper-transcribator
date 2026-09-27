@@ -49,10 +49,13 @@ set_tests_properties(integration/model-concurrency PROPERTIES TIMEOUT 30)
 
 find_package(OpenSSL REQUIRED COMPONENTS SSL)
 find_package(Threads REQUIRED)
+# Prefer the command of the OpenSSL found above; macOS provides LibreSSL as openssl.
+get_filename_component(WT_OPENSSL_PREFIX "${OPENSSL_INCLUDE_DIR}" DIRECTORY)
+find_program(WT_TEST_OPENSSL openssl HINTS "${WT_OPENSSL_PREFIX}/bin" REQUIRED)
 wt_test_target(download integration/downloads.cpp)
 target_link_libraries(wt-download-tests PRIVATE OpenSSL::SSL Threads::Threads)
 add_test(NAME integration/downloads COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/downloads.sh"
-  $<TARGET_FILE:wt-download-tests>)
+  $<TARGET_FILE:wt-download-tests> "${WT_TEST_OPENSSL}")
 set_tests_properties(integration/downloads PROPERTIES LABELS integration TIMEOUT 45)
 
 find_program(WT_TEST_FFMPEG ffmpeg)

@@ -100,6 +100,58 @@ jobs:
             "$PWD/.build/ci/tests/wt-audio-fixture" "$PWD/.build/fixtures/jfk.wav" \
             "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
             "$PWD/.build/offline-streaming"
+  macos:
+    name: test (macos-15, arm64)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Homebrew dependencies
+        run: |
+          brew install ccache ninja pkgconf ffmpeg openssl@3 jq
+          ffmpeg -hide_banner -version | head -n 1
+          ffmpeg -hide_banner -encoders | grep -E 'libvorbis|libmp3lame'
+          bash --version | head -n 1
+      - id: compiler
+        run: echo "version=$(clang++ -dumpversion)-$(sw_vers -productVersion)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .build/ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.version }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.version }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt') }}-
+      - run: |
+          printf '%s\n' "CCACHE_DIR=$PWD/.build/ccache" "CCACHE_BASEDIR=$PWD" \
+            'CCACHE_MAXSIZE=500M' >> "$GITHUB_ENV"
+      - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - run: cmake --build .build/ci -j3
+      - run: ccache --show-stats
+      - run: ctest --test-dir .build/ci --output-on-failure
+      - name: Report devices (hosted runners may not expose Metal)
+        id: devices
+        run: |
+          .build/ci/whisper-transcribator doctor --json | tee .build/doctor.json
+          echo "device=$(jq -r .device .build/doctor.json)" >> "$GITHUB_OUTPUT"
+      - run: bash tests/smoke/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
+      - name: Check checkpoints, publication and model cache on exFAT (hdiutil)
+        run: bash tests/integration/exfat.sh .build/ci .build/fixtures .build/exfat
+      - name: Run CPU inference without network access
+        run: |
+          deny='(version 1)(allow default)(deny network*)'
+          sandbox-exec -p "$deny" bash tests/smoke/smoke.sh "$PWD/.build/ci/whisper-transcribator" \
+            "$PWD/.build/fixtures/jfk.wav" "$PWD/.build/fixtures/ggml-tiny.bin" \
+            "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline"
+          sandbox-exec -p "$deny" bash tests/smoke/streaming-smoke.sh "$PWD/.build/ci/whisper-transcribator" \
+            "$PWD/.build/ci/tests/wt-audio-fixture" "$PWD/.build/fixtures/jfk.wav" \
+            "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
+            "$PWD/.build/offline-streaming"
+      - name: Run Metal inference without network access
+        if: steps.devices.outputs.device == 'metal'
+        run: |
+          sandbox-exec -p '(version 1)(allow default)(deny network*)' bash tests/smoke/smoke.sh \
+            "$PWD/.build/ci/whisper-transcribator" "$PWD/.build/fixtures/jfk.wav" \
+            "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
+            "$PWD/.build/offline-metal" metal
   package:
     # The x86_64 leg keeps the existing required-check name.
     name: ${{ matrix.name }}

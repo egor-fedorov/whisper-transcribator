@@ -85,8 +85,9 @@ class Server {
         require(bool(context));
         require(SSL_CTX_use_certificate_file(context.get(), cert.c_str(), SSL_FILETYPE_PEM) == 1);
         require(SSL_CTX_use_PrivateKey_file(context.get(), key.c_str(), SSL_FILETYPE_PEM) == 1);
-        listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-        require(listener >= 0);
+        // macOS has no SOCK_CLOEXEC.
+        listener = socket(AF_INET, SOCK_STREAM, 0);
+        require(listener >= 0 && fcntl(listener, F_SETFD, FD_CLOEXEC) == 0);
         sockaddr_in address{};
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);

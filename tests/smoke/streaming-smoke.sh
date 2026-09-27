@@ -12,10 +12,11 @@ device=${7:-cpu}
 "$helper" --repeat "$sample" "$root/windows.wav"
 common=("$root/windows.wav" --model "$model" --vad-model "$vad" --language en
     --device "$device" --cpu-threads 2 --local-files-only --chunk-seconds 30 --format all --verbose)
+# macOS Bash 3.2 rejects "${extra[@]}" for an empty array under set -u.
 for mode in plain vad; do
     extra=()
     if [[ $mode == plain ]]; then extra=(--no-vad); fi
-    "$binary" "${common[@]}" "${extra[@]}" --output-dir "$root/$mode" >"$root/$mode.log" 2>&1
+    "$binary" "${common[@]}" ${extra[@]+"${extra[@]}"} --output-dir "$root/$mode" >"$root/$mode.log" 2>&1
     jq -e '.duration == 41 and .run.chunk_seconds == 30 and .run.chunking_version == 4
         and (.segments | length > 1)
         and all(.segments[]; .start >= 0 and .end >= .start and .end <= 41)
@@ -62,7 +63,7 @@ for mode in plain vad; do
     extra=()
     if [[ $mode == plain ]]; then extra=(--no-vad); fi
     status=0
-    "$binary" "$root/silence.wav" "${common[@]:1}" "${extra[@]}" \
+    "$binary" "$root/silence.wav" "${common[@]:1}" ${extra[@]+"${extra[@]}"} \
         --output-dir "$root/silent-$mode" >"$root/silent-$mode.log" 2>&1 || status=$?
     test "$status" = 1
     grep -q 'No transcript produced' "$root/silent-$mode.log"
