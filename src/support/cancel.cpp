@@ -1,6 +1,6 @@
 #include "support/cancel.hpp"
+#include "platform/system.hpp"
 #include <stdexcept>
-#include <unistd.h>
 
 namespace wt {
 volatile std::sig_atomic_t stop_signal = 0;
@@ -9,16 +9,12 @@ void check_cancelled() {
         throw Cancelled{};
 }
 void install_signal_handlers() {
-    struct sigaction action {};
-    action.sa_handler = [](int signal) {
-        if (stop_signal)
-            _exit(128 + signal);
-        stop_signal = signal;
-    };
-    sigemptyset(&action.sa_mask);
-    sigaddset(&action.sa_mask, SIGINT);
-    sigaddset(&action.sa_mask, SIGTERM);
-    if (sigaction(SIGINT, &action, nullptr) || sigaction(SIGTERM, &action, nullptr))
+    // A second interrupt ends the process at once; committed progress stays recoverable.
+    if (!platform::handle_interrupts([](int signal) {
+            if (stop_signal)
+                platform::exit_now(128 + signal);
+            stop_signal = signal;
+        }))
         throw std::runtime_error("Cannot install signal handlers");
 }
 } // namespace wt

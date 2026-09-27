@@ -1,4 +1,4 @@
-#include "support/cpu.hpp"
+#include "platform/cpu.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <fstream>
@@ -13,7 +13,7 @@
 #include <sched.h>
 #endif
 
-namespace wt {
+namespace wt::platform {
 namespace {
 namespace fs = std::filesystem;
 std::string read_optional(const fs::path& path) {
@@ -150,4 +150,4 @@ int automatic_cpu_threads() {
     return cpu_threads_for(allowed, "/");
 }
 #endif
-} // namespace wt
+} // namespace wt::platform

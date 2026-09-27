@@ -1,11 +1,11 @@
 #include "inference/runtime.hpp"
 #include "ggml-backend.h"
+#include "platform/system.hpp"
 #include "support/error.hpp"
 #include "support/fs.hpp"
 #include "support/io.hpp"
 #include "support/report.hpp"
 #include "whisper.h"
-#include <dlfcn.h>
 #include <set>
 
 namespace wt {
@@ -27,11 +27,11 @@ void configure_inference_logging() {
 }
 std::string select_device(const std::string& requested) {
     static const bool loaded = [] {
-        Dl_info library{};
-        if (!dladdr(reinterpret_cast<void*>(ggml_backend_dev_count), &library) ||
-            !library.dli_fname)
+        auto library =
+            platform::library_path(reinterpret_cast<const void*>(ggml_backend_dev_count));
+        if (library.empty())
             throw std::runtime_error("Cannot locate installed ggml backend directory");
-        auto directory = fs::canonical(library.dli_fname).parent_path();
+        auto directory = fs::canonical(library).parent_path();
         ggml_backend_load_all_from_path(directory.c_str());
         return true;
     }();
@@ -84,9 +84,9 @@ Json inference_diagnostics() {
         if (std::string(ggml_backend_reg_name(reg)) != "CPU")
             continue;
         auto symbol = ggml_backend_reg_get_proc_address(reg, "ggml_backend_get_features");
-        Dl_info library{};
-        if (symbol && dladdr(reinterpret_cast<void*>(symbol), &library) && library.dli_fname)
-            result["cpu_backend"] = fs::path(library.dli_fname).filename().string();
+        auto library = symbol ? platform::library_path(symbol) : fs::path{};
+        if (!library.empty())
+            result["cpu_backend"] = library.filename().string();
     }
     return result;
 }

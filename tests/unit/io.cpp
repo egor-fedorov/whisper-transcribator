@@ -1,10 +1,14 @@
 #include "support/io.hpp"
+#include "platform/file.hpp"
+#include "platform/posix.hpp"
 #include "support/cancel.hpp"
 #include "support/test.hpp"
 #include <cerrno>
 
 using namespace wt;
 using namespace wt::test;
+using platform::NoReplaceSteps;
+using platform::rename_noreplace;
 namespace {
 int exclusive_calls = 0, link_calls = 0;
 // Injected primitives fail like a kernel or filesystem without the corresponding support.
@@ -25,10 +29,10 @@ int counted_link(const char* from, const char* to) {
 void expect_no_replace(const fs::path& from, const fs::path& to, const NoReplaceSteps& steps) {
     atomic_write(from, "new");
     atomic_write(to, "old");
-    require(rename_noreplace(from, to, steps) == -1 && errno == EEXIST, "existing target");
+    require(!rename_noreplace(from, to, steps) && errno == EEXIST, "existing target");
     require(read_text(from) == "new" && read_text(to) == "old");
     fs::remove(to);
-    require(rename_noreplace(from, to, steps) == 0, "absent target");
+    require(rename_noreplace(from, to, steps), "absent target");
     require(!fs::exists(from) && read_text(to) == "new");
     fs::remove(to);
 }
@@ -61,7 +65,7 @@ void rename_noreplace_keeps_existing_targets(const fs::path& root) {
     expect_no_replace(root / "staged", root / "target", {});
     fs::create_directory(root / "directory");
     atomic_write(root / "staged", "new");
-    require(rename_noreplace(root / "staged", root / "directory") == -1 && errno == EEXIST);
+    require(!rename_noreplace(root / "staged", root / "directory") && errno == EEXIST);
     require(fs::is_empty(root / "directory") && read_text(root / "staged") == "new");
 }
 void rename_noreplace_falls_back_to_hard_links(const fs::path& root) {
@@ -85,36 +89,34 @@ void rename_noreplace_falls_back_to_checked_rename(const fs::path& root) {
     NoReplaceSteps unsupported{failed_exclusive<EINVAL>, failed_link<EPERM>};
     atomic_write("./staged", "new");
     atomic_write("./target", "old");
-    require(rename_noreplace("staged", "target", unsupported) == -1 && errno == EEXIST);
+    require(!rename_noreplace("staged", "target", unsupported) && errno == EEXIST);
     fs::remove("target");
-    require(rename_noreplace("staged", "target", unsupported) == 0);
+    require(rename_noreplace("staged", "target", unsupported));
     require(!fs::exists("staged") && read_text("target") == "new");
     fs::create_directory("directory");
-    require(rename_noreplace("target", "directory", unsupported) == -1 && errno == EEXIST);
-    require(rename_noreplace("target", "missing/name", unsupported) == -1 && errno == ENOENT);
-    require(rename_noreplace("absent", "name", unsupported) == -1 && errno == ENOENT);
+    require(!rename_noreplace("target", "directory", unsupported) && errno == EEXIST);
+    require(!rename_noreplace("target", "missing/name", unsupported) && errno == ENOENT);
+    require(!rename_noreplace("absent", "name", unsupported) && errno == ENOENT);
     require(read_text("target") == "new" && fs::is_empty("directory") && !fs::exists("name"));
 }
 void rename_noreplace_reports_other_errors(const fs::path& root) {
     atomic_write(root / "staged", "new");
     exclusive_calls = link_calls = 0;
-    require(rename_noreplace(root / "staged", root / "target",
-                             {failed_exclusive<EACCES>, counted_link}) == -1 &&
+    require(!rename_noreplace(root / "staged", root / "target",
+                              {failed_exclusive<EACCES>, counted_link}) &&
             errno == EACCES);
     require(exclusive_calls == 1 && link_calls == 0);
-    require(rename_noreplace(root / "staged", root / "target",
-                             {failed_exclusive<EINVAL>, failed_link<EMLINK>}) == -1 &&
+    require(!rename_noreplace(root / "staged", root / "target",
+                              {failed_exclusive<EINVAL>, failed_link<EMLINK>}) &&
             errno == EMLINK);
-    require(rename_noreplace(root / "staged", root / "target",
-                             {failed_exclusive<ENOSYS>, failed_link<EXDEV>}) == -1 &&
+    require(!rename_noreplace(root / "staged", root / "target",
+                              {failed_exclusive<ENOSYS>, failed_link<EXDEV>}) &&
             errno == EXDEV);
     require(read_text(root / "staged") == "new" && !fs::exists(root / "target"));
 }
 void stored_permissions_relax_only_missing_attributes(const fs::path& root) {
-    struct stat own {
-    }, foreign{};
-    own.st_uid = geteuid();
-    foreign.st_uid = geteuid() + 1;
+    platform::FileStatus own, foreign;
+    own.owned = true;
     StoredPermissions all, owner{true, false}, none{false, false};
     require(all.accepts(own, true) && !all.accepts(own, false) && !all.accepts(foreign, true));
     require(owner.accepts(own, false) && !owner.accepts(foreign, false));

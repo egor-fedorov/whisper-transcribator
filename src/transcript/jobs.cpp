@@ -13,19 +13,17 @@
 #include <regex>
 #include <set>
 #include <sstream>
-#include <sys/stat.h>
 
 namespace wt {
 namespace {
 struct Identity {
     fs::path path;
-    std::pair<dev_t, ino_t> inode{};
+    platform::FileId inode;
     bool exists = false;
     explicit Identity(const fs::path& canonical) : path(canonical) {
-        struct stat st {};
-        if (stat(path.c_str(), &st) == 0) {
+        if (auto st = platform::status(path)) {
             exists = true;
-            inode = {st.st_dev, st.st_ino};
+            inode = st->id;
         } else if (errno != ENOENT && errno != ENOTDIR) {
             throw std::runtime_error("Cannot inspect path: " + path.string());
         }
@@ -33,7 +31,7 @@ struct Identity {
 };
 struct PathIndex {
     std::set<fs::path> paths;
-    std::set<std::pair<dev_t, ino_t>> inodes;
+    std::set<platform::FileId> inodes;
     bool contains(const Identity& id) const {
         return paths.count(id.path) || (id.exists && inodes.count(id.inode));
     }

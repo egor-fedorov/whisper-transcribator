@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(whisper_transcribator VERSION 0.4.0 LANGUAGES C CXX)
+if(WIN32)
+  message(FATAL_ERROR "Native Windows builds are not supported yet; use WSL 2 (see README)")
+endif()
 set(WT_VERSION_SUFFIX "")
 set(WT_SOURCE_REVISION "" CACHE STRING "Source commit for builds without Git")
 set(WT_SOURCE_DIRTY "" CACHE STRING "Source dirty state: true, false or unknown")
@@ -47,9 +50,11 @@ add_custom_target(wt_version
   BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp" "${CMAKE_CURRENT_BINARY_DIR}/generated/package.env")
 file(READ src/models/catalog.json WT_MODEL_CATALOG)
 configure_file(cmake/catalog.hpp.in generated/catalog.hpp @ONLY)
+# Operating-system calls live only in src/platform; add a Windows implementation there.
+set(WT_PLATFORM_SOURCES src/platform/cpu.cpp src/platform/file-posix.cpp src/platform/system-posix.cpp)
 add_library(wt_core STATIC
-  src/support/io.cpp src/support/hash.cpp src/support/cancel.cpp
-  src/support/report.cpp src/support/cpu.cpp
+  ${WT_PLATFORM_SOURCES}
+  src/support/io.cpp src/support/hash.cpp src/support/cancel.cpp src/support/report.cpp
   src/models/models.cpp src/models/download.cpp
   src/transcript/jobs.cpp src/transcript/metadata.cpp src/transcript/outputs.cpp
   src/transcript/journal.cpp src/transcript/pipeline.cpp src/transcript/publication.cpp)

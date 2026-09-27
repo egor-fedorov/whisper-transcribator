@@ -16,7 +16,7 @@ endfunction()
 
 wt_test(io unit unit/io.cpp)
 wt_test(assertions unit unit/assertions.cpp)
-wt_test(fd unit unit/fd.cpp)
+wt_test(file-handle unit unit/file-handle.cpp)
 wt_test(formatting unit unit/rendering.cpp)
 wt_test(jobs unit unit/jobs.cpp)
 wt_test(model-cache unit unit/model-cache.cpp)
@@ -126,10 +126,12 @@ set(WT_CHECK_HEADERS
   inference/whisper.hpp
   models/download.hpp
   models/models.hpp
+  platform/cpu.hpp
+  platform/file.hpp
+  platform/posix.hpp
+  platform/system.hpp
   support/cancel.hpp
-  support/cpu.hpp
   support/error.hpp
-  support/fd.hpp
   support/fs.hpp
   support/hash.hpp
   support/io.hpp

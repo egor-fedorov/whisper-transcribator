@@ -1,5 +1,6 @@
 #include "models/models.hpp"
 #include "catalog.hpp"
+#include "platform/file.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include "support/hash.hpp"
@@ -9,13 +10,9 @@
 #include <cerrno>
 #include <chrono>
 #include <cstring>
-#include <fcntl.h>
 #include <iostream>
 #include <memory>
-#include <sys/file.h>
-#include <sys/stat.h>
 #include <thread>
-#include <unistd.h>
 
 namespace wt {
 std::vector<Model> model_catalog() {
@@ -40,26 +37,14 @@ fs::path model_root(const Options& options) {
 fs::path partial_model_path(const Model& model, const fs::path& root) {
     return root / ("." + model.file + "." + model.hash + ".part");
 }
-static bool same_times(const struct stat& a, const struct stat& b) {
-#ifdef __APPLE__
-    const auto &a_modified = a.st_mtimespec, &a_changed = a.st_ctimespec;
-    const auto &b_modified = b.st_mtimespec, &b_changed = b.st_ctimespec;
-#else
-    const auto &a_modified = a.st_mtim, &a_changed = a.st_ctim;
-    const auto &b_modified = b.st_mtim, &b_changed = b.st_ctim;
-#endif
-    return a_modified.tv_sec == b_modified.tv_sec && a_modified.tv_nsec == b_modified.tv_nsec &&
-           a_changed.tv_sec == b_changed.tv_sec && a_changed.tv_nsec == b_changed.tv_nsec;
-}
 static std::string stable_hash(const fs::path& path) {
-    struct stat before {
-    }, after{};
-    if (stat(path.c_str(), &before) || !S_ISREG(before.st_mode))
+    auto before = platform::status(path);
+    if (!before || before->type != platform::FileType::regular)
         throw std::runtime_error("Cannot inspect model: " + path.string());
     auto hash = sha256(path);
-    if (stat(path.c_str(), &after) || before.st_dev != after.st_dev ||
-        before.st_ino != after.st_ino || before.st_size != after.st_size ||
-        !same_times(before, after))
+    auto after = platform::status(path);
+    if (!after || before->id != after->id || before->size != after->size ||
+        before->times != after->times)
         throw std::runtime_error("Model changed while hashing: " + path.string());
     return hash;
 }
@@ -83,17 +68,17 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
         throw std::runtime_error("Model missing in offline mode: " + target.string());
     fs::create_directories(root);
     struct Lock {
-        UniqueFd fd;
-        explicit Lock(const fs::path& path)
-            : fd(open(path.c_str(), O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0600)) {
-            if (fd.get() < 0)
+        platform::File file;
+        explicit Lock(const fs::path& path) : file(platform::open_private(path)) {
+            if (!file)
                 throw std::runtime_error("Cannot open model lock");
-            struct stat st {};
-            if (fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1)
+            auto st = platform::status(file);
+            if (!st || st->type != platform::FileType::regular || st->links != 1)
                 throw std::runtime_error("Unsafe model lock");
             bool announced = false;
-            while (flock(fd.get(), LOCK_EX | LOCK_NB)) {
-                if (errno != EWOULDBLOCK && errno != EAGAIN && errno != EINTR)
+            for (auto result = platform::try_lock(file); result != platform::Lock::acquired;
+                 result = platform::try_lock(file)) {
+                if (result == platform::Lock::failed)
                     throw std::runtime_error("Cannot acquire model lock");
                 check_cancelled();
                 if (!announced) {
@@ -108,11 +93,12 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
     if (fs::exists(target) || fs::is_symlink(target))
         return cached();
     auto temporary = partial_model_path(model, root);
-    auto fd = open_partial_model(temporary);
-    fd.close();
+    auto partial = open_partial_model(temporary);
+    partial.close();
     sync_directory(root);
+    std::error_code ignored;
     if (fs::file_size(temporary) > model.bytes) {
-        unlink(temporary.c_str());
+        fs::remove(temporary, ignored);
         sync_directory(root);
         throw std::runtime_error("Removed oversized partial model; retry the download");
     }
@@ -123,12 +109,12 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
     }
     check_cancelled();
     if (!valid_model(model, temporary)) {
-        unlink(temporary.c_str());
+        fs::remove(temporary, ignored);
         sync_directory(root);
         throw std::runtime_error(
             "Model size/SHA-256 verification failed; removed corrupt partial download");
     }
-    if (rename_noreplace(temporary, target))
+    if (!platform::rename_noreplace(temporary, target))
         throw std::runtime_error("Cannot publish downloaded model; target preserved: " +
                                  std::string(std::strerror(errno)));
     sync_directory(root);

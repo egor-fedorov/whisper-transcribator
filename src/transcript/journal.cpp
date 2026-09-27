@@ -1,6 +1,6 @@
 #include "transcript/journal.hpp"
+#include "platform/file.hpp"
 #include "support/cancel.hpp"
-#include "support/fd.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
 #include "support/options.hpp"
@@ -9,14 +9,10 @@
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
-#include <fcntl.h>
 #include <iostream>
 #include <optional>
 #include <regex>
 #include <set>
-#include <sys/file.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <utility>
 
 namespace wt {
@@ -29,16 +25,15 @@ namespace wt {
 struct CheckpointPrivacy {
     fs::path output_directory;
     std::optional<StoredPermissions> stored;
-    dev_t device = 0;
+    uint64_t device = 0;
     explicit CheckpointPrivacy(fs::path directory) : output_directory(std::move(directory)) {}
-    bool accepts(const fs::path& path, const struct stat& st, bool owner_only) {
-        if (st.st_uid == geteuid() && owner_only && !ownership_ignored(path))
+    bool accepts(const fs::path& path, const platform::FileStatus& st, bool owner_only) {
+        if (st.owned && owner_only && !platform::ownership_ignored(path))
             return true;
         if (!stored) {
-            struct stat output {};
-            stored = stat(output_directory.c_str(), &output) ? StoredPermissions{}
-                                                             : probe_permissions(output_directory);
-            device = output.st_dev;
+            auto output = platform::status(output_directory);
+            stored = output ? probe_permissions(output_directory) : StoredPermissions{};
+            device = output ? output->id.device : 0;
             static std::set<fs::path> warned;
             if ((!stored->owner || !stored->mode) && warned.insert(output_directory).second)
                 log_message(
@@ -48,37 +43,35 @@ struct CheckpointPrivacy {
                         (output_directory / ".whisper-transcribator").string() +
                         " are protected only by its mount options");
         }
-        return st.st_dev == device && stored->accepts(st, owner_only);
+        return st.id.device == device && stored->accepts(st, owner_only);
     }
 };
 namespace {
 void private_directory(const fs::path& path, CheckpointPrivacy& privacy) {
-    bool created = mkdir(path.c_str(), 0700) == 0;
+    bool created = platform::create_private_directory(path);
     if (!created && errno != EEXIST)
         throw std::runtime_error("Cannot create checkpoint directory: " + path.string());
-    struct stat st {};
-    if (lstat(path.c_str(), &st) || !S_ISDIR(st.st_mode) ||
-        !privacy.accepts(path, st, !(st.st_mode & 0077)))
+    auto st = platform::link_status(path);
+    if (!st || st->type != platform::FileType::directory ||
+        !privacy.accepts(path, *st, !(st->permissions & 0077)))
         throw std::runtime_error("Checkpoint directory must be owned by you with mode 0700: " +
                                  path.string());
     if (created)
         sync_directory(path.parent_path());
 }
 Json read_record(const fs::path& path, CheckpointPrivacy& privacy) {
-    UniqueFd fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
-    if (fd.get() < 0)
+    auto file = platform::open_for_reading(path);
+    if (!file)
         throw std::runtime_error("Cannot read checkpoint: " + path.string());
-    struct stat st {};
-    if (fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || !privacy.accepts(path, st, true) ||
-        st.st_size < 0 || st.st_size > 16 * 1024 * 1024)
+    auto st = platform::status(file);
+    if (!st || st->type != platform::FileType::regular || !privacy.accepts(path, *st, true) ||
+        st->size > 16 * 1024 * 1024)
         throw std::runtime_error("Invalid checkpoint file: " + path.string());
-    std::string bytes(static_cast<size_t>(st.st_size), '\0');
+    std::string bytes(static_cast<size_t>(st->size), '\0');
     size_t offset = 0;
     while (offset < bytes.size()) {
         check_cancelled();
-        auto n = read(fd.get(), bytes.data() + offset, bytes.size() - offset);
-        if (n < 0 && errno == EINTR)
-            continue;
+        auto n = platform::read(file, bytes.data() + offset, bytes.size() - offset);
         if (n <= 0)
             throw std::runtime_error("Checkpoint read failed");
         offset += static_cast<size_t>(n);
@@ -165,10 +158,9 @@ bool safe_temporary(const fs::path& path, CheckpointPrivacy& privacy) {
     static const std::regex pattern("\\.whisper-output-[A-Za-z0-9]{6}");
     if (!std::regex_match(path.filename().string(), pattern))
         return false;
-    struct stat st {};
-    if (lstat(path.c_str(), &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
-        !privacy.accepts(path, st, (st.st_mode & 0777) == 0600) || st.st_size < 0 ||
-        st.st_size > 16 * 1024 * 1024)
+    auto st = platform::link_status(path);
+    if (!st || st->type != platform::FileType::regular || st->links != 1 ||
+        !privacy.accepts(path, *st, st->permissions == 0600) || st->size > 16 * 1024 * 1024)
         throw std::runtime_error("Unsafe checkpoint temporary file: " + path.string());
     return true;
 }
@@ -276,13 +268,11 @@ bool has_checkpoint(const Job& job) {
     return fs::exists(path) || fs::is_symlink(path);
 }
 struct Journal::Lock {
-    UniqueFd fd;
-    Lock(const fs::path& path, CheckpointPrivacy& privacy)
-        : fd(open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600)) {
-        struct stat st {};
-        if (fd.get() < 0 || fstat(fd.get(), &st) || !S_ISREG(st.st_mode) ||
-            !privacy.accepts(path, st, true) || st.st_nlink != 1 ||
-            flock(fd.get(), LOCK_EX | LOCK_NB))
+    platform::File file;
+    Lock(const fs::path& path, CheckpointPrivacy& privacy) : file(platform::open_private(path)) {
+        auto st = file ? platform::status(file) : std::nullopt;
+        if (!st || st->type != platform::FileType::regular || !privacy.accepts(path, *st, true) ||
+            st->links != 1 || platform::try_lock(file) != platform::Lock::acquired)
             throw std::runtime_error("Checkpoint is busy or lock is unsafe: " + path.string());
     }
 };

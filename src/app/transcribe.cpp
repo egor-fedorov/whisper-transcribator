@@ -3,8 +3,8 @@
 #include "inference/runtime.hpp"
 #include "inference/whisper.hpp"
 #include "models/models.hpp"
+#include "platform/cpu.hpp"
 #include "support/cancel.hpp"
-#include "support/cpu.hpp"
 #include "support/error.hpp"
 #include "support/options.hpp"
 #include "support/report.hpp"
@@ -53,7 +53,7 @@ int transcribe(Options options) {
     }
     options.device = select_device(options.device);
     if (!options.cpu_threads)
-        options.cpu_threads = automatic_cpu_threads();
+        options.cpu_threads = platform::automatic_cpu_threads();
     log_message(LogLevel::info, "CPU threads: " + std::to_string(options.cpu_threads));
     auto model = prepare_model(options.model, options);
     PreparedModel vad;

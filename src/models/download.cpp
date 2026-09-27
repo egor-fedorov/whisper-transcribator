@@ -1,16 +1,13 @@
 #include "models/download.hpp"
 #include "models/models.hpp"
+#include "platform/system.hpp"
 #include "support/cancel.hpp"
 #include "support/io.hpp"
 #include "support/report.hpp"
 #include <algorithm>
 #include <cctype>
-#include <cerrno>
 #include <curl/curl.h>
-#include <fcntl.h>
 #include <sstream>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <utility>
 
 namespace wt {
@@ -18,29 +15,29 @@ namespace {
 // Partial downloads are private to this user. A cache on a filesystem without POSIX permissions
 // (FAT, exFAT, some FUSE/SMB mounts) cannot store their owner or mode; the file type and link
 // checks remain, and the final size/SHA-256 verification still guards published weights.
-bool private_partial(const struct stat& st, const fs::path& root) {
-    if (st.st_uid == geteuid() && !(st.st_mode & 0077))
+bool private_partial(const platform::FileStatus& st, const fs::path& root) {
+    if (st.owned && !(st.permissions & 0077))
         return true;
     auto stored = probe_permissions(root);
     static bool noted = false;
     if ((!stored.owner || !stored.mode) && !std::exchange(noted, true))
         log_message(LogLevel::debug,
                     "Model cache does not store POSIX owners and modes: " + root.string());
-    return stored.accepts(st, !(st.st_mode & 0077));
+    return stored.accepts(st, !(st.permissions & 0077));
 }
 } // namespace
-UniqueFd open_partial_model(const fs::path& path) {
-    UniqueFd fd(open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600));
-    struct stat st {};
-    if (fd.get() < 0 || fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
-        !private_partial(st, path.parent_path())) {
+platform::File open_partial_model(const fs::path& path) {
+    auto file = platform::open_private(path);
+    auto st = file ? platform::status(file) : std::nullopt;
+    if (!st || st->type != platform::FileType::regular || st->links != 1 ||
+        !private_partial(*st, path.parent_path())) {
         throw std::runtime_error("Unsafe partial model file: " + path.string());
     }
-    return fd;
+    return file;
 }
 namespace {
 struct Transfer {
-    UniqueFd fd;
+    platform::File file;
     const Model& model;
     uint64_t offset = 0, written = 0;
     long status = 0;
@@ -95,9 +92,7 @@ size_t body(char* bytes, size_t size, size_t count, void* opaque) noexcept {
         }
         size_t done = 0;
         while (done < length) {
-            auto n = write(t.fd.get(), bytes + done, length - done);
-            if (n < 0 && errno == EINTR)
-                continue;
+            auto n = platform::write(t.file, bytes + done, length - done);
             if (n <= 0) {
                 t.error = "Cannot write partial model";
                 return 0;
@@ -125,14 +120,14 @@ void fetch_https(const Model& model, const fs::path& target) {
     };
     static Global global;
     Transfer transfer{open_partial_model(target), model, 0, 0, 0, false, {}};
-    auto end = lseek(transfer.fd.get(), 0, SEEK_END);
-    if (end < 0 || static_cast<uint64_t>(end) > model.bytes)
+    auto end = platform::seek_end(transfer.file);
+    if (!end || *end > model.bytes)
         throw std::runtime_error(
             "Invalid partial model size; remove this partial file explicitly: " + target.string());
-    transfer.offset = static_cast<uint64_t>(end);
+    transfer.offset = *end;
     std::string ca = env("SSL_CERT_FILE");
     if (ca.empty()) {
-        auto executable = executable_path();
+        auto executable = platform::executable_path();
         auto bundled = executable.parent_path().parent_path() / "share" / "cacert.pem";
         if (!executable.empty() && fs::is_regular_file(bundled))
             ca = bundled.string();
@@ -190,14 +185,14 @@ void fetch_https(const Model& model, const fs::path& target) {
                 }
             });
         auto code = curl_easy_perform(curl.get());
-        if (sync_file(transfer.fd.get()))
+        if (!platform::sync(transfer.file))
             throw std::runtime_error("Cannot sync partial model");
         check_cancelled();
         long status = 0;
         curl_easy_getinfo(curl.get(), CURLINFO_RESPONSE_CODE, &status);
         if (attempt == 0 && transfer.offset && (status == 200 || status == 416)) {
             log_message(LogLevel::info, "Server cannot resume this range; restarting download");
-            if (ftruncate(transfer.fd.get(), 0) || lseek(transfer.fd.get(), 0, SEEK_SET) < 0)
+            if (!platform::truncate(transfer.file))
                 throw std::runtime_error("Cannot restart partial model");
             transfer.offset = transfer.written = 0;
             transfer.status = 0;

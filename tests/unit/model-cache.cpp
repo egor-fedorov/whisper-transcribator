@@ -1,11 +1,9 @@
+#include "platform/file.hpp"
 #include "support/error.hpp"
 #include "support/fixtures.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
 #include "support/test.hpp"
-#include <fcntl.h>
-#include <sys/file.h>
-#include <unistd.h>
 
 using namespace wt;
 using namespace wt::test;
@@ -54,11 +52,11 @@ void corrupt_cache_not_deleted(const fs::path& root) {
 }
 void cached_model_does_not_acquire_download_lock(const fs::path& root) {
 
-    int fd = open((root / "fixture.bin.lock").c_str(), O_CREAT | O_RDWR, 0600);
-    require(fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0);
+    auto lock = platform::open_private(root / "fixture.bin.lock");
+    require(lock && platform::try_lock(lock) == platform::Lock::acquired);
     atomic_write(root / model_fixture().file, "abc");
     require(ensure_cached(model_fixture(), root, false).hash == model_fixture().hash);
-    close(fd);
+    lock.close();
 }
 void local_model_and_invalid_names(const fs::path& root) {
 
