@@ -132,10 +132,9 @@ void fetch_https(const Model& model, const fs::path& target) {
     transfer.offset = static_cast<uint64_t>(end);
     std::string ca = env("SSL_CERT_FILE");
     if (ca.empty()) {
-        std::error_code error;
-        auto executable = fs::read_symlink("/proc/self/exe", error);
+        auto executable = executable_path();
         auto bundled = executable.parent_path().parent_path() / "share" / "cacert.pem";
-        if (!error && fs::is_regular_file(bundled))
+        if (!executable.empty() && fs::is_regular_file(bundled))
             ca = bundled.string();
     }
     for (int attempt = 0; attempt < 2; ++attempt) {
@@ -191,7 +190,7 @@ void fetch_https(const Model& model, const fs::path& target) {
                 }
             });
         auto code = curl_easy_perform(curl.get());
-        if (fsync(transfer.fd.get()))
+        if (sync_file(transfer.fd.get()))
             throw std::runtime_error("Cannot sync partial model");
         check_cancelled();
         long status = 0;

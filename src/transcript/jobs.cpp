@@ -198,6 +198,24 @@ JobPlan plan_jobs(const Options& o) {
     return plan;
 }
 } // namespace
+void PublishedOutputs::check(const Job& job) const {
+    for (const auto& [format, path] : job.outputs) {
+        Identity identity(path);
+        auto earlier = identity.exists ? files.find(identity.inode) : files.end();
+        if (earlier != files.end())
+            throw std::runtime_error("Output collision: " + path.string() +
+                                     " is the same file as " + earlier->second.string() +
+                                     " (the filesystem may ignore letter case); use --naming "
+                                     "numbered");
+    }
+}
+void PublishedOutputs::record(const Job& job) {
+    for (const auto& [format, path] : job.outputs) {
+        Identity identity(path);
+        if (identity.exists)
+            files.emplace(identity.inode, path);
+    }
+}
 std::vector<Job> prepare_jobs(const Options& options) {
     auto plan = plan_jobs(options);
     for (const auto& directory : plan.directories)

@@ -68,12 +68,14 @@ int transcribe(Options options) {
     WhisperSession session(options, model, vad);
     auto cut = [&](const std::vector<float>& pcm) { return session.choose_cut(pcm); };
     size_t job_index = 0;
+    PublishedOutputs published;
     for (const auto& job : jobs) {
         ++job_index;
         check_cancelled();
         auto start = std::chrono::steady_clock::now();
         log_message(LogLevel::info, "Transcribing " + job.source.string());
         try {
+            published.check(job);
             auto modified = fs::last_write_time(job.source);
             auto size = fs::file_size(job.source);
             report_progress("Reading audio streams", job.source.filename().string());
@@ -102,6 +104,7 @@ int transcribe(Options options) {
                 throw std::runtime_error("Input changed during transcription");
             report_progress("Publishing", job.source.filename().string());
             publish_outputs(job, job_options, journal);
+            published.record(job);
             log_message(LogLevel::info,
                         "Done: " + job.source.filename().string() + "; elapsed " +
                             format_seconds(std::chrono::duration<double>(

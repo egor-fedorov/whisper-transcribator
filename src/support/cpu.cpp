@@ -3,11 +3,15 @@
 #include <cerrno>
 #include <fstream>
 #include <limits>
-#include <sched.h>
 #include <set>
 #include <sstream>
 #include <string>
 #include <thread>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#else
+#include <sched.h>
+#endif
 
 namespace wt {
 namespace {
@@ -106,6 +110,20 @@ int cpu_threads_for(const std::vector<int>& allowed, const fs::path& root) {
     }
     return threads;
 }
+#ifdef __APPLE__
+int automatic_cpu_threads() {
+    // Performance cores only, as llama.cpp chooses: ggml threads meet at a barrier after each
+    // operation, where slower efficiency cores tend to keep the others waiting. Intel Macs
+    // report no performance levels.
+    for (const char* name : {"hw.perflevel0.physicalcpu", "hw.physicalcpu"}) {
+        int count = 0;
+        size_t size = sizeof(count);
+        if (!sysctlbyname(name, &count, &size, nullptr, 0) && count > 0)
+            return count;
+    }
+    return static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
+}
+#else
 int automatic_cpu_threads() {
     std::vector<int> allowed;
     for (size_t count = 1024; count <= (1U << 20); count *= 2) {
@@ -131,4 +149,5 @@ int automatic_cpu_threads() {
     }
     return cpu_threads_for(allowed, "/");
 }
+#endif
 } // namespace wt

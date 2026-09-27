@@ -40,6 +40,17 @@ fs::path model_root(const Options& options) {
 fs::path partial_model_path(const Model& model, const fs::path& root) {
     return root / ("." + model.file + "." + model.hash + ".part");
 }
+static bool same_times(const struct stat& a, const struct stat& b) {
+#ifdef __APPLE__
+    const auto &a_modified = a.st_mtimespec, &a_changed = a.st_ctimespec;
+    const auto &b_modified = b.st_mtimespec, &b_changed = b.st_ctimespec;
+#else
+    const auto &a_modified = a.st_mtim, &a_changed = a.st_ctim;
+    const auto &b_modified = b.st_mtim, &b_changed = b.st_ctim;
+#endif
+    return a_modified.tv_sec == b_modified.tv_sec && a_modified.tv_nsec == b_modified.tv_nsec &&
+           a_changed.tv_sec == b_changed.tv_sec && a_changed.tv_nsec == b_changed.tv_nsec;
+}
 static std::string stable_hash(const fs::path& path) {
     struct stat before {
     }, after{};
@@ -48,10 +59,7 @@ static std::string stable_hash(const fs::path& path) {
     auto hash = sha256(path);
     if (stat(path.c_str(), &after) || before.st_dev != after.st_dev ||
         before.st_ino != after.st_ino || before.st_size != after.st_size ||
-        before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
-        before.st_mtim.tv_nsec != after.st_mtim.tv_nsec ||
-        before.st_ctim.tv_sec != after.st_ctim.tv_sec ||
-        before.st_ctim.tv_nsec != after.st_ctim.tv_nsec)
+        !same_times(before, after))
         throw std::runtime_error("Model changed while hashing: " + path.string());
     return hash;
 }
