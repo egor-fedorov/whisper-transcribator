@@ -10,6 +10,7 @@ void configure_reporting(bool quiet, bool verbose);
 void log_message(LogLevel level, const std::string& message);
 void report_progress(const std::string& phase, const std::string& detail, bool force = false);
 void finish_progress();
+std::string format_seconds(double seconds);
 class FileProgress {
     std::string label;
     double total = 0, base = -1, committed = 0, start = 0, window = 0;

@@ -27,6 +27,7 @@ class Journal {
     std::string language() const;
     std::vector<std::string> languages() const;
     bool finished() const;
+    const Json& output_metadata() const;
     void append(int64_t count, const Transcript& transcript);
     void finish();
     void visit(const std::function<void(const Segment&)>& consumer) const;

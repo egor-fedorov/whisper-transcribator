@@ -63,7 +63,7 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
     bool warned = false;
     if (discard)
         log_message(LogLevel::info, "Resume: decoding prefix without inference to " +
-                                        std::to_string(discard / double(sample_rate)) + "s");
+                                        format_seconds(discard / double(sample_rate)) + "s");
     while (discard) {
         check_cancelled();
         auto count = static_cast<size_t>(std::min<int64_t>(discard, 65536));
@@ -72,8 +72,8 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
             throw std::runtime_error("Audio ends before checkpoint position");
         discard -= static_cast<int64_t>(part.size());
         report_progress("Resume decoding",
-                        std::to_string((journal.samples() - discard) / double(sample_rate)) +
-                            " / " + std::to_string(journal.samples() / double(sample_rate)) + "s");
+                        format_seconds((journal.samples() - discard) / double(sample_rate)) +
+                            " / " + format_seconds(journal.samples() / double(sample_rate)) + "s");
     }
     std::vector<float> buffer;
     buffer.reserve(limit);
@@ -100,8 +100,8 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
             progress.recognizing(journal.samples(), buffer.size());
         log_message(
             LogLevel::debug,
-            "Recognizing " + std::to_string(journal.samples() / double(sample_rate)) + "-" +
-                std::to_string((journal.samples() + int64_t(buffer.size())) / double(sample_rate)) +
+            "Recognizing " + format_seconds(journal.samples() / double(sample_rate)) + "-" +
+                format_seconds((journal.samples() + int64_t(buffer.size())) / double(sample_rate)) +
                 "s");
         auto transcript = recognize(buffer);
         check_cancelled();
@@ -121,7 +121,7 @@ void run_chunks(Journal& journal, size_t limit, const ReadAudio& read, const Rec
         journal.append(static_cast<int64_t>(count), transcript);
         buffer.erase(buffer.begin(), buffer.begin() + count);
         log_message(LogLevel::debug,
-                    "Checkpoint: " + std::to_string(journal.samples() / double(sample_rate)) + "s");
+                    "Checkpoint: " + format_seconds(journal.samples() / double(sample_rate)) + "s");
         if (progress.committed)
             progress.committed(journal.samples());
     }

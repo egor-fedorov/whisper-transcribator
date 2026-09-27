@@ -4,7 +4,8 @@
 namespace wt {
 void publish_outputs(const Job& job, const Options& options, Journal& journal) {
     TranscriptSource source{journal.samples(), journal.languages(),
-                            [&](const SegmentConsumer& consume) { journal.visit(consume); }};
+                            [&](const SegmentConsumer& consume) { journal.visit(consume); },
+                            journal.output_metadata()};
     journal.publish(job, options, [&](auto& out, const auto& format) {
         render_stream(out, format, job, options, source);
     });

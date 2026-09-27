@@ -25,9 +25,13 @@ wt_test(cpu-limits unit unit/cpu.cpp)
 wt_test(report unit unit/report.cpp)
 wt_test(resampler unit unit/resampler.cpp)
 target_link_libraries(wt-resampler-tests PRIVATE wt_engine PkgConfig::AV)
+wt_test(timeline unit unit/timeline.cpp)
+target_link_libraries(wt-timeline-tests PRIVATE wt_engine)
 
 wt_test(audio integration integration/audio.cpp)
 target_link_libraries(wt-audio-tests PRIVATE wt_engine)
+wt_test(audio-logging integration integration/audio-logging.cpp)
+target_link_libraries(wt-audio-logging-tests PRIVATE wt_engine PkgConfig::AV)
 wt_test(rendering integration integration/rendering.cpp)
 wt_test(journal integration integration/journal.cpp)
 wt_test(compatibility integration integration/compatibility.cpp)
@@ -51,10 +55,17 @@ if(WT_TEST_FFMPEG)
   add_test(NAME integration/audio-changes COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-changes.sh"
     $<TARGET_FILE:wt-audio-tests> "${WT_TEST_FFMPEG}")
   set_tests_properties(integration/audio-changes PROPERTIES LABELS integration TIMEOUT 60)
+  add_test(NAME integration/audio-timeline COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-timeline.sh"
+    $<TARGET_FILE:wt-audio-tests> "${WT_TEST_FFMPEG}" $<TARGET_FILE:whisper-transcribator>)
+  set_tests_properties(integration/audio-timeline PROPERTIES LABELS integration TIMEOUT 60)
 endif()
 add_test(NAME integration/cli COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/cli.sh"
-  $<TARGET_FILE:whisper-transcribator> "${CMAKE_CURRENT_BINARY_DIR}/cli" "${PROJECT_VERSION}" "${WT_WHISPER_REVISION}")
+  $<TARGET_FILE:whisper-transcribator> "${CMAKE_CURRENT_BINARY_DIR}/cli" "${CMAKE_BINARY_DIR}/generated/package.env" "${WT_WHISPER_REVISION}")
 set_tests_properties(integration/cli PROPERTIES LABELS integration TIMEOUT 60)
+add_test(NAME integration/build-version COMMAND "${CMAKE_COMMAND}"
+  "-DWT_SOURCE=${CMAKE_SOURCE_DIR}" "-DWT_ROOT=${CMAKE_CURRENT_BINARY_DIR}/version-fixture"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/packaging/version.cmake")
+set_tests_properties(integration/build-version PROPERTIES LABELS integration TIMEOUT 60)
 
 wt_test(planning resource resource/planning.cpp)
 if(NOT WT_SANITIZERS)
@@ -74,6 +85,7 @@ set(WT_CHECK_HEADERS
   app/commands.hpp
   audio/audio.hpp
   audio/resampler.hpp
+  audio/timeline.hpp
   inference/runtime.hpp
   inference/whisper.hpp
   models/download.hpp

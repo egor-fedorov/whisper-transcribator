@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <iostream>
 #include <optional>
+#include <regex>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -80,13 +81,15 @@ void discard_checkpoint(const fs::path& directory) {
     sync_directory(directory.parent_path());
 }
 void validate_manifest(const Json& state) {
-    if (state.at("schema_version") != 2)
+    if (state.at("schema_version") != 3)
         throw std::runtime_error("Incompatible checkpoint schema; finish with the previous "
                                  "binary or restart explicitly with --overwrite");
     if (!state.at("fingerprint").is_object() || !state.at("chunks").is_number_integer() ||
         state.at("chunks").get<int64_t>() < 0 || !state.at("samples").is_number_integer() ||
         state.at("samples").get<int64_t>() < 0 || !state.at("languages").is_array() ||
-        !state.at("finished").is_boolean() || !state.at("published_hashes").is_object())
+        !state.at("finished").is_boolean() || !state.at("published_hashes").is_object() ||
+        !state.at("output_metadata").at("model").is_string() ||
+        !state.at("output_metadata").at("run").is_object())
         throw std::runtime_error("Invalid checkpoint manifest");
 }
 void visit_records(const fs::path& directory, const Json& state,
@@ -124,10 +127,23 @@ void visit_records(const fs::path& directory, const Json& state,
         detected != state.at("languages").get<std::vector<std::string>>())
         throw std::runtime_error("Checkpoint commit mismatch");
 }
+bool safe_temporary(const fs::path& path) {
+    static const std::regex pattern("\\.whisper-output-[A-Za-z0-9]{6}");
+    if (!std::regex_match(path.filename().string(), pattern))
+        return false;
+    struct stat st {};
+    if (lstat(path.c_str(), &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
+        st.st_nlink != 1 || (st.st_mode & 0777) != 0600 || st.st_size < 0 ||
+        st.st_size > 16 * 1024 * 1024)
+        throw std::runtime_error("Unsafe checkpoint temporary file: " + path.string());
+    return true;
+}
 void validate_empty_checkpoint(const fs::path& directory, const Json& state) {
     // Validate a possible orphan against a candidate state, never the live journal.
     for (const auto& entry : fs::directory_iterator(directory)) {
         if (entry.path() == directory / "manifest.json")
+            continue;
+        if (safe_temporary(entry.path()))
             continue;
         if (entry.path() != directory / "chunk-0.json")
             throw std::runtime_error("Unknown empty checkpoint contents; use --overwrite");
@@ -157,10 +173,11 @@ std::optional<Json> restore_checkpoint(const fs::path& directory, const Options&
     auto manifest = directory / "manifest.json";
     if (!exists_entry(manifest)) {
         if (exists_entry(directory)) {
-            if (!fs::is_empty(directory))
-                throw std::runtime_error("Checkpoint manifest missing; use --overwrite to restart");
-            fs::remove(directory);
-            sync_directory(directory.parent_path());
+            for (const auto& entry : fs::directory_iterator(directory))
+                if (!safe_temporary(entry.path()))
+                    throw std::runtime_error(
+                        "Checkpoint manifest missing; use --overwrite to restart");
+            discard_checkpoint(directory);
         }
         return std::nullopt;
     }
@@ -176,9 +193,15 @@ std::optional<Json> restore_checkpoint(const fs::path& directory, const Options&
     if (!options.resume)
         throw std::runtime_error("Saved progress exists; use --resume or --overwrite: " +
                                  directory.string());
-    if (nlohmann::json(state.at("fingerprint")) != nlohmann::json(fingerprint))
-        throw std::runtime_error("Checkpoint is incompatible with input, models or settings; "
-                                 "use --overwrite without --resume to restart");
+    auto differences = nlohmann::json::diff(state.at("fingerprint"), fingerprint);
+    if (!differences.empty()) {
+        std::string fields;
+        for (const auto& difference : differences)
+            fields += (fields.empty() ? "" : ", ") + difference.at("path").get<std::string>();
+        throw std::runtime_error("Checkpoint is incompatible; changed fields: " + fields +
+                                 ". Finish with the original settings/binary or explicitly "
+                                 "restart with --overwrite without --resume");
+    }
     return state;
 }
 void reject_legacy_outputs(const Job& job) {
@@ -237,9 +260,15 @@ Journal::Journal(const Job& job, const Options& options, const Json& fingerprint
     if (restored)
         state = std::move(*restored);
     else
-        state = {{"schema_version", 2}, {"fingerprint", fingerprint},        {"chunks", 0},
-                 {"samples", 0},        {"languages", Json::array()},        {"last_hash", ""},
-                 {"finished", false},   {"published_hashes", Json::object()}};
+        state = {{"schema_version", 3},
+                 {"fingerprint", fingerprint},
+                 {"chunks", 0},
+                 {"output_metadata", {{"model", options.model}, {"run", run_metadata(options)}}},
+                 {"samples", 0},
+                 {"languages", Json::array()},
+                 {"last_hash", ""},
+                 {"finished", false},
+                 {"published_hashes", Json::object()}};
     validate_existing_outputs(job, options, state);
 }
 Journal::~Journal() = default;
@@ -252,6 +281,7 @@ std::string Journal::language() const {
     return values.size() == 1 ? values.front() : "";
 }
 bool Journal::finished() const { return state.at("finished").get<bool>(); }
+const Json& Journal::output_metadata() const { return state.at("output_metadata"); }
 fs::path Journal::chunk_path(int64_t index) const {
     return directory / ("chunk-" + std::to_string(index) + ".json");
 }

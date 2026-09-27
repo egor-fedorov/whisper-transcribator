@@ -1,4 +1,5 @@
 #pragma once
+#include "support/json.hpp"
 #include "transcript/types.hpp"
 #include <cstdint>
 #include <functional>
@@ -15,6 +16,7 @@ struct TranscriptSource {
     std::vector<std::string> languages;
     // Rendering JSON traverses the bounded source once for text and once for segments.
     std::function<void(const SegmentConsumer&)> visit;
+    Json metadata = Json::object();
 };
 std::string timestamp(double seconds);
 void render_stream(std::ostream& stream, const std::string& format, const Job& job,

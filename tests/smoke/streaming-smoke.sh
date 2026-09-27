@@ -52,7 +52,7 @@ manifest=$(find "$root/resume/.whisper-transcribator" -name manifest.json -type 
 boundary=$(jq -r '.samples / 16000' "$manifest")
 "$binary" "${common[@]}" --no-vad --resume --output-dir "$root/resume" >"$root/resumed.log" 2>&1
 grep -q '^Resume: decoding prefix without inference to ' "$root/resumed.log"
-if grep -q '^Recognizing 0\.000000-' "$root/resumed.log"; then exit 1; fi
+if grep -q '^Recognizing 0\.0-' "$root/resumed.log"; then exit 1; fi
 jq -e '.duration == 41 and (.segments | length > 1)' "$root/resume/windows.json"
 # Already committed segments must be retained exactly, not regenerated.
 diff <(jq -c --argjson boundary "$boundary" '[.segments[] | select(.end <= $boundary)]' "$root/plain/windows.json") \

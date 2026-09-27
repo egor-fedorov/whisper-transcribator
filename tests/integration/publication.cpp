@@ -24,6 +24,8 @@ void partial_publication_and_external_edits(const fs::path& root) {
     auto json = read_text(publish.job.outputs.at("json"));
     atomic_write(publish.job.outputs.at("json"), "external edit", true);
     publish.options.resume = true;
+    publish.options.cpu_threads = 1;
+    publish.options.model = "/different/spelling/same-weights.bin";
     require(prepare_jobs(publish.options).size() == 1);
     rejects([&] { Journal journal(publish.job, publish.options, publish.fingerprint()); },
             "Output exists and is not a verified resumed result");

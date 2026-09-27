@@ -30,9 +30,12 @@ COPY src/ src/
 COPY tests/ tests/
 ARG WT_CUDA=OFF
 ARG CUDA_ARCHITECTURES=75;80;86;89;90
+ARG WT_SOURCE_REVISION=unknown
+ARG WT_SOURCE_DIRTY=unknown
 RUN cmake -S . -B .build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_CUDA=${WT_CUDA} \
     -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DWT_WERROR=ON \
     -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
+    -DWT_SOURCE_REVISION="${WT_SOURCE_REVISION}" -DWT_SOURCE_DIRTY="${WT_SOURCE_DIRTY}" \
     && cmake --build .build/release -j4 \
     && ctest --test-dir .build/release --output-on-failure
 COPY packaging/ packaging/

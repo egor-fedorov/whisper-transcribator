@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
-project(whisper_transcribator VERSION 0.3.0 LANGUAGES C CXX)
+project(whisper_transcribator VERSION 0.4.0 LANGUAGES C CXX)
+set(WT_VERSION_SUFFIX "-dev")
+set(WT_SOURCE_REVISION "" CACHE STRING "Source commit for builds without Git")
+set(WT_SOURCE_DIRTY "" CACHE STRING "Source dirty state: true, false or unknown")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -13,8 +16,11 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(AV REQUIRED IMPORTED_TARGET libavformat>=59.27.100 libavcodec>=59.37.100 libswresample>=4.7.100 libavutil>=57.28.100)
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
-configure_file(cmake/version.hpp.in generated/version.hpp @ONLY)
-configure_file(cmake/package.env.in generated/package.env @ONLY)
+configure_file(cmake/build-version.cmake.in generated/build-version.cmake @ONLY)
+include("${CMAKE_CURRENT_BINARY_DIR}/generated/build-version.cmake")
+add_custom_target(wt_version
+  COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_BINARY_DIR}/generated/build-version.cmake"
+  BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp" "${CMAKE_CURRENT_BINARY_DIR}/generated/package.env")
 file(READ src/models/catalog.json WT_MODEL_CATALOG)
 configure_file(cmake/catalog.hpp.in generated/catalog.hpp @ONLY)
 add_library(wt_core STATIC
@@ -26,7 +32,7 @@ add_library(wt_core STATIC
 target_include_directories(wt_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(wt_core PUBLIC CURL::libcurl OpenSSL::Crypto nlohmann_json::nlohmann_json)
 add_library(wt_engine STATIC
-  src/audio/audio.cpp src/inference/runtime.cpp src/inference/whisper.cpp
+  src/audio/audio.cpp src/audio/timeline.cpp src/inference/runtime.cpp src/inference/whisper.cpp
   src/app/doctor.cpp src/app/transcribe.cpp)
 target_link_libraries(wt_engine PUBLIC wt_core whisper PkgConfig::AV ${CMAKE_DL_LIBS})
 add_executable(whisper-transcribator src/app/main.cpp src/app/cli.cpp)
@@ -38,6 +44,7 @@ function(wt_warnings target)
   endif()
 endfunction()
 foreach(target wt_core wt_engine whisper-transcribator)
+  add_dependencies(${target} wt_version)
   wt_warnings(${target})
   if(WT_SANITIZERS)
     target_compile_options(${target} PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
