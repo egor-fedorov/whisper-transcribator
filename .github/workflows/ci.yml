@@ -344,6 +344,8 @@ jobs:
           tar -xzf "$RUNNER_TEMP/download.tar.gz" -C "$RUNNER_TEMP/quarantined"
           binary="$RUNNER_TEMP/quarantined/bin/whisper-transcribator"
           echo "Quarantine after tar extraction: $(xattr -p com.apple.quarantine "$binary" 2>/dev/null || echo none)"
+          # Hosted runners may disable Gatekeeper; then the quarantined run succeeds.
+          echo "Gatekeeper: $(spctl --status 2>&1 || true)"
           status=0
           perl -e 'alarm 60; exec @ARGV' "$binary" --version || status=$?
           echo "Quarantined run exit status: $status (informational)"

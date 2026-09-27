@@ -52,7 +52,7 @@ tar -xzf "$archive" -C whisper-transcribator
 ./whisper-transcribator/bin/whisper-transcribator doctor --json
 ```
 
-The archive is signed ad hoc, without an Apple Developer ID, and is not notarized. Downloaded with `curl` as above, it runs directly. Browsers mark downloads as quarantined, and macOS then refuses to run programs that are not notarized; after extracting such a download, remove the mark with `xattr -dr com.apple.quarantine whisper-transcribator`. Macs managed by an organization may forbid such programs altogether. Keep `bin/`, `lib/` and `share/` together, like the Linux archives.
+The archive is signed ad hoc, without an Apple Developer ID, and is not notarized. Downloaded with `curl` as above, it runs directly. Browsers mark downloads as quarantined, `tar` copies the mark to every extracted file, and Gatekeeper, enabled by default, then refuses to run programs that are not notarized. After extracting such a download, remove the mark with `xattr -dr com.apple.quarantine whisper-transcribator`. Macs managed by an organization may forbid such programs altogether. Keep `bin/`, `lib/` and `share/` together, like the Linux archives.
 
 To build from source instead, install the Xcode Command Line Tools and [Homebrew](https://brew.sh):
 
