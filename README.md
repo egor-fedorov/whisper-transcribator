@@ -12,14 +12,14 @@ With an [extracted release archive](#install-a-published-archive), transcribe on
   --naming numbered --skip-existing --model large-v3 --device cuda
 ```
 
-Files run sequentially with one loaded model. A video track is neither required nor decoded. Directory discovery is non-recursive, case-insensitive by extension and sorted by filename bytes; explicit file arguments retain their order. Supported extensions include MP4/M4A, MKV/MKA, WAV/AIFF/AIF, MP3, FLAC, OGG/Opus, TS/MTS/M2TS, 3GP and ASF. Container support does not guarantee every possible embedded codec; packaged codecs are listed in [the recipe](packaging/Dockerfile). Explicit paths are not extension-filtered.
+Files run sequentially with one loaded model. A video track is neither required nor decoded. Directory discovery is non-recursive, case-insensitive by extension and sorted by filename bytes; explicit file arguments retain their order. Supported extensions include MP4/M4A, MKV/MKA, WAV/AIFF/AIF, MP3, FLAC, OGG/Opus, TS/MTS/M2TS, 3GP and ASF. Container support does not guarantee every possible embedded codec; packaged codecs are listed in [the recipe](packaging/ffmpeg.sh). Explicit paths are not extension-filtered.
 
 Defaults: `small`, Russian, TXT paragraphs, device `auto`, beam size 5, VAD enabled and 120-second windows. `--cpu-threads 0` selects physical cores within Linux process affinity and visible cgroup CPU quotas, or performance cores on macOS; explicit positive counts override it. `--language auto` detects language per window. `--device auto` prefers CUDA, then Metal on macOS, and reports CPU fallback; explicit `cuda` or `metal` fails if unavailable.
 
 FFmpeg chooses the best audio stream. `--audio-stream N` selects an absolute container stream index, not an audio ordinal. Explicit selections are checked before model preparation. Captions follow the container timeline; `--timestamp-gaps auto` corrects large transport discontinuities, while `preserve` retains forward gaps. See [timeline rules](docs/resume.md#container-timeline).
 
 ## Install A Published Archive
-Download from [Releases](https://github.com/egor-fedorov/whisper-transcribator/releases). Choose `cpu` or `cuda` for NVIDIA; CUDA runtime libraries are bundled, but a compatible driver is required. Releases after 0.4.0 also include a `linux-aarch64-cpu` archive for 64-bit ARM Linux (for example Raspberry Pi 4/5 with a 64-bit OS, AWS Graviton or Ampere); until then, [build it](docs/releasing.md#arm64) with the same recipe.
+Download from [Releases](https://github.com/egor-fedorov/whisper-transcribator/releases). On Linux choose `cpu` or `cuda` for NVIDIA; CUDA runtime libraries are bundled, but a compatible driver is required. Releases after 0.4.0 also include a `linux-aarch64-cpu` archive for 64-bit ARM Linux (for example Raspberry Pi 4/5 with a 64-bit OS, AWS Graviton or Ampere) and a [macOS archive](#macos); until then, build them with the [same recipes](docs/releasing.md).
 
 ```bash
 version=0.4.0
@@ -37,18 +37,34 @@ tar -xzf "$archive" -C whisper-transcribator
 
 Keep `bin/`, `lib/` and `share/` together: these are not universal static binaries. Archives target Linux x86_64 or aarch64 with glibc 2.35+ (Ubuntu 22.04+, Debian 12+ and derivatives such as 64-bit Raspberry Pi OS) and select a compatible installed CPU plugin: from baseline x86_64 without AVX2, or from ARMv8.0 up to SVE2/SME. 32-bit ARM is not supported; CUDA archives are x86_64-only. Keep all bundled plugins. See [build and release instructions](docs/releasing.md).
 
-## Build On macOS
-There is no macOS archive yet. On a Mac with Apple silicon, build from source with the Xcode Command Line Tools and [Homebrew](https://brew.sh):
+## macOS
+Releases after 0.4.0 include `macos-arm64-metal` for Macs with Apple silicon and macOS 14 or later:
 
 ```bash
-brew install cmake ninja pkgconf ffmpeg openssl@3
+version=X.Y.Z # a release after 0.4.0
+archive="whisper-transcribator-${version}-macos-arm64-metal.tar.gz"
+url="https://github.com/egor-fedorov/whisper-transcribator/releases/download/v${version}"
+curl -fLO "$url/$archive"
+curl -fLO "$url/SHA256SUMS"
+shasum -a 256 --check --ignore-missing SHA256SUMS
+mkdir -p whisper-transcribator
+tar -xzf "$archive" -C whisper-transcribator
+./whisper-transcribator/bin/whisper-transcribator doctor --json
+```
+
+The archive is signed ad hoc, without an Apple Developer ID, and is not notarized. Downloaded with `curl` as above, it runs directly. Browsers mark downloads as quarantined, and macOS then refuses to run programs that are not notarized; after extracting such a download, remove the mark with `xattr -dr com.apple.quarantine whisper-transcribator`. Macs managed by an organization may forbid such programs altogether. Keep `bin/`, `lib/` and `share/` together, like the Linux archives.
+
+To build from source instead, install the Xcode Command Line Tools and [Homebrew](https://brew.sh):
+
+```bash
+brew install cmake ninja pkgconf ffmpeg
 cmake --preset cpu
 cmake --build --preset cpu -j
 ./.build/cpu/whisper-transcribator doctor --json
 ./.build/cpu/whisper-transcribator lecture.m4a --output-dir transcripts --model small
 ```
 
-The build includes whisper.cpp's Metal backend, so `--device auto` runs on the GPU; `--device cpu` uses the CPU with Accelerate. The executable loads its whisper.cpp libraries from the build directory, so keep that directory. CI tests macOS 15 on Apple silicon; Intel Macs build the same way but are not tested. The default APFS volume, like FAT and exFAT drives, ignores letter case: see [batch output names](docs/resume.md#batch-output-names).
+Archives and source builds include whisper.cpp's Metal backend, so `--device auto` runs on the GPU; `--device cpu` uses the CPU with Accelerate. A source build loads its whisper.cpp libraries from the build directory, so keep that directory. CI tests archives on macOS 14 and 15 and source builds on macOS 15, all on Apple silicon; Intel Macs are not supported by the archive and untested from source. The default APFS volume, like FAT and exFAT drives, ignores letter case: see [batch output names](docs/resume.md#batch-output-names).
 
 ## Models And Offline Use
 ```bash

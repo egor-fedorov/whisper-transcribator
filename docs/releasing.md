@@ -72,6 +72,29 @@ emulation but is much slower. CUDA archives remain x86_64-only; the recipe rejec
 `tests/packaging/package.sh` and the release helper reject an archive whose name
 and metadata disagree.
 
+## macOS
+
+The macOS archive `macos-arm64-metal` is built natively on an Apple silicon Mac; CI uses
+GitHub's `macos-15` runners. `packaging/macos.sh` builds the same decoding-only FFmpeg as the
+Linux recipe (`packaging/ffmpeg.sh`), then the application for macOS 14 and later with
+dynamically loaded `apple_m1`, `apple_m2_m3` and `apple_m4` CPU variants, Metal and Accelerate,
+and runs CTest. It copies every library the executable and plugins load, rewrites their
+references to `@rpath` and signs each binary ad hoc. Only libraries that are part of macOS
+(`/usr/lib` and `/System/Library`, such as libcurl, libc++, Metal and Accelerate) stay outside the
+archive; the script and `tests/packaging/package.sh` reject anything else, such as Homebrew paths.
+
+```bash
+brew install ninja pkgconf ffmpeg-full openssl@3 jq # build and test tools, not bundled
+WT_SOURCE_REVISION="$(git rev-parse HEAD)" \
+WT_SOURCE_DIRTY="$(test -z "$(git status --porcelain --untracked-files=no)" && echo false || echo true)" \
+  bash packaging/macos.sh .build/artifacts/macos-arm64
+bash tests/packaging/package.sh .build/artifacts/macos-arm64
+```
+
+The archive has no Apple Developer ID signature and is not notarized; the README explains
+quarantined browser downloads. HTTPS uses the system libcurl and trust store, so the archive has
+no `cacert.pem`, and SHA-256 uses CommonCrypto, so it contains no OpenSSL.
+
 ## CUDA
 
 Use the pinned CUDA 12.8 builder; only the runtime and driver are needed to run
@@ -109,8 +132,9 @@ with narrowly scoped mounts once device permissions are configured.
 ## Gates
 
 1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks, and CTest on macOS arm64.
-2. Build x86_64 CPU/CUDA and aarch64 CPU archives. Inspect bundled dependencies, source packages,
-   vendor notices and SHA256SUMS. No glibc or host driver may be bundled.
+2. Build Linux x86_64 CPU/CUDA, Linux aarch64 CPU and macOS arm64 archives. Inspect bundled
+   dependencies, source packages, vendor notices and SHA256SUMS. No glibc, host driver or
+   macOS system library may be bundled.
 3. Run `tests/smoke/prepare-smoke.sh` once, then `tests/smoke/smoke.sh` with networking disabled
    and a fresh output directory. Use the public 11-second fixture, not lectures.
 4. Check the CPU archive in clean Ubuntu 22.04 without Python/system FFmpeg, and
@@ -118,9 +142,10 @@ with narrowly scoped mounts once device permissions are configured.
    Before release, opt into `tests/packaging/portable.sh BUNDLE OUTPUT FIXTURES` for inference
    with QEMU's non-AVX2 `qemu64` CPU (x86_64) or `cortex-a53` (ARMv8.0, aarch64). Omitting `FIXTURES` only checks backend loading
    and missing-plugin diagnostics, without downloading weights or running inference.
+   Check the macOS archive offline on clean macOS 14 and 15 runners with CPU and Metal.
 5. On a trusted GPU machine, repeat the offline smoke with the CUDA archive and
    `cuda` as the last script argument; test the CUDA image with driver injection.
-   On an Apple silicon Mac, repeat it from a source build with `metal`.
+   On an Apple silicon Mac, repeat it with the macOS archive and `metal`.
 6. Scan the entire Git history for secrets. Review the diff and ensure private
    data/weights and generated artifacts remain ignored. Update release notes.
 7. Only after approval, tag and publish the verified artifacts and checksums.
@@ -137,8 +162,12 @@ The aarch64 legs run natively on `ubuntu-24.04-arm` as `test (gcc, g++, OFF, aar
 Add the aarch64 checks to the branch protection rules after their first successful run.
 `test (macos-15, arm64)` builds from source with Homebrew dependencies and runs CTest, the
 `hdiutil` exFAT check and offline CPU smoke tests, with network access denied by
-`sandbox-exec`. It repeats the smoke with Metal only where the hosted runner exposes Metal,
-so Metal inference remains a manual gate. There is no macOS archive yet.
+`sandbox-exec`. It repeats the smoke with Metal only where the hosted runner exposes Metal.
+`package (macos-arm64)` builds, tests and verifies the macOS archive. `smoke (macos-arm64)` and
+`smoke (macos-arm64, macOS 14)` run it on clean runners: only archive and macOS libraries may
+load, CPU and Metal inference run offline, and a quarantined copy shows how Gatekeeper treats a
+browser download. Hosted runners have a virtual GPU, so Metal on real hardware remains a manual
+gate. Add these checks to the branch protection rules after their first successful run.
 
 The `package` job builds and verifies the archive, dependencies and `doctor`,
 including a model-free baseline-CPU loader check (non-AVX2 x86_64 or ARMv8.0) with a 30-second timeout. It never
@@ -160,11 +189,12 @@ memory tests use synthetic audio and fake inference, not full lecture recognitio
 
 The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
 
-Keep the three archives and their original `SHA256SUMS` under
-`.build/artifacts/cpu/`, `.build/artifacts/cuda/` and `.build/artifacts/cpu-aarch64/`
-(the `native-cpu-aarch64` CI artifact of the release commit). Prepare from a clean checkout
+Keep the four archives and their original `SHA256SUMS` under
+`.build/artifacts/cpu/`, `.build/artifacts/cuda/`, `.build/artifacts/cpu-aarch64/` and
+`.build/artifacts/macos-arm64/` (the `native-cpu-aarch64` and `native-macos-arm64` CI artifacts
+of the release commit). Prepare from a clean checkout
 of the release commit after its `main` CI has passed. The helper verifies every
-checksum, target architecture and packaged project source against Git, then checks local and
+checksum, target system and architecture and packaged project source against Git, then checks local and
 remote tag targets and CI. It never publishes automatically or overwrites assets.
 
 ```bash
@@ -176,7 +206,7 @@ bash packaging/release.sh "$version" .build/artifacts --draft
 gh release view "v$version"
 ```
 
-The draft contains x86_64 CPU/CUDA and aarch64 CPU archives, combined checksums, release notes and the
+The draft contains the four archives, combined checksums, release notes and the
 source commit/CI link. This validates artifact integrity and source correspondence,
 not that CUDA inference ran: the short hardware smoke gate above remains mandatory
 for the exact archive to be published. After reviewing the draft and the GPU check:
