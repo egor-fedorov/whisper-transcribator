@@ -8,6 +8,7 @@
 #include "support/report.hpp"
 #include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <fcntl.h>
 #include <iostream>
 #include <memory>
@@ -119,10 +120,10 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
         throw std::runtime_error(
             "Model size/SHA-256 verification failed; removed corrupt partial download");
     }
-    if (link(temporary.c_str(), target.c_str()))
-        throw std::runtime_error("Cannot publish downloaded model; target preserved");
+    if (rename_noreplace(temporary, target))
+        throw std::runtime_error("Cannot publish downloaded model; target preserved: " +
+                                 std::string(std::strerror(errno)));
     sync_directory(root);
-    unlink(temporary.c_str());
     return {target, model.hash};
 }
 PreparedModel prepare_model(const std::string& value, const Options& options) {

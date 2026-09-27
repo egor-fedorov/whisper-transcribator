@@ -11,13 +11,29 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 namespace wt {
+namespace {
+// Partial downloads are private to this user. A cache on a filesystem without POSIX permissions
+// (FAT, exFAT, some FUSE/SMB mounts) cannot store their owner or mode; the file type and link
+// checks remain, and the final size/SHA-256 verification still guards published weights.
+bool private_partial(const struct stat& st, const fs::path& root) {
+    if (st.st_uid == geteuid() && !(st.st_mode & 0077))
+        return true;
+    auto stored = probe_permissions(root);
+    static bool noted = false;
+    if ((!stored.owner || !stored.mode) && !std::exchange(noted, true))
+        log_message(LogLevel::debug,
+                    "Model cache does not store POSIX owners and modes: " + root.string());
+    return stored.accepts(st, !(st.st_mode & 0077));
+}
+} // namespace
 UniqueFd open_partial_model(const fs::path& path) {
     UniqueFd fd(open(path.c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600));
     struct stat st {};
-    if (fd.get() < 0 || fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || st.st_uid != geteuid() ||
-        st.st_nlink != 1 || (st.st_mode & 0077)) {
+    if (fd.get() < 0 || fstat(fd.get(), &st) || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
+        !private_partial(st, path.parent_path())) {
         throw std::runtime_error("Unsafe partial model file: " + path.string());
     }
     return fd;
