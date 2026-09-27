@@ -81,11 +81,11 @@ with narrowly scoped mounts once device permissions are configured.
 1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks.
 2. Build CPU and CUDA archives. Inspect bundled dependencies, source packages,
    vendor notices and SHA256SUMS. No glibc or host driver may be bundled.
-3. Run `tests/prepare-smoke.sh` once, then `tests/smoke.sh` with networking disabled
+3. Run `tests/smoke/prepare-smoke.sh` once, then `tests/smoke/smoke.sh` with networking disabled
    and a fresh output directory. Use the public 11-second fixture, not lectures.
 4. Check the CPU archive in clean Ubuntu 22.04 without Python/system FFmpeg, and
    the CPU runtime image. Confirm nonempty TXT/SRT/VTT/JSON and nonzero failure exits.
-   Before release, opt into `tests/portable.sh BUNDLE OUTPUT FIXTURES` for inference
+   Before release, opt into `tests/packaging/portable.sh BUNDLE OUTPUT FIXTURES` for inference
    with QEMU's non-AVX2 `qemu64` CPU. Omitting `FIXTURES` only checks backend loading
    and missing-plugin diagnostics, without downloading weights or running inference.
 5. On a trusted GPU machine, repeat the offline smoke with the CUDA archive and

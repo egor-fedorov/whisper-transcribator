@@ -1,52 +1,107 @@
-add_executable(wt-tests core.cpp)
-target_link_libraries(wt-tests PRIVATE wt_core)
-add_test(NAME core COMMAND wt-tests)
-add_executable(wt-report-tests report.cpp)
-target_link_libraries(wt-report-tests PRIVATE wt_core)
-add_test(NAME report COMMAND wt-report-tests)
-add_executable(wt-output-tests outputs.cpp)
-target_link_libraries(wt-output-tests PRIVATE wt_core)
-add_test(NAME outputs COMMAND wt-output-tests)
-add_executable(wt-cpu-tests cpu.cpp)
-target_link_libraries(wt-cpu-tests PRIVATE wt_core)
-add_test(NAME cpu-limits COMMAND wt-cpu-tests)
-add_executable(wt-model-tests models.cpp)
-target_link_libraries(wt-model-tests PRIVATE wt_core)
-add_test(NAME models COMMAND wt-model-tests)
+add_library(wt_test_support STATIC support/test.cpp support/fixtures.cpp)
+target_include_directories(wt_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(wt_test_support PUBLIC wt_core)
+wt_warnings(wt_test_support)
+
+function(wt_test_target name source)
+  add_executable(wt-${name}-tests ${source})
+  target_link_libraries(wt-${name}-tests PRIVATE wt_test_support)
+  wt_warnings(wt-${name}-tests)
+endfunction()
+function(wt_test name label source)
+  wt_test_target(${name} ${source})
+  add_test(NAME ${label}/${name} COMMAND wt-${name}-tests)
+  set_tests_properties(${label}/${name} PROPERTIES LABELS ${label} TIMEOUT 60)
+endfunction()
+
+wt_test(io unit unit/io.cpp)
+wt_test(assertions unit unit/assertions.cpp)
+wt_test(fd unit unit/fd.cpp)
+wt_test(formatting unit unit/rendering.cpp)
+wt_test(jobs unit unit/jobs.cpp)
+wt_test(model-cache unit unit/model-cache.cpp)
+wt_test(boundaries unit unit/boundaries.cpp)
+wt_test(cpu-limits unit unit/cpu.cpp)
+wt_test(report unit unit/report.cpp)
+wt_test(resampler unit unit/resampler.cpp)
+target_link_libraries(wt-resampler-tests PRIVATE wt_engine PkgConfig::AV)
+
+wt_test(audio integration integration/audio.cpp)
+target_link_libraries(wt-audio-tests PRIVATE wt_engine)
+wt_test(rendering integration integration/rendering.cpp)
+wt_test(journal integration integration/journal.cpp)
+wt_test(compatibility integration integration/compatibility.cpp)
+target_compile_definitions(wt-compatibility-tests PRIVATE WT_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+wt_test(pipeline integration integration/pipeline.cpp)
+wt_test(publication integration integration/publication.cpp)
+wt_test(recovery integration integration/recovery.cpp)
+wt_test(model-concurrency integration integration/model-concurrency.cpp)
+set_tests_properties(integration/model-concurrency PROPERTIES TIMEOUT 30)
+
 find_package(OpenSSL REQUIRED COMPONENTS SSL)
 find_package(Threads REQUIRED)
-add_executable(wt-download-tests downloads.cpp)
-target_link_libraries(wt-download-tests PRIVATE wt_core OpenSSL::SSL Threads::Threads)
-add_test(NAME downloads COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/downloads.sh" $<TARGET_FILE:wt-download-tests>)
-set_tests_properties(downloads PROPERTIES TIMEOUT 45)
-set_tests_properties(models PROPERTIES TIMEOUT 30)
-add_executable(wt-planning-tests planning.cpp)
-target_link_libraries(wt-planning-tests PRIVATE wt_core)
-add_test(NAME planning COMMAND wt-planning-tests)
-set_tests_properties(planning PROPERTIES TIMEOUT 60)
-add_executable(wt-audio-tests audio.cpp)
-target_link_libraries(wt-audio-tests PRIVATE wt_engine)
-add_test(NAME audio COMMAND wt-audio-tests)
+wt_test_target(download integration/downloads.cpp)
+target_link_libraries(wt-download-tests PRIVATE OpenSSL::SSL Threads::Threads)
+add_test(NAME integration/downloads COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/downloads.sh"
+  $<TARGET_FILE:wt-download-tests>)
+set_tests_properties(integration/downloads PROPERTIES LABELS integration TIMEOUT 45)
+
 find_program(WT_TEST_FFMPEG ffmpeg)
 if(WT_TEST_FFMPEG)
-  add_test(NAME audio-changes COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/audio-changes.sh"
+  add_test(NAME integration/audio-changes COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-changes.sh"
     $<TARGET_FILE:wt-audio-tests> "${WT_TEST_FFMPEG}")
-  set_tests_properties(audio-changes PROPERTIES TIMEOUT 60)
+  set_tests_properties(integration/audio-changes PROPERTIES LABELS integration TIMEOUT 60)
 endif()
-add_executable(wt-pipeline-tests pipeline.cpp)
-target_link_libraries(wt-pipeline-tests PRIVATE wt_core)
-add_test(NAME pipeline COMMAND wt-pipeline-tests "${CMAKE_CURRENT_BINARY_DIR}/pipeline")
-add_test(NAME cli COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/cli.sh"
+add_test(NAME integration/cli COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/cli.sh"
   $<TARGET_FILE:whisper-transcribator> "${CMAKE_CURRENT_BINARY_DIR}/cli" "${PROJECT_VERSION}" "${WT_WHISPER_REVISION}")
-set_tests_properties(core audio cli pipeline PROPERTIES TIMEOUT 60)
+set_tests_properties(integration/cli PROPERTIES LABELS integration TIMEOUT 60)
+
+wt_test(planning resource resource/planning.cpp)
 if(NOT WT_SANITIZERS)
-  add_executable(wt-memory-tests memory.cpp)
+  wt_test(memory resource resource/memory.cpp)
   target_link_libraries(wt-memory-tests PRIVATE wt_engine)
-  add_test(NAME memory COMMAND wt-memory-tests "${CMAKE_CURRENT_BINARY_DIR}/memory")
-  set_tests_properties(memory PROPERTIES TIMEOUT 180)
+  set_tests_properties(resource/memory PROPERTIES TIMEOUT 180)
 endif()
-foreach(target wt-tests wt-report-tests wt-output-tests wt-cpu-tests wt-model-tests wt-download-tests wt-planning-tests wt-audio-tests wt-pipeline-tests wt-memory-tests)
-  if(TARGET ${target})
-    wt_warnings(${target})
-  endif()
+
+add_executable(wt-audio-fixture support/audio-fixture.cpp)
+target_include_directories(wt-audio-fixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(wt-audio-fixture PRIVATE wt_engine)
+wt_warnings(wt-audio-fixture)
+
+# Compile each project header alone, without backend or CLI include directories.
+set(WT_CHECK_HEADERS
+  app/cli.hpp
+  app/commands.hpp
+  audio/audio.hpp
+  audio/resampler.hpp
+  inference/runtime.hpp
+  inference/whisper.hpp
+  models/download.hpp
+  models/models.hpp
+  support/cancel.hpp
+  support/cpu.hpp
+  support/error.hpp
+  support/fd.hpp
+  support/fs.hpp
+  support/hash.hpp
+  support/io.hpp
+  support/json.hpp
+  support/options.hpp
+  support/report.hpp
+  transcript/jobs.hpp
+  transcript/journal.hpp
+  transcript/metadata.hpp
+  transcript/outputs.hpp
+  transcript/pipeline.hpp
+  transcript/types.hpp
+)
+set(WT_HEADER_SOURCES)
+foreach(header IN LISTS WT_CHECK_HEADERS)
+  string(REPLACE "/" "_" name "${header}")
+  set(source "${CMAKE_CURRENT_BINARY_DIR}/headers/${name}.cpp")
+  file(GENERATE OUTPUT "${source}" CONTENT "#include \"${header}\"\n")
+  list(APPEND WT_HEADER_SOURCES "${source}")
 endforeach()
+add_library(wt-header-checks OBJECT ${WT_HEADER_SOURCES})
+target_link_libraries(wt-header-checks PRIVATE wt_core)
+wt_warnings(wt-header-checks)

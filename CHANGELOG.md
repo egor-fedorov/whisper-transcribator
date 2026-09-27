@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Simplify checkpoint recovery and descriptor ownership, isolate streaming formatters and read-only job planning, and strengthen failure/compatibility tests; run CI lint checks once and make the ccache clean-rebuild check opt-in.
+- Organize source code by responsibility and tests by execution scope, isolate the whisper session and checkpoint rendering, and check standalone headers; preserve CLI behavior, output formats and checkpoint compatibility.
 - Separate model-free archive packaging from native smoke tests using the same artifact; restrict slow non-AVX2 QEMU inference to an explicit manual workflow and keep only a quick loader check on pull requests.
 - Select CPU threads from physical cores, process affinity and visible hierarchical cgroup quotas; report the effective count in diagnostics and retain explicit overrides.
 - Build portable archives with dynamically selected CPU variants, including baseline x86_64 without AVX2; package plugin dependencies and test missing-plugin diagnostics and non-AVX2 inference.

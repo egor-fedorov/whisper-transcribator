@@ -15,14 +15,21 @@ find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 configure_file(cmake/version.hpp.in generated/version.hpp @ONLY)
 configure_file(cmake/package.env.in generated/package.env @ONLY)
-file(READ src/model_catalog.json WT_MODEL_CATALOG)
+file(READ src/models/catalog.json WT_MODEL_CATALOG)
 configure_file(cmake/catalog.hpp.in generated/catalog.hpp @ONLY)
-add_library(wt_core STATIC src/io.cpp src/jobs.cpp src/models.cpp src/download.cpp src/outputs.cpp src/journal.cpp src/pipeline.cpp src/report.cpp src/cpu.cpp)
+add_library(wt_core STATIC
+  src/support/io.cpp src/support/hash.cpp src/support/cancel.cpp
+  src/support/report.cpp src/support/cpu.cpp
+  src/models/models.cpp src/models/download.cpp
+  src/transcript/jobs.cpp src/transcript/metadata.cpp src/transcript/outputs.cpp
+  src/transcript/journal.cpp src/transcript/pipeline.cpp src/transcript/publication.cpp)
 target_include_directories(wt_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(wt_core PUBLIC CURL::libcurl OpenSSL::Crypto nlohmann_json::nlohmann_json)
-add_library(wt_engine STATIC src/audio.cpp src/engine.cpp)
+add_library(wt_engine STATIC
+  src/audio/audio.cpp src/inference/runtime.cpp src/inference/whisper.cpp
+  src/app/doctor.cpp src/app/transcribe.cpp)
 target_link_libraries(wt_engine PUBLIC wt_core whisper PkgConfig::AV ${CMAKE_DL_LIBS})
-add_executable(whisper-transcribator src/main.cpp src/cli.cpp)
+add_executable(whisper-transcribator src/app/main.cpp src/app/cli.cpp)
 target_link_libraries(whisper-transcribator PRIVATE wt_engine CLI11::CLI11)
 function(wt_warnings target)
   target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)

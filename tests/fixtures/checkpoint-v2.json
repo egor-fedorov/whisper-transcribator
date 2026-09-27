@@ -1,0 +1,113 @@
+{
+  "tail": {
+    "manifest": {
+      "schema_version": 2,
+      "fingerprint": {
+        "source": "/fixture/source.wav",
+        "size": 19,
+        "sha256": "0b2811a070d712b1a30e85aa582f9c280699d2db61bac36594c0a50f02465ae0",
+        "outputs": {
+          "json": "/fixture/source.json",
+          "srt": "/fixture/source.srt",
+          "text": "/fixture/source.txt",
+          "vtt": "/fixture/source.vtt"
+        },
+        "run": {
+          "backend": "whisper.cpp",
+          "version": "0.3.0",
+          "backend_revision": "927cfce34f31707e17f2bff35c349632fb9e2c3a",
+          "device": "auto",
+          "beam_size": 5,
+          "cpu_threads": 0,
+          "audio_stream": -1,
+          "text_layout": "paragraphs",
+          "paragraph_pause_ms": 2000,
+          "vad": true,
+          "vad_min_silence_ms": 2000,
+          "flash_attention": true,
+          "chunk_seconds": 120,
+          "chunk_min_silence_ms": 200,
+          "chunking_version": 3
+        },
+        "language": "auto",
+        "model": "small",
+        "backend": {
+          "model_sha256": "fixture"
+        }
+      },
+      "chunks": 1,
+      "samples": 160000,
+      "languages": [
+        "en"
+      ],
+      "last_hash": "af54445908686212563368c4c44d3c2f6e943f0f96f161ebad718c3269d83e95",
+      "finished": false,
+      "published_hashes": {}
+    },
+    "chunks": [
+      "{\"index\":0,\"start_sample\":0,\"end_sample\":160000,\"previous_hash\":\"\",\"language\":\"en\",\"segments\":[{\"start\":0.0,\"end\":5.0,\"text\":\"First line.\",\"no_speech_prob\":0.1}]}"
+    ]
+  },
+  "publication": {
+    "manifest": {
+      "schema_version": 2,
+      "fingerprint": {
+        "source": "/fixture/source.wav",
+        "size": 19,
+        "sha256": "0b2811a070d712b1a30e85aa582f9c280699d2db61bac36594c0a50f02465ae0",
+        "outputs": {
+          "json": "/fixture/source.json",
+          "srt": "/fixture/source.srt",
+          "text": "/fixture/source.txt",
+          "vtt": "/fixture/source.vtt"
+        },
+        "run": {
+          "backend": "whisper.cpp",
+          "version": "0.3.0",
+          "backend_revision": "927cfce34f31707e17f2bff35c349632fb9e2c3a",
+          "device": "auto",
+          "beam_size": 5,
+          "cpu_threads": 0,
+          "audio_stream": -1,
+          "text_layout": "paragraphs",
+          "paragraph_pause_ms": 2000,
+          "vad": true,
+          "vad_min_silence_ms": 2000,
+          "flash_attention": true,
+          "chunk_seconds": 120,
+          "chunk_min_silence_ms": 200,
+          "chunking_version": 3
+        },
+        "language": "auto",
+        "model": "small",
+        "backend": {
+          "model_sha256": "fixture"
+        }
+      },
+      "chunks": 2,
+      "samples": 320000,
+      "languages": [
+        "en",
+        "ru"
+      ],
+      "last_hash": "da267f1f781fec0885a307448a7b86ee51d0ecc4f23cc63a400157178599bd0a",
+      "finished": true,
+      "published_hashes": {
+        "json": "0567f532f0ed2795e645d6a7bd93154f59c01db26cb4922efc70a932084fafec",
+        "srt": "4b6f29931bf69b558aa0309ed66bda6a2e1a8f55cea32f8d3cd783fa04108642",
+        "text": "6ed55358d446efe296fddf0ca561a72916dba99991d5ef90535309accc7379bf",
+        "vtt": "55e3a4715bc3d2cd58105276844f47a0e12b6d2de28aff5e96d9287d83112984"
+      }
+    },
+    "chunks": [
+      "{\"index\":0,\"start_sample\":0,\"end_sample\":160000,\"previous_hash\":\"\",\"language\":\"en\",\"segments\":[{\"start\":0.0,\"end\":5.0,\"text\":\"First line.\",\"no_speech_prob\":0.1}]}",
+      "{\"index\":1,\"start_sample\":160000,\"end_sample\":320000,\"previous_hash\":\"af54445908686212563368c4c44d3c2f6e943f0f96f161ebad718c3269d83e95\",\"language\":\"ru\",\"segments\":[{\"start\":10.0,\"end\":12.0,\"text\":\"Second & <line>.\",\"no_speech_prob\":0.2},{\"start\":15.0,\"end\":17.0,\"text\":\"Last line.\",\"no_speech_prob\":0.3}]}"
+    ]
+  },
+  "outputs": {
+    "json": "{\"schema_version\":2,\"source\":\"/fixture/source.wav\",\"model\":\"small\",\"language\":null,\"languages\":[\"en\",\"ru\"],\"language_probability\":null,\"duration\":20.0,\"duration_after_vad\":null,\"text\":\"First line.\\n\\nSecond & <line>.\\n\\nLast line.\",\"segments\":[{\"id\":0,\"start\":0.0,\"end\":5.0,\"text\":\"First line.\",\"language\":\"en\",\"avg_logprob\":null,\"compression_ratio\":null,\"no_speech_prob\":0.1},{\"id\":1,\"start\":10.0,\"end\":12.0,\"text\":\"Second & <line>.\",\"language\":\"ru\",\"avg_logprob\":null,\"compression_ratio\":null,\"no_speech_prob\":0.2},{\"id\":2,\"start\":15.0,\"end\":17.0,\"text\":\"Last line.\",\"language\":\"ru\",\"avg_logprob\":null,\"compression_ratio\":null,\"no_speech_prob\":0.3}],\"run\":{\"backend\":\"whisper.cpp\",\"version\":\"0.3.0\",\"backend_revision\":\"927cfce34f31707e17f2bff35c349632fb9e2c3a\",\"device\":\"auto\",\"beam_size\":5,\"cpu_threads\":0,\"audio_stream\":-1,\"text_layout\":\"paragraphs\",\"paragraph_pause_ms\":2000,\"vad\":true,\"vad_min_silence_ms\":2000,\"flash_attention\":true,\"chunk_seconds\":120,\"chunk_min_silence_ms\":200,\"chunking_version\":3}}\n",
+    "srt": "1\n00:00:00,000 --> 00:00:05,000\nFirst line.\n\n2\n00:00:10,000 --> 00:00:12,000\nSecond & <line>.\n\n3\n00:00:15,000 --> 00:00:17,000\nLast line.\n\n",
+    "text": "First line.\n\nSecond & <line>.\n\nLast line.\n",
+    "vtt": "WEBVTT\n\n1\n00:00:00.000 --> 00:00:05.000\nFirst line.\n\n2\n00:00:10.000 --> 00:00:12.000\nSecond &amp; &lt;line&gt;.\n\n3\n00:00:15.000 --> 00:00:17.000\nLast line.\n\n"
+  }
+}

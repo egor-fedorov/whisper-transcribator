@@ -13,13 +13,26 @@ Upstream sources are fetched at pinned revisions with SHA-256 checks.
 cmake --preset cpu
 cmake --build --preset cpu -j4
 ctest --preset cpu
-clang-format-18 --dry-run --Werror src/*.cpp src/*.hpp tests/*.cpp
-shellcheck tests/*.sh packaging/*.sh
-bash tests/release.sh
+find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-18 --dry-run --Werror {} +
+find tests packaging -type f -name '*.sh' -exec shellcheck {} +
+bash tests/packaging/release.sh
 cmake --preset asan
 cmake --build --preset asan -j4
 ctest --preset asan
 ```
+
+Run a focused model-free group with CTest labels; the unfiltered command above still runs all required checks:
+
+```bash
+ctest --preset cpu -L unit
+ctest --preset cpu -L integration
+ctest --preset cpu -L resource
+ctest --preset cpu -j4 --schedule-random
+```
+
+Integration checks use synthetic media, fake inference or a loopback TLS server, not downloaded models. Resource checks retain their existing timeouts; the RSS comparison is excluded from sanitizer builds. Each C++ scenario gets a unique temporary directory, removed on success and reported/preserved on failure. Shared helpers restore scoped environment, current-directory and stream changes.
+
+Assertions report the calling file and line. Negative tests must name the expected error reason; use `rejects<Error>(action, reason)` when a specific exception type is part of the contract. Assertions inside an action are not accepted as ordinary runtime failures. Frozen synthetic checkpoint/output compatibility fixtures live in `tests/fixtures/`; do not regenerate expectations with the code under test.
 
 ASan/UBSan instrument this project's code, not an audit of upstream dependencies.
 LeakSanitizer cannot run under ptrace-based sandboxes; run these checks normally,
@@ -33,11 +46,11 @@ builds; portable packaging explicitly keeps it off.
 The optional inference check uses only a public 11-second JFK recording:
 
 ```bash
-bash tests/prepare-smoke.sh .build/cpu/whisper-transcribator .build/fixtures
-bash tests/smoke.sh .build/cpu/whisper-transcribator .build/fixtures/jfk.wav \
+bash tests/smoke/prepare-smoke.sh .build/cpu/whisper-transcribator .build/fixtures
+bash tests/smoke/smoke.sh .build/cpu/whisper-transcribator .build/fixtures/jfk.wav \
   .build/fixtures/ggml-tiny.bin .build/fixtures/ggml-silero-v6.2.0.bin .build/smoke
-bash tests/streaming-smoke.sh .build/cpu/whisper-transcribator \
-  .build/cpu/tests/wt-audio-tests .build/fixtures/jfk.wav \
+bash tests/smoke/streaming-smoke.sh .build/cpu/whisper-transcribator \
+  .build/cpu/tests/wt-audio-fixture .build/fixtures/jfk.wav \
   .build/fixtures/ggml-tiny.bin .build/fixtures/ggml-silero-v6.2.0.bin .build/streaming-smoke
 ```
 
@@ -57,12 +70,28 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 
 ## Layout
 
-- `src/`: CLI, job planning, outputs, cache/downloads, decoding and inference.
+- `src/app/`: CLI parsing, diagnostics and sequential job orchestration.
+- `src/audio/`: FFmpeg decoding, audio-stream selection and resampling.
+- `src/inference/`: whisper.cpp device discovery, logging and a lazily initialized RAII session shared across files.
+- `src/models/`: pinned catalog, model cache, locking and HTTPS transfers.
+- `src/transcript/`: value types, job planning, windowing, metadata, checkpoint integrity and output rendering.
+- `src/support/`: plain options, filesystem/hash operations, cancellation, CPU limits and reporting.
 - `cmake/`: pinned dependencies and generated metadata.
-- `tests/`: model-free checks and short optional integration checks.
+- `tests/unit/` and `tests/integration/`: focused component checks and cross-component recovery, audio, CLI and process scenarios.
+- `tests/resource/`: synthetic bounded-memory and planning-scale checks.
+- `tests/fixtures/`: reviewed synthetic checkpoint and output snapshots for cross-version compatibility.
+- `tests/smoke/`: public fixture preparation and short real-inference checks, separate from default CTest.
+- `tests/packaging/`: archive, release-helper and portable-loader checks; QEMU inference remains explicitly opt-in.
+- `tests/support/`: assertions, scoped fixtures, fake audio/inference and the separate `wt-audio-fixture` generator.
 - `packaging/`: archive/container recipes and dependency collection.
 - `docs/`: usage, migration, distribution and design decisions.
 - `.build/`: all generated build, test and release artifacts.
+
+Keep includes specific to their owner; do not restore an umbrella application header. Application code coordinates the modules. Audio and inference adapters contain upstream API calls; model-free transcript logic and support code must not include whisper, FFmpeg or CLI11 headers. The journal owns durable publication and receives a renderer callback. `transcript/publication.cpp` adapts the journal to a repeatable streaming segment source; format serializers and paragraph layout have no filesystem or journal dependency. Run metadata is shared by fingerprinting and rendering.
+
+Job planning validates inputs, output collisions and numbered mappings before preparing directories or publishing a new mapping. Journal recovery validates records against explicit candidate states without mutating a live journal. `support/fd.hpp` owns descriptor lifetimes only; checkpoint locks still fail immediately, while model-download locks wait cancellably.
+
+Production build targets remain `wt_core`, `wt_engine` and the CLI. Source lists are explicit; register new headers in the standalone header compilation list in `tests/CMakeLists.txt`. Keep model-free checks in CTest and real inference in smoke scripts. Avoid adding a library or interface for every directory.
 
 Add regressions for output safety, error codes and interrupted operations.
 Keep manual GPU tests on a trusted machine; never execute untrusted PR code on
@@ -72,5 +101,7 @@ packaging and documentation. Do not publish releases automatically.
 Open a PR against `main`; required CI checks must pass on an up-to-date branch.
 Force pushes and deletion of `main` are disabled. Use squash merges for focused
 changes. Release preparation is documented in [releasing](docs/releasing.md).
+
+Normal CI builds each compiler configuration once and runs formatting, ShellCheck and release-helper checks only in the GCC job. Ccache statistics remain visible; use the manual workflow's `verify_ccache` input to exercise the additional clean rebuild/cache-hit check. Required test, packaging and smoke jobs are unchanged.
 
 Write each release-note paragraph or list item on a single physical line. Do not manually wrap prose, indent continuation lines, or add blank lines after headings; let the renderer wrap text to the reader's window.
