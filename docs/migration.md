@@ -41,9 +41,11 @@ choose that model; the CLI does not convert weights.
 ## Unreleased Main
 
 The native backend adds `--chunk-seconds` and `--resume`, not Python checkpoint
-imports or recovery of interrupted 0.3.0 inference. Checkpoint schema 2 / chunking
+imports or recovery of interrupted 0.3.0 inference. Checkpoint schema 3 / chunking
 version 3 reject earlier unfinished progress without migration: finish with the
-old binary or explicitly restart. See the README's long-recording section.
+old binary or explicitly restart. See [long recordings and resume](resume.md).
+
+Container-relative timestamps now preserve delayed audio and packet gaps. Schema-2 checkpoints from older `main` builds cannot be resumed under this timeline. CPU counts and equivalent model spellings may change when resuming schema 3; original output metadata remains frozen for reproducible publication.
 
 TXT and JSON aggregate text now use paragraphs by default; choose
 `--text-layout single-line` to retain the old layout. JSON schema 2 records

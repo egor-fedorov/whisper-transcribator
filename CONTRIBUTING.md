@@ -5,7 +5,7 @@ second inference implementation or revive the historical Python pipeline.
 
 ## Build And Test
 
-On Ubuntu 24.04 install `cmake ninja-build g++ pkg-config libavformat-dev
+On Ubuntu 24.04 install `cmake ninja-build g++ git pkg-config libavformat-dev
 libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev`.
 Upstream sources are fetched at pinned revisions with SHA-256 checks.
 
@@ -71,7 +71,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 ## Layout
 
 - `src/app/`: CLI parsing, diagnostics and sequential job orchestration.
-- `src/audio/`: FFmpeg decoding, audio-stream selection and resampling.
+- `src/audio/`: FFmpeg decoding, audio-stream selection, resampling and bounded container-timeline alignment. The timestamp policy is separately testable without FFmpeg.
 - `src/inference/`: whisper.cpp device discovery, logging and a lazily initialized RAII session shared across files.
 - `src/models/`: pinned catalog, model cache, locking and HTTPS transfers.
 - `src/transcript/`: value types, job planning, windowing, metadata, checkpoint integrity and output rendering.
@@ -87,7 +87,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 - `docs/`: usage, migration, distribution and design decisions.
 - `.build/`: all generated build, test and release artifacts.
 
-Keep includes specific to their owner; do not restore an umbrella application header. Application code coordinates the modules. Audio and inference adapters contain upstream API calls; model-free transcript logic and support code must not include whisper, FFmpeg or CLI11 headers. The journal owns durable publication and receives a renderer callback. `transcript/publication.cpp` adapts the journal to a repeatable streaming segment source; format serializers and paragraph layout have no filesystem or journal dependency. Run metadata is shared by fingerprinting and rendering.
+Keep includes specific to their owner; do not restore an umbrella application header. Application code coordinates the modules. Audio and inference adapters contain upstream API calls; model-free transcript logic and support code must not include whisper, FFmpeg or CLI11 headers. The journal owns durable publication and receives a renderer callback. `transcript/publication.cpp` adapts the journal to a repeatable streaming segment source; format serializers and paragraph layout have no filesystem or journal dependency. Compatibility metadata excludes execution-only fields; original output metadata is frozen in the journal for byte-stable resumed publication. Changes in timeline, chunking or serialization behavior require an explicit algorithm-version and fixture review, not merely a new application version.
 
 Job planning validates inputs, output collisions and numbered mappings before preparing directories or publishing a new mapping. Journal recovery validates records against explicit candidate states without mutating a live journal. `support/fd.hpp` owns descriptor lifetimes only; checkpoint locks still fail immediately, while model-download locks wait cancellably.
 
