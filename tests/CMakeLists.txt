@@ -29,6 +29,9 @@ wt_test(timeline unit unit/timeline.cpp)
 target_link_libraries(wt-timeline-tests PRIVATE wt_engine)
 wt_test(decode-errors unit unit/audio-recovery.cpp)
 target_link_libraries(wt-decode-errors-tests PRIVATE wt_engine)
+add_test(NAME unit/platform-boundary COMMAND "${CMAKE_COMMAND}" "-DWT_SOURCE=${CMAKE_SOURCE_DIR}"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/unit/platform-boundary.cmake")
+set_tests_properties(unit/platform-boundary PROPERTIES LABELS unit TIMEOUT 60)
 
 wt_test(audio integration integration/audio.cpp)
 target_link_libraries(wt-audio-tests PRIVATE wt_engine)
