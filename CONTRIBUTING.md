@@ -120,13 +120,9 @@ Git Bash runs portable shell tests. `tests/support/process.*` owns native child 
 
 ## Layout
 
-- `src/app/`: CLI parsing, diagnostics and sequential job orchestration.
-- `src/audio/`: FFmpeg decoding, audio-stream selection, resampling and bounded container-timeline alignment. Timestamp placement and decode-error budgets are independently testable policies; public headers do not expose FFmpeg headers.
-- `src/inference/`: whisper.cpp device discovery, logging and a lazily initialized RAII session shared across files.
-- `src/models/`: pinned catalog, model cache, locking and HTTPS transfers.
-- `src/transcript/`: value types, job planning, windowing, metadata, checkpoint integrity and output rendering.
-- `src/platform/`: operating-system files, locks, renames, signals, CPU limits and the system SHA-256 behind a small interface; the `-posix.cpp` files implement it for Linux and macOS and the `-win32.cpp` files for Windows. Native CI compiles and tests both implementations.
-- `src/support/`: plain options, atomic publication, hashing, cancellation and reporting.
+See [Architecture](docs/architecture.md) for module responsibilities, settings ownership, dependency rules and the transcription/publication data flow. Keep that document current when moving a responsibility between modules.
+
+- `src/`: application modules described in [Architecture](docs/architecture.md#responsibilities).
 - `cmake/`: pinned dependencies and generated metadata.
 - `tests/unit/` and `tests/integration/`: focused component checks and cross-component recovery, audio, CLI and process scenarios.
 - `tests/resource/`: synthetic bounded-memory and planning-scale checks.
@@ -139,7 +135,7 @@ Git Bash runs portable shell tests. `tests/support/process.*` owns native child 
 - `docs/`: usage, migration, distribution and design decisions.
 - `.build/`: all generated build, test and release artifacts.
 
-Keep includes specific to their owner; do not restore an umbrella application header. Application code coordinates the modules. Audio and inference adapters contain upstream API calls; model-free transcript logic and support code must not include whisper, FFmpeg or CLI11 headers. The journal owns durable publication and receives a renderer callback. `transcript/publication.cpp` adapts the journal to a repeatable streaming segment source; format serializers and paragraph layout have no filesystem or journal dependency. Compatibility metadata excludes execution-only fields; original output metadata is frozen in the journal for byte-stable resumed publication. Changes in timeline, chunking or serialization behavior require an explicit algorithm-version and fixture review, not merely a new application version.
+Keep includes specific to their owner; do not restore an umbrella application header. The [settings and dependency rules](docs/architecture.md#settings-and-dependencies) are checked by `unit/module-boundary`. Changes in timeline, chunking or serialization behavior require an explicit algorithm-version and fixture review, not merely a new application version.
 
 Job planning validates inputs, output collisions and numbered mappings before preparing directories or publishing a new mapping. Journal recovery validates records against explicit candidate states without mutating a live journal. `platform::File` owns descriptor lifetimes only; checkpoint locks still fail immediately, while model-download locks wait cancellably.
 
