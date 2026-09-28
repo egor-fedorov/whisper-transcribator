@@ -6,7 +6,6 @@
 #include "support/io.hpp"
 #include "support/report.hpp"
 #include "whisper.h"
-#include <set>
 
 namespace wt {
 void configure_inference_logging() {
@@ -25,7 +24,7 @@ void configure_inference_logging() {
         },
         nullptr);
 }
-std::string select_device(const std::string& requested) {
+std::vector<InferenceDevice> inference_devices() {
     static const bool loaded = [] {
         auto library =
             platform::library_path(reinterpret_cast<const void*>(ggml_backend_dev_count));
@@ -36,41 +35,33 @@ std::string select_device(const std::string& requested) {
         return true;
     }();
     (void)loaded;
-    bool cpu = false;
-    std::set<std::string> gpus;
+    std::vector<InferenceDevice> devices;
     for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
         auto dev = ggml_backend_dev_get(i);
         auto type = ggml_backend_dev_type(dev);
         std::string backend = ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev));
-        if (type == GGML_BACKEND_DEVICE_TYPE_CPU)
-            cpu = true;
-        if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
-            if (backend == "CUDA")
-                gpus.insert("cuda");
-            if (backend == "MTL")
-                gpus.insert("metal");
-        }
+        if (backend == "CUDA")
+            backend = "cuda";
+        else if (backend == "MTL")
+            backend = "metal";
+        else if (backend == "Vulkan")
+            backend = "vulkan";
+        else if (backend == "CPU")
+            backend = "cpu";
+        auto kind = type == GGML_BACKEND_DEVICE_TYPE_CPU ? DeviceKind::cpu
+                    : type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU
+                        ? DeviceKind::gpu
+                        : DeviceKind::other;
+        devices.push_back(
+            {kind, backend, ggml_backend_dev_name(dev), ggml_backend_dev_description(dev)});
     }
-    if (!cpu)
-        throw std::runtime_error("No compatible CPU backend; check the installed libggml-cpu "
-                                 "plugins and their dependencies");
-    if (requested == "cpu")
-        return "cpu";
-    if (requested == "auto") {
-        // whisper.cpp uses the first GPU; a build has either CUDA or Metal, not both.
-        for (const char* gpu : {"cuda", "metal"})
-            if (gpus.count(gpu))
-                return gpu;
+    return devices;
+}
+DeviceSelection select_device(const std::string& requested) {
+    auto selected = choose_device(requested, inference_devices());
+    if (requested == "auto" && selected.backend == "cpu")
         log_message(LogLevel::info, "No CUDA or Metal GPU available; using CPU");
-        return "cpu";
-    }
-    if (gpus.count(requested))
-        return requested;
-    if (requested == "metal")
-        throw std::runtime_error(
-            "Metal requested but unavailable; use a macOS build on a Mac with a Metal GPU");
-    throw std::runtime_error(
-        "CUDA requested but unavailable; use a CUDA build and check the NVIDIA driver/runtime");
+    return selected;
 }
 void validate_language(const std::string& language) {
     if (language != "auto" && whisper_lang_id(language.c_str()) < 0)
@@ -78,7 +69,14 @@ void validate_language(const std::string& language) {
 }
 std::string inference_backend_version() { return whisper_version(); }
 Json inference_diagnostics() {
-    Json result = {{"system_info", whisper_print_system_info()}, {"cpu_backend", nullptr}};
+    Json devices = Json::array();
+    for (const auto& device : inference_devices())
+        devices.push_back({{"backend", device.backend},
+                           {"name", device.name},
+                           {"description", device.description}});
+    Json result = {{"system_info", whisper_print_system_info()},
+                   {"cpu_backend", nullptr},
+                   {"available_devices", devices}};
     for (size_t i = 0; i < ggml_backend_reg_count(); ++i) {
         auto reg = ggml_backend_reg_get(i);
         if (std::string(ggml_backend_reg_name(reg)) != "CPU")

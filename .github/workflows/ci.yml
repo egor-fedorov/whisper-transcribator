@@ -92,6 +92,8 @@ jobs:
           ccache --print-stats | awk '$1 ~ /cache_hit/ { hits += $2 } END { exit !(hits > 0) }'
       - run: ctest --test-dir .build/ci --output-on-failure
       - run: bash tests/smoke/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
+      - name: Reject silent CPU fallback on GPU initialization failure (tiny, no GPU required)
+        run: .build/ci/tests/wt-gpu-init-smoke .build/fixtures/ggml-tiny.bin
       - name: Check checkpoints, publication and model cache on exFAT (exfat-fuse)
         run: bash tests/integration/exfat.sh .build/ci .build/fixtures .build/exfat
       - if: matrix.sanitize == 'OFF'

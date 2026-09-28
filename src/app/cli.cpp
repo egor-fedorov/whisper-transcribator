@@ -61,8 +61,8 @@ int run_cli(int argc, char** argv) {
         return 0;
     }
     app.add_option("--device", o.device,
-                   "Inference device; explicit CUDA or Metal never silently falls back")
-        ->check(CLI::IsMember({"auto", "cpu", "cuda", "metal"}))
+                   "Inference device; Vulkan is experimental and explicit GPU never falls back")
+        ->check(CLI::IsMember({"auto", "cpu", "cuda", "metal", "vulkan"}))
         ->capture_default_str();
     app.add_option("--cpu-threads", o.cpu_threads,
                    "0 selects physical cores within affinity and CPU quota")

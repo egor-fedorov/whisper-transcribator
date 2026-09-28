@@ -7,6 +7,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 option(WT_CUDA "Build NVIDIA CUDA inference" OFF)
+option(WT_VULKAN "Build experimental Vulkan inference (explicit --device vulkan)" OFF)
+if(WT_VULKAN AND NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32))
+  message(FATAL_ERROR "Experimental Vulkan builds currently support Linux and Windows only")
+endif()
 option(WT_SANITIZERS "Instrument application code with ASan/UBSan" OFF)
 option(WT_WERROR "Treat warnings in application and tests as errors" OFF)
 if(WIN32)
@@ -69,6 +73,7 @@ list(APPEND WT_PLATFORM_SOURCES src/platform/cpu.cpp src/platform/sha256.cpp)
 add_library(wt_core STATIC
   ${WT_PLATFORM_SOURCES}
   src/support/io.cpp src/support/hash.cpp src/support/cancel.cpp src/support/report.cpp
+  src/inference/devices.cpp
   src/models/models.cpp src/models/download.cpp
   src/transcript/jobs.cpp src/transcript/metadata.cpp src/transcript/outputs.cpp
   src/transcript/journal.cpp src/transcript/pipeline.cpp src/transcript/publication.cpp)
