@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Group unit/integration tests by subsystem, separate the assertion runner from scoped state, domain fixtures and native helpers, and split explicit CMake registration by responsibility. Preserve check names, labels, timeouts, binary paths and compatibility snapshots; compile test headers independently and enforce helper boundaries.
 - Split shared I/O into file utilities, atomic publication, permission probes and string helpers; isolate Windows handle, ACL and status internals and replace the global permission-probe hook with explicit per-consumer dependencies. Preserve CLI behavior, storage ordering and checkpoint/output compatibility.
 - Separate checkpoint storage, privacy, record validation, recovery and publication behind the existing Journal facade; isolate streaming renderers and their publication adapter without changing durable ordering, output bytes or checkpoint compatibility.
 - Separate audio reading, resampling, logging and diagnostics; extract pure window-boundary calculations and named decode steps without changing audio policies or checkpoint compatibility.

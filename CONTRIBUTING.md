@@ -71,7 +71,7 @@ bash tests/smoke/streaming-smoke.sh .build/cpu/whisper-transcribator \
 On Linux with `exfatprogs`, `exfat-fuse` and root or passwordless sudo, or on macOS without extra privileges through `hdiutil`, repeat publication, checkpoint and model-cache checks on exFAT disk images after preparing the fixtures above. The default `integration/permissionless` test simulates such a filesystem instead:
 
 ```bash
-bash tests/integration/exfat.sh .build/cpu .build/fixtures .build/exfat
+bash tests/integration/platform/exfat.sh .build/cpu .build/fixtures .build/exfat
 ```
 
 Use a fresh smoke output directory for each run. Fixtures/weights are downloaded
@@ -116,7 +116,7 @@ See [ARM64 coverage and limitations](docs/windows.md#arm64).
 holds PE-import/metadata helpers shared with `tests/packaging/windows.ps1`. The latter verifies
 the exact ZIP on a fresh runner, including source blobs against Git HEAD and complete CRT provenance. Verification uses a temporary directory and is safe to repeat. `windows-policy.ps1` tests dependency lookup without a compiler, and `windows-servercore*.ps1` checks the ZIP without a preinstalled VC++ runtime. Short archive inference remains in the separate smoke job.
 
-Git Bash runs portable shell tests. `tests/support/process.*` owns native child processes, bounded waits and console interruption; Windows uses Ctrl+Break, not Bash `kill`, while POSIX uses signals. Set `WT_PROCESS_RUNNER` to the built `wt-process-runner` executable to use the same native-process smoke path locally. The test helper is not part of the distributed application. Existing POSIX-only syscall fallback tests remain on Linux/macOS; recovery, TLS, locking and bounded-memory scenarios also run on Windows.
+Git Bash runs portable shell tests. `tests/support/platform/process.*` owns native child processes, bounded waits and console interruption; Windows uses Ctrl+Break, not Bash `kill`, while POSIX uses signals. Set `WT_PROCESS_RUNNER` to the built `wt-process-runner` executable to use the same native-process smoke path locally. The test helper is not part of the distributed application. Existing POSIX-only syscall fallback tests remain on Linux/macOS; recovery, TLS, locking and bounded-memory scenarios also run on Windows.
 
 ## Layout
 
@@ -124,13 +124,14 @@ See [Architecture](docs/architecture.md) for module responsibilities, settings o
 
 - `src/`: application modules described in [Architecture](docs/architecture.md#responsibilities).
 - `cmake/`: pinned dependencies and generated metadata.
-- `tests/unit/` and `tests/integration/`: focused component checks and cross-component recovery, audio, CLI and process scenarios.
+- `tests/unit/<domain>/` and `tests/integration/<domain>/`: focused contracts and composed scenarios grouped by subsystem; architectural checks live in `tests/unit/architecture/`.
 - `tests/resource/`: synthetic bounded-memory and planning-scale checks.
 - `tests/fixtures/`: reviewed synthetic checkpoint and output snapshots for cross-version compatibility.
 - `tests/smoke/`: public fixture preparation and short real-inference checks, separate from default CTest.
 - `tests/benchmarks/`: opt-in, short same-host performance comparisons with recorded inputs and raw measurements; never part of model-free packaging.
 - `tests/packaging/`: archive, release-helper and portable-loader checks; QEMU inference remains explicitly opt-in.
-- `tests/support/`: assertions, scoped fixtures, native process/socket helpers, fake audio/inference and the separate `wt-audio-fixture` and `wt-process-runner` executables.
+- `tests/support/`: assertions/runner and scoped state helpers, with domain builders in `fixtures/`, native helpers in `platform/` and helper executable sources in `tools/`.
+- `tests/cmake/`: explicit registration of checks, shared support, helper executables and standalone headers, included from `tests/CMakeLists.txt`.
 - `packaging/`: archive/container recipes and dependency collection.
 - `docs/`: usage, migration, distribution and design decisions.
 - `.build/`: all generated build, test and release artifacts.
@@ -139,7 +140,7 @@ Keep includes specific to their owner; do not restore an umbrella application he
 
 Job planning validates inputs, output collisions and numbered mappings before preparing directories or publishing a new mapping. Journal recovery validates records against explicit candidate states without mutating a live journal. `platform::File` owns descriptor lifetimes only; checkpoint locks still fail immediately, while model-download locks wait cancellably.
 
-Production build targets remain `wt_core`, `wt_engine` and the CLI. Source lists are explicit; register new headers in the standalone header compilation list in `tests/CMakeLists.txt`. Keep model-free checks in CTest and real inference in smoke scripts. Avoid adding a library or interface for every directory.
+Production build targets remain `wt_core`, `wt_engine` and the CLI. Register checks in `tests/cmake/unit.cmake`, `integration.cmake` or `resource.cmake`, and production/test headers in `tests/cmake/headers.cmake`. Keep source lists explicit and preserve existing test names, labels, timeouts and binary paths when moving files. Test files include only the fixture, scoped-state and native-helper headers they use; do not restore a shared fixture umbrella. Keep model-free checks in CTest and real inference in smoke scripts. Avoid adding a library or interface for every directory.
 
 Add regressions for output safety, error codes and interrupted operations.
 Keep manual GPU tests on a trusted machine; never execute untrusted PR code on
