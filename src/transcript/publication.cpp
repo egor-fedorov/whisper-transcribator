@@ -1,5 +1,6 @@
-#include "transcript/journal.hpp"
-#include "transcript/outputs.hpp"
+#include "transcript/publication.hpp"
+#include "transcript/checkpoint/journal.hpp"
+#include "transcript/render/render.hpp"
 
 namespace wt {
 void publish_outputs(const Job& job, const RenderOptions& options, Journal& journal,

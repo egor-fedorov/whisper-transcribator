@@ -4,7 +4,7 @@
 #include "support/io.hpp"
 #include "support/process.hpp"
 #include "support/test.hpp"
-#include "transcript/journal.hpp"
+#include "transcript/checkpoint/journal.hpp"
 #include "transcript/pipeline.hpp"
 #include <chrono>
 #include <fstream>

@@ -1,10 +1,11 @@
 #include "support/fixtures.hpp"
 #include "support/io.hpp"
 #include "support/test.hpp"
+#include "transcript/checkpoint/journal.hpp"
 #include "transcript/jobs.hpp"
-#include "transcript/journal.hpp"
 #include "transcript/metadata.hpp"
-#include "transcript/outputs.hpp"
+#include "transcript/publication.hpp"
+#include "transcript/render/render.hpp"
 #include <limits>
 
 using namespace wt;

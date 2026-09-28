@@ -8,13 +8,15 @@
 #include <memory>
 
 namespace wt {
-struct CheckpointPrivacy;
+namespace checkpoint_detail {
+class Privacy;
+}
 fs::path checkpoint_path(const Job& job);
 bool has_checkpoint(const Job& job);
 using RenderOutput = std::function<void(std::ostream&, const std::string&)>;
 class Journal {
     struct Lock;
-    std::unique_ptr<CheckpointPrivacy> privacy;
+    std::unique_ptr<checkpoint_detail::Privacy> privacy;
     std::unique_ptr<Lock> lock;
     fs::path directory;
     Json state;

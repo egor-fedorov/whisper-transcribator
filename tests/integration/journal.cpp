@@ -1,4 +1,4 @@
-#include "transcript/journal.hpp"
+#include "transcript/checkpoint/journal.hpp"
 #include "support/fixtures.hpp"
 #include "support/io.hpp"
 #include "support/test.hpp"

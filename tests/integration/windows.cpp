@@ -4,7 +4,7 @@
 #include "support/hash.hpp"
 #include "support/io.hpp"
 #include "support/test.hpp"
-#include "transcript/journal.hpp"
+#include "transcript/checkpoint/journal.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <vector>

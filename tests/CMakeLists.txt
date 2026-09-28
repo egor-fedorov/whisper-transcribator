@@ -181,9 +181,16 @@ set(WT_CHECK_HEADERS
   support/json.hpp
   support/report.hpp
   transcript/jobs.hpp
-  transcript/journal.hpp
+  transcript/checkpoint/journal.hpp
+  transcript/checkpoint/detail/privacy.hpp
+  transcript/checkpoint/detail/storage.hpp
+  transcript/checkpoint/detail/records.hpp
+  transcript/checkpoint/detail/recovery.hpp
+  transcript/checkpoint/detail/publication.hpp
   transcript/metadata.hpp
-  transcript/outputs.hpp
+  transcript/render/render.hpp
+  transcript/render/detail/formatters.hpp
+  transcript/publication.hpp
   transcript/options.hpp
   transcript/pipeline.hpp
   transcript/boundaries.hpp

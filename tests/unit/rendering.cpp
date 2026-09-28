@@ -1,6 +1,6 @@
 #include "support/json.hpp"
 #include "support/test.hpp"
-#include "transcript/outputs.hpp"
+#include "transcript/render/render.hpp"
 #include <algorithm>
 #include <sstream>
 
@@ -96,6 +96,22 @@ void prepared_metadata_is_not_rebuilt(const fs::path&) {
     render_stream(with_vad, "json", {"/nonexistent/input.wav", {}}, {}, source);
     require(Json::parse(with_vad.str()).at("duration_after_vad").is_null());
 }
+void exact_format_bytes(const fs::path&) {
+    std::vector<Segment> segments = {{0, 1.25, " A \n & <B> ", 0.125, "en"}};
+    require(render("text", segments) == "A & <B>\n");
+    require(render("srt", segments) == "1\n00:00:00,000 --> 00:00:01,250\nA & <B>\n\n");
+    require(render("vtt", segments) ==
+            "WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.250\nA &amp; &lt;B&gt;\n\n");
+    const std::string expected =
+        R"({"schema_version":2,"source":"/fixture/source.wav","model":"fixture","language":"en",)"
+        R"("languages":["en"],"language_probability":null,"duration":20.0,"duration_after_vad":null,)"
+        R"("text":"A & <B>","segments":[{"id":0,"start":0.0,"end":1.25,"text":" A \n & <B> ",)"
+        R"("language":"en","avg_logprob":null,"compression_ratio":null,"no_speech_prob":0.125}],)"
+        R"("run":{"vad":true}})"
+        "\n";
+    auto actual = render("json", segments);
+    require(actual == expected, "JSON byte contract changed: " + actual);
+}
 } // namespace
 int main() {
     return run_tests(
@@ -104,5 +120,6 @@ int main() {
          {"Unicode paragraph length", unicode_paragraph_limit},
          {"whitespace and JSON escaping", whitespace_and_escaping},
          {"repeatable streaming source without filesystem access", repeated_streaming_visit},
-         {"prepared metadata is not rebuilt", prepared_metadata_is_not_rebuilt}});
+         {"prepared metadata is not rebuilt", prepared_metadata_is_not_rebuilt},
+         {"exact TXT/SRT/VTT/JSON serialization", exact_format_bytes}});
 }
