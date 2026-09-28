@@ -12,6 +12,7 @@ The product is a local C++17 CLI with one inference implementation, whisper.cpp.
 | `src/transcript/checkpoint` | Journal state, private record storage, chain validation, recovery, locking and durable publication | Output formatting and backend APIs |
 | `src/transcript/render` | Streaming TXT/SRT/VTT/JSON formatting from prepared metadata and a repeatable segment source | Filesystem access, checkpoints and metadata construction |
 | `src/platform` | Native files, locks, renames, permissions, system information, signals, CPU limits and SHA-256 | Application policy, logging and CLI settings |
+| `src/platform/win32` | Private Windows handle/reparse helpers, ACLs and file-status queries | Public cross-platform APIs and application policy |
 | `src/support` | Shared filesystem/string utilities, atomic publication, hashing, cancellation and reporting | Backend APIs and command orchestration |
 
 `platform` may use the lightweight `support/fs.hpp` filesystem alias; higher-level support operations may use platform primitives. This is not permission to create arbitrary circular dependencies. Pure value/configuration headers must not import native handles, backend headers or transport implementations.
@@ -21,7 +22,7 @@ The product is a local C++17 CLI with one inference implementation, whisper.cpp.
 
 Consumers take only the settings they need. Job planning receives job and checkpoint policies; a journal receives checkpoint policy and prepared metadata; a renderer receives formatting settings and a repeatable segment source. A whisper session receives inference settings and prepared model descriptors, never model-cache or output options. The VAD boundary call receives its silence threshold explicitly from the application's chunking settings.
 
-Model descriptions and prepared paths/hashes live in `models/types.hpp`. The model-cache API does not include the HTTPS adapter or native file handles. `ensure_cached` offers an explicit transfer callback for tests; its production overload selects HTTPS in the implementation.
+Model descriptions and prepared paths/hashes live in `models/types.hpp`. The model-cache API does not include the HTTPS adapter or native file handles. `ensure_cached` offers an explicit transfer callback and permission probe for tests; its production overload selects HTTPS and the real filesystem probe.
 
 Use small value types, free functions, RAII and composition. Introduce a callback or interface at a real substitution boundary, not an abstract base class for each concrete type. Keep independent calculations testable without filesystem access or a model. Do not add a target, factory or generic configuration registry for every directory.
 
@@ -43,6 +44,15 @@ The durable sequence is deliberate: acquire the lock before recovery; on the fir
 
 `transcript/publication.hpp/.cpp` is the adapter between these independent modules: it supplies the journal's segment visitor and frozen metadata to a renderer callback. Neither module includes the other's API or the adapter. Keep them in the existing `wt_core` target; directories express ownership, not a requirement for additional libraries or interface hierarchies.
 
+## Files And Native Backends
+`support/files.hpp` owns path resolution, identity comparisons, text-file reads and directory writability probes. `support/atomic.hpp` owns buffered writes, staging/publication, permission preservation and directory synchronization. `support/permissions.hpp` describes which ownership/mode checks a filesystem can enforce and probes those capabilities with a private temporary file. `support/strings.hpp` holds whitespace trimming and environment-string reads without filesystem or platform dependencies. Include the needed API directly; there is no general `support/io.hpp` umbrella.
+
+`probe_permissions` is an ordinary function, not a replaceable global hook. A journal owns its `PermissionProbe` callback through its private privacy component and caches the result for that output filesystem. Model-cache preparation and partial-file opening accept a probe explicitly at the operation boundary. Production callers use the real probe by default; permissionless-filesystem tests inject their own callbacks without affecting other journals or downloads. The probe can relax only unsupported ownership/mode attributes, never entry-type, symlink, hard-link or model-hash checks.
+
+`platform/file.hpp` remains the OS-free native file API. `file-win32.cpp` implements public operations; private `win32/handles` helpers own native conversions, errno mapping, no-follow opening and safe reopening; `win32/security` owns principal discovery, protected/inherited ACLs and permission inspection; `win32/status` owns identity, timestamps, type and size queries. `PrivateSecurity` cannot be copied or moved because its native structures point into its own buffers. Windows helpers must not appear in public platform headers or higher-level modules. The POSIX backend and the cohesive console/system backend remain separate implementation files.
+
+Keep the safety sequence intact: identify a reopened file before changing its ACL; reject name-surrogate reparse points while checking identity for other reparse types; flush staged content and set destination permissions before rename; sync affected directories after publication. Failed/cancelled writers remove only their temporary output. These are storage contracts, not reasons to introduce a filesystem service hierarchy or alter checkpoint schemas.
+
 ## Data Flow And Durability
 1. The application parses arguments, plans safe destinations and validates explicit stream selection before preparing models.
 2. It resolves CPU/device settings and verifies models, then shares a lazily initialized whisper session across sequential jobs.
@@ -57,6 +67,6 @@ Checkpoint fingerprints exclude execution-only CPU counts and application build 
 
 Integration fixtures may compose application settings to exercise the same metadata mapping as the CLI. This does not permit production modules to depend on `app`, or tests to regenerate compatibility expectations using the code under test. Rendering tests provide their own prepared metadata.
 
-`unit/module-boundary` rejects application dependencies outside `app`, backend API includes outside their adapters, cross-dependencies between checkpoint storage and rendering, and imports of private helpers outside their implementations. Renderers cannot import application services or construct metadata. It checks positive and negative examples as well as the actual sources. `unit/platform-boundary` separately enforces native system-header ownership. Standalone header compilation catches accidental transitive includes. These lightweight checks supplement review; they are not a complete C++ dependency analyzer.
+`unit/module-boundary` rejects application dependencies outside `app`, backend API includes outside their adapters, cross-dependencies between checkpoint storage and rendering, and imports of private helpers outside their implementations, including `platform/win32`. Renderers cannot import application services or construct metadata. It checks positive and negative examples as well as the actual sources. `unit/platform-boundary` separately enforces native system-header ownership. Standalone header compilation catches accidental transitive includes; private Windows headers are checked on native Windows builds only. These lightweight checks supplement review; they are not a complete C++ dependency analyzer.
 
 Build targets remain `wt_core` (model-free services), `wt_engine` (audio/inference adapters and command execution) and the CLI (parsing/entry point). `cmake` holds pinned dependencies and generated metadata. `packaging` owns archive/container construction; workflows orchestrate native validation and preserve separate model-free packaging and real-inference gates. All generated artifacts belong under `.build`; models, recordings and local benchmark results are not repository sources.

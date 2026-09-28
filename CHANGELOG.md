@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Split shared I/O into file utilities, atomic publication, permission probes and string helpers; isolate Windows handle, ACL and status internals and replace the global permission-probe hook with explicit per-consumer dependencies. Preserve CLI behavior, storage ordering and checkpoint/output compatibility.
 - Separate checkpoint storage, privacy, record validation, recovery and publication behind the existing Journal facade; isolate streaming renderers and their publication adapter without changing durable ordering, output bytes or checkpoint compatibility.
 - Separate audio reading, resampling, logging and diagnostics; extract pure window-boundary calculations and named decode steps without changing audio policies or checkpoint compatibility.
 - Narrow subsystem settings and separate model descriptors from transfer implementation; enforce application/backend boundaries and document architecture without changing CLI defaults or checkpoint/output schemas.
