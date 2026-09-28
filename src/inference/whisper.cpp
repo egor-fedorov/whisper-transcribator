@@ -13,6 +13,8 @@ namespace wt {
 struct WhisperSession::Impl {
     Options options;
     PreparedModel model, vad;
+    // whisper.cpp takes UTF-8 paths on every system and keeps the VAD path during inference.
+    std::string model_path = model.path.u8string(), vad_path = vad.path.u8string();
     std::unique_ptr<whisper_context, decltype(&whisper_free)> context{nullptr, whisper_free};
     std::unique_ptr<whisper_vad_context, decltype(&whisper_vad_free)> splitter{nullptr,
                                                                                whisper_vad_free};
@@ -26,7 +28,6 @@ WhisperSession::~WhisperSession() = default;
 size_t WhisperSession::choose_cut(const std::vector<float>& pcm) {
     auto& options = impl->options;
     auto& splitter = impl->splitter;
-    auto& vad = impl->vad;
     if (options.no_vad)
         return pcm.size();
     if (!splitter) {
@@ -34,7 +35,7 @@ size_t WhisperSession::choose_cut(const std::vector<float>& pcm) {
         params.use_gpu = false;
         if (options.cpu_threads > 0)
             params.n_threads = options.cpu_threads;
-        splitter.reset(whisper_vad_init_from_file_with_params(vad.path.c_str(), params));
+        splitter.reset(whisper_vad_init_from_file_with_params(impl->vad_path.c_str(), params));
         if (!splitter)
             throw std::runtime_error("Cannot initialize VAD splitter");
     }
@@ -64,13 +65,12 @@ Transcript WhisperSession::recognize(const std::vector<float>& pcm,
     auto& options = impl->options;
     auto& context = impl->context;
     auto& model = impl->model;
-    auto& vad = impl->vad;
     if (!context) {
         report_progress("Loading model", model.path.filename().string());
         auto params = whisper_context_default_params();
         params.use_gpu = options.device != "cpu";
         params.flash_attn = true;
-        context.reset(whisper_init_from_file_with_params(model.path.c_str(), params));
+        context.reset(whisper_init_from_file_with_params(impl->model_path.c_str(), params));
         check_cancelled();
         if (!context)
             throw std::runtime_error("Cannot initialize GGML model: " + model.path.string());
@@ -83,7 +83,7 @@ Transcript WhisperSession::recognize(const std::vector<float>& pcm,
     inference.no_context = true;
     inference.print_progress = inference.print_realtime = inference.print_timestamps = false;
     inference.vad = !options.no_vad;
-    inference.vad_model_path = vad.path.c_str();
+    inference.vad_model_path = impl->vad_path.c_str();
     inference.vad_params.min_silence_duration_ms = options.vad_min_silence_ms;
     inference.abort_callback = [](void*) { return stop_signal != 0; };
     inference.encoder_begin_callback = [](whisper_context*, whisper_state*, void*) {

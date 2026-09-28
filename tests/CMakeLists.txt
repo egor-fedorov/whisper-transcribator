@@ -132,6 +132,7 @@ set(WT_CHECK_HEADERS
   platform/cpu.hpp
   platform/file.hpp
   platform/posix.hpp
+  platform/sha256.hpp
   platform/system.hpp
   support/cancel.hpp
   support/error.hpp

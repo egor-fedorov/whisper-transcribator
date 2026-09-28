@@ -1,5 +1,6 @@
 #include "support/io.hpp"
 #include "platform/file.hpp"
+#include "platform/system.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include <cerrno>
@@ -17,9 +18,10 @@ std::string env(const char* key) {
 fs::path resolve_path(const fs::path& path) {
     auto text = path.string();
     if (text == "~" || text.rfind("~/", 0) == 0) {
-        if (env("HOME").empty())
+        auto home = platform::home_directory();
+        if (home.empty())
             throw UsageError("HOME is not set");
-        text = env("HOME") + text.substr(1);
+        text = home.string() + text.substr(1);
     }
     return fs::weakly_canonical(fs::absolute(text));
 }

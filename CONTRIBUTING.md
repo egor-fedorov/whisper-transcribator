@@ -94,7 +94,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 - `src/inference/`: whisper.cpp device discovery, logging and a lazily initialized RAII session shared across files.
 - `src/models/`: pinned catalog, model cache, locking and HTTPS transfers.
 - `src/transcript/`: value types, job planning, windowing, metadata, checkpoint integrity and output rendering.
-- `src/platform/`: operating-system files, locks, renames, signals and CPU limits behind a small interface; the `-posix.cpp` files implement it for Linux and macOS, and a native Windows port would add its own implementation files.
+- `src/platform/`: operating-system files, locks, renames, signals, CPU limits and the system SHA-256 behind a small interface; the `-posix.cpp` files implement it for Linux and macOS and the `-win32.cpp` files for Windows (compiled and checked under Wine, not yet built by CMake or CI).
 - `src/support/`: plain options, atomic publication, hashing, cancellation and reporting.
 - `cmake/`: pinned dependencies and generated metadata.
 - `tests/unit/` and `tests/integration/`: focused component checks and cross-component recovery, audio, CLI and process scenarios.

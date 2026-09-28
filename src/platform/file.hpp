@@ -1,6 +1,7 @@
 #pragma once
-// Operating-system file access. file-posix.cpp implements it for Linux and macOS. Failures are
-// reported like the C library: false, -1 or an empty result, with errno describing the error.
+// Operating-system file access, implemented by file-posix.cpp for Linux and macOS and by
+// file-win32.cpp for Windows. Failures are reported like the C library: false, -1 or an empty
+// result, with errno describing the error.
 #include "support/fs.hpp"
 #include <array>
 #include <cstddef>
@@ -26,7 +27,9 @@ struct FileStatus {
     FileType type = FileType::other;
     FileId id;
     uint64_t size = 0, links = 0;
-    // Whether the current user owns the entry, and its POSIX permission bits.
+    // Whether the current user owns the entry, and its POSIX permission bits. Windows reports
+    // 0600 (0700 for directories) when only the owner, administrators and the system may access
+    // the entry, and 0666 (0777) otherwise.
     bool owned = false;
     unsigned permissions = 0;
     // Modification and status-change times (seconds, nanoseconds): any change alters them.
@@ -35,7 +38,12 @@ struct FileStatus {
 // An open file or directory, closed on destruction.
 class File {
   public:
+    // A descriptor on POSIX systems, a HANDLE on Windows.
+#ifdef _WIN32
+    using Native = std::intptr_t;
+#else
     using Native = int;
+#endif
     File() noexcept = default;
     explicit File(Native handle) noexcept : handle(handle) {}
     ~File() { close(); }
@@ -53,8 +61,8 @@ class File {
     static constexpr Native invalid = -1;
     Native handle = invalid;
 };
-// Opens an existing file for reading. None of these opens follows a final symlink or waits for
-// special files such as FIFOs.
+// Opens an existing file for reading. None of these opens follows a final symlink (or Windows
+// junction) or waits for special files such as FIFOs.
 File open_for_reading(const fs::path& path);
 // Opens a file for reading and writing, creating it for the owner only.
 File open_private(const fs::path& path);
@@ -78,15 +86,19 @@ bool truncate(File& file);
 enum class Lock { acquired, busy, failed };
 // Tries to lock a file exclusively, without waiting for another process.
 Lock try_lock(File& file);
-// Flushes a file's data, or a directory's entries, to stable storage.
+// Flushes a file's data, or a directory's entries, to stable storage. Windows filesystems commit
+// directory entries themselves, so syncing a directory succeeds without doing anything there.
 bool sync(File& file);
 // Permission bits of files created by default (umask applied).
 unsigned default_permissions();
+// Windows restricts the file to its owner, administrators and the system when `permissions`
+// grant nothing to group and others, and otherwise lets it inherit its directory's permissions.
 bool set_permissions(File& file, unsigned permissions);
 // Renames `from` to `to` unless `to` exists (EEXIST), atomically where the filesystem supports
 // it. If a fallback cannot remove `from` afterwards, this fails although `to` was published.
 bool rename_noreplace(const fs::path& from, const fs::path& to);
 // Whether the filesystem of `path` ignores ownership, so that every local user acts as the owner
-// of its entries. macOS mounts external FAT and exFAT volumes this way by default.
+// of its entries. macOS mounts external FAT and exFAT volumes this way by default; on Windows
+// these are the volumes without access control lists.
 bool ownership_ignored(const fs::path& path);
 } // namespace wt::platform

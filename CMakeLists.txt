@@ -37,9 +37,11 @@ function(wt_brew_prefix formula variable)
     endif()
   endif()
 endfunction()
-# SHA-256 uses CommonCrypto from the macOS system library, so archives bundle no OpenSSL.
+# SHA-256 uses the system's CommonCrypto (macOS) or CNG (Windows), so archives bundle no OpenSSL.
 set(WT_CRYPTO)
-if(NOT APPLE)
+if(WIN32)
+  set(WT_CRYPTO bcrypt)
+elseif(NOT APPLE)
   find_package(OpenSSL REQUIRED COMPONENTS Crypto)
   set(WT_CRYPTO OpenSSL::Crypto)
 endif()
@@ -50,8 +52,13 @@ add_custom_target(wt_version
   BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp" "${CMAKE_CURRENT_BINARY_DIR}/generated/package.env")
 file(READ src/models/catalog.json WT_MODEL_CATALOG)
 configure_file(cmake/catalog.hpp.in generated/catalog.hpp @ONLY)
-# Operating-system calls live only in src/platform; add a Windows implementation there.
-set(WT_PLATFORM_SOURCES src/platform/cpu.cpp src/platform/file-posix.cpp src/platform/system-posix.cpp)
+# Operating-system calls live only in src/platform.
+if(WIN32)
+  set(WT_PLATFORM_SOURCES src/platform/file-win32.cpp src/platform/system-win32.cpp)
+else()
+  set(WT_PLATFORM_SOURCES src/platform/file-posix.cpp src/platform/system-posix.cpp)
+endif()
+list(APPEND WT_PLATFORM_SOURCES src/platform/cpu.cpp src/platform/sha256.cpp)
 add_library(wt_core STATIC
   ${WT_PLATFORM_SOURCES}
   src/support/io.cpp src/support/hash.cpp src/support/cancel.cpp src/support/report.cpp

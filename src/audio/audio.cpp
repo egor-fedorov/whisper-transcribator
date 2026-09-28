@@ -284,7 +284,9 @@ AudioReader::AudioReader(const fs::path& path, int stream, TimestampGaps gaps,
         }
         d.format->interrupt_callback = {[](void*) { return stop_signal ? 1 : 0; }, nullptr};
         check(av_dict_set(&d.options, "protocol_whitelist", "file", 0), "restrict media protocols");
-        check(avformat_open_input(&d.format, path.c_str(), nullptr, &d.options), "open media");
+        // FFmpeg takes UTF-8 file names on every system.
+        check(avformat_open_input(&d.format, path.u8string().c_str(), nullptr, &d.options),
+              "open media");
     };
     open(false);
     check(avformat_find_stream_info(d.format, nullptr), "read streams");
