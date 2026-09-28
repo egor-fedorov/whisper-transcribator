@@ -78,3 +78,5 @@ try {
     } finally { Pop-Location }
 } finally { $env:PATH = $path }
 Write-Output 'Windows ZIP integrity, dependencies, doctor and baseline loader passed (no inference)'
+# The last native command intentionally returned 1; do not leak it to the CI wrapper.
+exit 0
