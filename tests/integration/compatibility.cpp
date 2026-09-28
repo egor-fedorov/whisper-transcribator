@@ -15,8 +15,8 @@ void old_snapshot(const fs::path& root) {
         f.options.resume = true;
         auto directory = checkpoint_path(f.job);
         fs::create_directories(directory);
-        fs::permissions(directory.parent_path(), fs::perms::owner_all);
-        fs::permissions(directory, fs::perms::owner_all);
+        wt::test::permissions(directory.parent_path(), fs::perms::owner_all);
+        wt::test::permissions(directory, fs::perms::owner_all);
         auto manifest = snapshot.at(scenario).at("manifest");
         atomic_write(directory / "manifest.json", manifest.dump());
         size_t index = 0;
@@ -86,8 +86,8 @@ Json install_snapshot(Fixture& f, const Json& snapshot) {
     manifest["fingerprint"]["outputs"] = job_destinations(f.job);
     auto directory = checkpoint_path(f.job);
     fs::create_directories(directory);
-    fs::permissions(directory.parent_path(), fs::perms::owner_all);
-    fs::permissions(directory, fs::perms::owner_all);
+    wt::test::permissions(directory.parent_path(), fs::perms::owner_all);
+    wt::test::permissions(directory, fs::perms::owner_all);
     atomic_write(directory / "manifest.json", manifest.dump());
     atomic_write(directory / "chunk-0.json", snapshot.at("chunk").get<std::string>());
     return manifest;

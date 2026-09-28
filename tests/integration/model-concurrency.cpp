@@ -1,64 +1,40 @@
 #include "models/models.hpp"
+#include "platform/file.hpp"
+#include "platform/system.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include "support/fixtures.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
 #include "support/options.hpp"
+#include "support/process.hpp"
 #include "support/test.hpp"
 #include <chrono>
-#include <fcntl.h>
 #include <iostream>
-#include <sys/file.h>
-#include <sys/wait.h>
 #include <thread>
-#include <unistd.h>
 
 using namespace wt;
 using namespace wt::test;
 namespace {
-void await_file(const fs::path& path) {
-    for (int i = 0; i < 500; ++i) {
-        if (fs::exists(path))
-            return;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    throw std::runtime_error("model worker timed out");
-}
-pid_t worker(const char* executable, const fs::path& root, const char* mode) {
-    auto pid = fork();
-    require(pid >= 0);
-    if (!pid) {
-        execl(executable, executable, mode, root.c_str(), nullptr);
-        _exit(2);
-    }
-    return pid;
-}
-void wait_for(pid_t child, int expected) {
-    int status = 0;
-    require(waitpid(child, &status, 0) == child && WIFEXITED(status) &&
-            WEXITSTATUS(status) == expected);
-}
-void concurrency(const fs::path& root, const char* executable) {
-    auto first = worker(executable, root, "--download");
+void concurrency(const fs::path& root) {
+    auto executable = platform::executable_path();
+    Process first(executable, {"--download", root.u8string()});
     await_file(root / "fetched");
-    auto second = worker(executable, root, "--download");
+    Process second(executable, {"--download", root.u8string()});
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    int status = 0;
-    require(waitpid(second, &status, WNOHANG) == 0);
+    require(second.running());
     atomic_write(root / "release", "release");
-    wait_for(first, 0);
-    wait_for(second, 0);
+    require(first.wait() == 0 && second.wait() == 0);
     require(read_text(root / model_fixture().file) == "abc");
     fs::remove(root / model_fixture().file);
-    int fd = open((root / "fixture.bin.lock").c_str(), O_RDWR | O_CLOEXEC);
-    require(fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) == 0);
-    auto cancelled = worker(executable, root, "--cancel");
+    auto lock = platform::open_private(root / "fixture.bin.lock");
+    require(lock && platform::try_lock(lock) == platform::Lock::acquired);
+    Process cancelled(executable, {"--cancel", root.u8string()});
     await_file(root / "ready");
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    require(kill(cancelled, SIGTERM) == 0);
-    wait_for(cancelled, 143);
-    close(fd);
+    cancelled.interrupt(SIGINT);
+    require(cancelled.wait() == 130);
+    lock.close();
     require(!fs::exists(root / model_fixture().file));
 }
 void names(const fs::path& root) {
@@ -83,11 +59,8 @@ void names(const fs::path& root) {
 } // namespace
 int main(int argc, char** argv) {
     if (argc == 3) {
-        fs::path root = argv[2];
-        struct sigaction action {};
-        action.sa_handler = [](int signal) { stop_signal = signal; };
-        sigemptyset(&action.sa_mask);
-        sigaction(SIGTERM, &action, nullptr);
+        fs::path root = fs::u8path(argv[2]);
+        install_signal_handlers();
         try {
             bool cancel = std::string(argv[1]) == "--cancel";
             if (cancel)
@@ -109,8 +82,7 @@ int main(int argc, char** argv) {
         }
     }
     return run_tests({
-        {"concurrent preparation and cancelled lock wait",
-         [&](const fs::path& root) { concurrency(root, argv[0]); }},
+        {"concurrent preparation and cancelled lock wait", concurrency},
         {"catalog precedence and explicit local paths", names},
     });
 }

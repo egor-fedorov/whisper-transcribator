@@ -28,9 +28,10 @@ void write_outputs(const Job& job, const Options& options, const Transcript& res
     journal.finish();
     publish_outputs(job, options, journal);
 }
-Fixture::Fixture(const fs::path& directory) : root(directory) {
+Fixture::Fixture(const fs::path& directory, bool reuse) : root(directory) {
     fs::create_directories(root);
-    atomic_write(root / "source.wav", "fake audio");
+    if (!reuse)
+        atomic_write(root / "source.wav", "fake audio");
     options.inputs = {(root / "source.wav").string()};
     options.output_dir = root.string();
     options.format = "all";

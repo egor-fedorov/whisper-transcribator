@@ -112,9 +112,7 @@ StoredPermissions probe_with_file(const fs::path& directory) {
 // Replaces `to` or, without `overwrite`, fails if it exists.
 void rename_output(const fs::path& from, const fs::path& to, bool overwrite) {
     std::error_code error;
-    if (overwrite)
-        fs::rename(from, to, error);
-    else if (!platform::rename_noreplace(from, to))
+    if (!(overwrite ? platform::rename_replace(from, to) : platform::rename_noreplace(from, to)))
         error.assign(errno, std::generic_category());
     if (error)
         throw std::runtime_error("Cannot publish " + to.string() + ": " + error.message());

@@ -100,6 +100,60 @@ jobs:
             "$PWD/.build/ci/tests/wt-audio-fixture" "$PWD/.build/fixtures/jfk.wav" \
             "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
             "$PWD/.build/offline-streaming"
+  windows:
+    name: test (windows-2025, x64)
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.build/vcpkg-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        with:
+          arch: x64
+      - id: pins
+        shell: pwsh
+        run: |
+          $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+          "vcpkg=$baseline" >> $env:GITHUB_OUTPUT
+          "compiler=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: microsoft/vcpkg
+          ref: ${{ steps.pins.outputs.vcpkg }}
+          path: .build/vcpkg
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        with:
+          msystem: MSYS
+          path-type: inherit
+          install: make nasm diffutils mingw-w64-x86_64-pkgconf
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .build/windows-ffmpeg
+          key: ffmpeg-windows-x64-${{ steps.pins.outputs.compiler }}-${{ hashFiles('packaging/ffmpeg.sh') }}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: .build/vcpkg-cache
+          key: vcpkg-windows-x64-${{ steps.pins.outputs.compiler }}-${{ hashFiles('vcpkg.json') }}
+      - name: Build pinned decoding-only FFmpeg with MSVC
+        shell: msys2 {0}
+        run: |
+          # MSYS's hard-link utility must not shadow Microsoft's linker in configure/make.
+          if [[ -f /usr/bin/link.exe ]]; then mv /usr/bin/link.exe /usr/bin/link-msys.exe; fi
+          if [[ ! -f .build/windows-ffmpeg/prefix/lib/pkgconfig/libavcodec.pc ]]; then
+            bash packaging/ffmpeg.sh "$PWD/.build/windows-ffmpeg" \
+              "$(cygpath -m "$PWD/.build/windows-ffmpeg/prefix")" --toolchain=msvc --arch=x86_64
+          fi
+      - name: Compile application and run model-free CTest
+        shell: pwsh
+        run: ./packaging/windows-build.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-test-binaries
+          path: .build/windows/bin
+          retention-days: 7
+          if-no-files-found: error
   macos:
     name: test (macos-15, arm64)
     runs-on: macos-15

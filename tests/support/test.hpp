@@ -1,23 +1,17 @@
 #pragma once
 #include "support/fs.hpp"
+#include <cstdint>
 #include <functional>
 #include <initializer_list>
 #include <iosfwd>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <sys/resource.h>
-#include <sys/types.h>
 
 namespace wt::test {
-// Peak resident set size in KiB; macOS reports ru_maxrss in bytes, Linux in KiB.
-inline long peak_rss_kib(const rusage& usage) {
-#ifdef __APPLE__
-    return usage.ru_maxrss / 1024;
-#else
-    return usage.ru_maxrss;
-#endif
-}
+int64_t peak_rss_kib();
+void permissions(const fs::path& path, fs::perms mode);
+void permissions(const fs::path& path, fs::perms mode, std::error_code& error);
 struct AssertionFailure : std::logic_error {
     using std::logic_error::logic_error;
 };
@@ -44,7 +38,6 @@ void rejects(F action, const std::string& reason, const char* file = __builtin_F
     require(false, "expected failure containing: " + reason, file, line);
 }
 class TempDirectory {
-    pid_t owner;
     bool retained = false;
 
   public:

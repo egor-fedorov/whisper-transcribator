@@ -118,14 +118,14 @@ void completed_results_do_not_need_directory_write_access(const fs::path& root) 
     auto o = input(root);
     atomic_write(root / "a.txt", "complete");
     o.skip_existing = true;
-    fs::permissions(root, fs::perms::owner_read | fs::perms::owner_exec);
+    wt::test::permissions(root, fs::perms::owner_read | fs::perms::owner_exec);
     try {
         require(prepare_jobs(o).empty());
     } catch (...) {
-        fs::permissions(root, fs::perms::owner_all);
+        wt::test::permissions(root, fs::perms::owner_all);
         throw;
     }
-    fs::permissions(root, fs::perms::owner_all);
+    wt::test::permissions(root, fs::perms::owner_all);
 }
 void empty_output_is_not_complete(const fs::path& root) {
 
@@ -248,14 +248,14 @@ void mapping_validation_precedes_write_probe(const fs::path& root) {
     auto mapping = read_text(root / "out/result_files.json");
     atomic_write(root / "b.mp4", "other input");
     options.inputs.push_back((root / "b.mp4").string());
-    fs::permissions(root / "out", fs::perms::owner_read | fs::perms::owner_exec);
+    wt::test::permissions(root / "out", fs::perms::owner_read | fs::perms::owner_exec);
     try {
         rejects([&] { prepare_jobs(options); }, "Input list changed");
     } catch (...) {
-        fs::permissions(root / "out", fs::perms::owner_all);
+        wt::test::permissions(root / "out", fs::perms::owner_all);
         throw;
     }
-    fs::permissions(root / "out", fs::perms::owner_all);
+    wt::test::permissions(root / "out", fs::perms::owner_all);
     require(read_text(root / "out/result_files.json") == mapping);
 }
 } // namespace

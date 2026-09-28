@@ -55,7 +55,7 @@ void empty_checkpoint_recovery_and_unknown_contents(const fs::path& root) {
         require(!has_checkpoint(zero.job));
     }
     fs::create_directory(zero_path);
-    fs::permissions(zero_path, fs::perms::owner_all);
+    wt::test::permissions(zero_path, fs::perms::owner_all);
     {
         Journal journal(zero.job, zero.options, zero.fingerprint());
         require(!has_checkpoint(zero.job));
@@ -170,8 +170,8 @@ void unsafe_temporaries(const fs::path& root) {
     Fixture f(root);
     auto directory = checkpoint_path(f.job);
     fs::create_directories(directory);
-    fs::permissions(directory.parent_path(), fs::perms::owner_all);
-    fs::permissions(directory, fs::perms::owner_all);
+    wt::test::permissions(directory.parent_path(), fs::perms::owner_all);
+    wt::test::permissions(directory, fs::perms::owner_all);
     auto temporary = directory / ".whisper-output-Ab123Z";
     atomic_write(root / "unrelated", "preserve");
     fs::create_symlink(root / "unrelated", temporary);

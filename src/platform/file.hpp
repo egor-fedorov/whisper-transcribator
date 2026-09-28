@@ -97,6 +97,8 @@ bool set_permissions(File& file, unsigned permissions);
 // Renames `from` to `to` unless `to` exists (EEXIST), atomically where the filesystem supports
 // it. If a fallback cannot remove `from` afterwards, this fails although `to` was published.
 bool rename_noreplace(const fs::path& from, const fs::path& to);
+// Replace an existing file, never copying across filesystems. The caller flushes file data first.
+bool rename_replace(const fs::path& from, const fs::path& to);
 // Whether the filesystem of `path` ignores ownership, so that every local user acts as the owner
 // of its entries. macOS mounts external FAT and exFAT volumes this way by default; on Windows
 // these are the volumes without access control lists.

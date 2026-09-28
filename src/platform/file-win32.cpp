@@ -180,7 +180,7 @@ class PrivateSecurity {
   public:
     explicit PrivateSecurity(bool directory) : acl(private_acl(directory)) {
         security.nLength = sizeof(security);
-        if (acl.empty() ||
+        if (principals().user.empty() || principals().owner.empty() || acl.empty() ||
             !InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION) ||
             !SetSecurityDescriptorDacl(&descriptor, TRUE, reinterpret_cast<PACL>(acl.data()),
                                        FALSE) ||
@@ -278,8 +278,14 @@ std::optional<FileStatus> query(HANDLE file, bool with_security) {
     if (!with_security ||
         GetSecurityInfo(file, SE_FILE_OBJECT,
                         OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, nullptr,
-                        &acl, nullptr, &descriptor.memory) != ERROR_SUCCESS)
-        return status;
+                        &acl, nullptr, &descriptor.memory) != ERROR_SUCCESS) {
+        DWORD flags = 0;
+        if (GetVolumeInformationByHandleW(file, nullptr, 0, nullptr, nullptr, &flags, nullptr, 0) &&
+            !(flags & FILE_PERSISTENT_ACLS))
+            return status;
+        errno = EACCES;
+        return std::nullopt;
+    }
     const auto& who = principals();
     status.owned = owner && who.current(owner);
     if (!acl)
@@ -349,12 +355,16 @@ File open_for_reading(const fs::path& path) {
 }
 File open_private(const fs::path& path) {
     PrivateSecurity security(false);
+    if (!security.get()) {
+        errno = EACCES;
+        return {};
+    }
     return open_unfollowed(path, GENERIC_READ | GENERIC_WRITE, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL,
                            security.get());
 }
 File open_directory(const fs::path& path) {
-    File file(native(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, share_all, nullptr,
-                                 OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr)));
+    File file(native(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES | READ_CONTROL, share_all,
+                                 nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr)));
     if (!file)
         fail();
     else if (!is_directory(handle(file))) {
@@ -369,6 +379,10 @@ File create_temporary(const fs::path& directory, const std::string& prefix, fs::
     std::random_device random;
     std::uniform_int_distribution<size_t> pick(0, sizeof(characters) - 2);
     PrivateSecurity security(false);
+    if (!security.get()) {
+        errno = EACCES;
+        return {};
+    }
     for (int attempt = 0; attempt < 100; ++attempt) {
         auto name = prefix;
         for (int i = 0; i < 6; ++i)
@@ -390,6 +404,10 @@ File create_temporary(const fs::path& directory, const std::string& prefix, fs::
 }
 bool create_private_directory(const fs::path& path) {
     PrivateSecurity security(true);
+    if (!security.get()) {
+        errno = EACCES;
+        return false;
+    }
     if (CreateDirectoryW(path.c_str(), security.get()))
         return true;
     fail();
@@ -505,6 +523,16 @@ bool set_permissions(File& file, unsigned permissions) {
 bool rename_noreplace(const fs::path& from, const fs::path& to) {
     // Without MOVEFILE_REPLACE_EXISTING the filesystem refuses an existing target atomically.
     if (MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_WRITE_THROUGH))
+        return true;
+    auto error = GetLastError();
+    if (error == ERROR_ACCESS_DENIED && GetFileAttributesW(to.c_str()) != INVALID_FILE_ATTRIBUTES)
+        errno = EEXIST;
+    else
+        fail(error);
+    return false;
+}
+bool rename_replace(const fs::path& from, const fs::path& to) {
+    if (MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
         return true;
     fail();
     return false;

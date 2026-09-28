@@ -4,7 +4,6 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
-#include <unistd.h>
 
 namespace {
 void planning(const wt::fs::path& root) {

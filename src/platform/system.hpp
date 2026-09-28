@@ -5,7 +5,7 @@
 
 namespace wt::platform {
 // Calls `handler` with SIGINT or SIGTERM when the user interrupts the process or the system asks
-// it to stop. The handler runs asynchronously: it may only set a volatile sig_atomic_t flag or
+// it to stop. The handler runs asynchronously: it may only use lock-free atomic operations or
 // call exit_now(). Returns false if the handler cannot be installed. On Windows, Ctrl+C and
 // Ctrl+Break report SIGINT; closing the console, logging off and shutting down report SIGTERM,
 // after which the system ends the process within seconds.

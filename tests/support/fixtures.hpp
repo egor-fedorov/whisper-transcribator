@@ -15,7 +15,7 @@ struct Fixture {
     fs::path root;
     Options options;
     Job job;
-    explicit Fixture(const fs::path& directory);
+    explicit Fixture(const fs::path& directory, bool reuse = false);
     Json fingerprint() const;
 };
 struct Audio {

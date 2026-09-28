@@ -2,7 +2,6 @@
 #include "support/io.hpp"
 #include "support/test.hpp"
 #include <iostream>
-#include <unistd.h>
 
 using namespace wt;
 using namespace wt::test;
