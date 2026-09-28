@@ -1,0 +1,17 @@
+Microsoft Visual C++ Runtime
+Copyright Microsoft Corporation. All rights reserved.
+
+The app-local MSVC runtime DLLs are unmodified release x64 files from the
+licensed Visual Studio installation's VC/Redist/MSVC directory. Their names,
+versions and hashes are recorded in share/msvc-runtime.txt. They are not
+covered by this project's MIT license; their source is not included.
+Windows system libraries and debug runtimes are not redistributed.
+
+Redistribution is subject to the applicable Microsoft Software License Terms:
+https://visualstudio.microsoft.com/license-terms/
+https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+
+App-local DLLs do not receive servicing through an installed system-wide
+Visual C++ Redistributable. Update the application bundle when a runtime
+security update is required.

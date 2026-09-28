@@ -28,6 +28,11 @@ FetchContent_Declare(nlohmann_json
   URL_HASH SHA256=d69f9deb6a75e2580465c6c4c5111b89c4dc2fa94e3a85fcd2ffcd9a143d9273
   SOURCE_SUBDIR single_include)
 FetchContent_MakeAvailable(whisper cli11 nlohmann_json)
+# Pinned ggml defines AVX-VNNI for MSVC-style builds but omits ClangCL's target flag.
+# Keep it private to this plugin: enabling it globally would break baseline CPUs.
+if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND TARGET ggml-cpu-alderlake)
+  target_compile_options(ggml-cpu-alderlake PRIVATE /clang:-mavxvnni)
+endif()
 # This pinned header needs no upstream CMake project (which predates CMake 4).
 add_library(wt_json INTERFACE)
 target_include_directories(wt_json SYSTEM INTERFACE "${nlohmann_json_SOURCE_DIR}/single_include")
