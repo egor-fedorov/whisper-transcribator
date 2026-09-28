@@ -1,8 +1,30 @@
 # Windows Validation
 
+## ARM64
+
+`windows-arm64-cpu.zip` targets native Windows 11 ARM64, not ARM64EC or an
+emulated x64 application. The application and ggml use ClangCL with Microsoft's
+linker, SDK and `/MD` runtime: the pinned ggml rejects MSVC's ARM compiler.
+curl/zlib and decoding-only FFmpeg use the ARM64 MSVC toolchain. FFmpeg's handwritten
+assembly is disabled to avoid a separate gas-preprocessor toolchain; this does
+not disable ggml's NEON inference.
+
+Pinned ggml has no Windows ARM multi-variant dispatcher. The ZIP therefore uses
+one dynamically loaded `ggml-cpu.dll`, compiled for baseline ARMv8-A/NEON without
+host-native tuning, rather than Linux's SVE/SME variants. GPU/NPU acceleration
+is outside this target; use `--device cpu` or `auto`.
+
+The native `windows-11-arm` CI runner builds and runs model-free CTest, verifies
+the exact ZIP on a fresh runner, then runs separate short offline inference,
+Unicode-path and interruption/resume checks. Every bundled PE image must be
+ARM64, including dependencies and the app-local Microsoft runtime; an x64 DLL
+cannot silently pass validation through Windows emulation. MSYS2's build utilities
+may themselves run under x64 emulation; the shipped application does not.
+These checks do not benchmark Snapdragon laptops or validate their GPUs/NPUs.
+
 ## Compiler Comparison
 
-MSVC remains the production compiler. To compare it with ClangCL, dispatch the
+MSVC remains the production **x64** compiler. To compare it with ClangCL, dispatch the
 `CI` workflow with `run_windows_benchmark=true`. Both builds and all measurements
 run in the same `windows-2025` job, not on two differently allocated runners.
 Ordinary PR packaging does not download models or run this benchmark.
@@ -44,6 +66,9 @@ that no VC++ 140 runtime is installed in the system directories. A negative
 control removes the bundled `vcruntime140.dll` and must fail with
 `STATUS_DLL_NOT_FOUND`. This supplements PE import inspection; it does not replace
 the separate native inference/resume smoke test or test Smart App Control.
+Server Core validation is x64-only: the ARM runner has no Docker. ARM64 uses
+static PE dependency closure checks and a restricted runtime PATH, but is not
+yet tested on a machine without a preinstalled VC++ runtime.
 
 ## Signing
 

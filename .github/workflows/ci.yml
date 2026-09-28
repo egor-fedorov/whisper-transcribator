@@ -107,9 +107,19 @@ jobs:
             "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" \
             "$PWD/.build/offline-streaming"
   windows:
-    name: test (windows-2025, x64)
-    runs-on: windows-2025
+    name: test (${{ matrix.os }}, ${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            toolchain: x64
+            arch: x86_64
+          - os: windows-11-arm
+            toolchain: arm64
+            arch: arm64
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.build/vcpkg-cache
       CCACHE_DIR: ${{ github.workspace }}/.build/windows-ccache
@@ -118,13 +128,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
         with:
-          arch: x64
+          arch: ${{ matrix.toolchain }}
       - id: pins
         shell: pwsh
         run: |
           $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
           "vcpkg=$baseline" >> $env:GITHUB_OUTPUT
           "compiler=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT
+          $clang = (& clang-cl --version | Select-Object -First 1) -replace '[^A-Za-z0-9.-]', '_'
+          "clang=$clang" >> $env:GITHUB_OUTPUT
+          if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant() -ne '${{ matrix.toolchain }}') {
+            throw 'Expected a native Windows runner for the target architecture'
+          }
           New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE
           Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -142,37 +157,37 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/windows-ffmpeg
-          key: ffmpeg-windows-x64-${{ steps.pins.outputs.compiler }}-${{ hashFiles('packaging/ffmpeg.sh', 'packaging/windows-ffmpeg.sh') }}
+          key: ffmpeg-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ hashFiles('packaging/ffmpeg.sh', 'packaging/windows-ffmpeg.sh') }}
       - id: vcpkg-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/vcpkg-cache
-          key: vcpkg-windows-x64-${{ steps.pins.outputs.compiler }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ hashFiles('vcpkg.json') }}
       - id: windows-ccache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/windows-ccache
-          key: ccache-windows-x64-${{ steps.pins.outputs.compiler }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'vcpkg.json') }}-${{ github.sha }}
+          key: ccache-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ steps.pins.outputs.clang }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'vcpkg.json') }}-${{ github.sha }}
           restore-keys: |
-            ccache-windows-x64-${{ steps.pins.outputs.compiler }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'vcpkg.json') }}-
+            ccache-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ steps.pins.outputs.clang }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'vcpkg.json') }}-
       - name: Build pinned decoding-only FFmpeg with MSVC
         shell: msys2 {0}
-        run: bash packaging/windows-ffmpeg.sh
+        run: bash packaging/windows-ffmpeg.sh '${{ matrix.toolchain }}'
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         with:
           path: .build/windows-ffmpeg
           key: ${{ steps.ffmpeg-cache.outputs.cache-primary-key }}
-      - name: Configure MSVC dependencies and application
+      - name: Configure dependencies and application (ClangCL on ARM64)
         shell: pwsh
-        run: ./packaging/windows-build.ps1 -Stage Configure -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
+        run: ./packaging/windows-build.ps1 -Architecture '${{ matrix.toolchain }}' -Stage Configure -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
       - id: windows-build
-        name: Compile application and test executables with MSVC
+        name: Compile application and test executables
         shell: pwsh
-        run: ./packaging/windows-build.ps1 -Stage Build
+        run: ./packaging/windows-build.ps1 -Architecture '${{ matrix.toolchain }}' -Stage Build
       - name: Run native model-free CTest
         shell: pwsh
-        run: ./packaging/windows-build.ps1 -Stage Test
+        run: ./packaging/windows-build.ps1 -Architecture '${{ matrix.toolchain }}' -Stage Test
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         if: always() && steps.windows-ccache.outputs.cache-hit != 'true'
         with:
@@ -186,7 +201,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && steps.windows-build.conclusion == 'success'
         with:
-          name: windows-test-binaries
+          name: windows-test-binaries-${{ matrix.arch }}
           path: .build/windows/bin
           retention-days: 7
           if-no-files-found: error
@@ -198,20 +213,20 @@ jobs:
         run: ./packaging/windows-bundle.ps1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: native-windows-x86_64
-          path: .build/artifacts/windows-x86_64
+          name: native-windows-${{ matrix.arch }}
+          path: .build/artifacts/windows-${{ matrix.arch }}
           retention-days: 7
           if-no-files-found: error
       - name: Build experimental ClangCL on the same VM (manual benchmark only)
-        if: github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
+        if: matrix.toolchain == 'x64' && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
         shell: pwsh
         run: ./packaging/windows-build.ps1 -Compiler clangcl -Build .build/windows-clangcl -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
       - name: Compare warmed MSVC and ClangCL runs (manual benchmark only)
-        if: github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
+        if: matrix.toolchain == 'x64' && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
         shell: pwsh
         run: ./tests/benchmarks/windows.ps1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: failure() && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
+        if: failure() && matrix.toolchain == 'x64' && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
         with:
           name: windows-clangcl-diagnostics
           path: |
@@ -222,51 +237,69 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
+        if: always() && matrix.toolchain == 'x64' && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
         with:
           name: windows-compiler-comparison
           path: .build/windows-benchmark/results
           retention-days: 7
           if-no-files-found: warn
   package-windows:
-    name: package (windows-x86_64)
+    name: package (windows-${{ matrix.arch }})
     needs: windows
-    runs-on: windows-2025
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            toolchain: x64
+            arch: x86_64
+          - os: windows-11-arm
+            toolchain: arm64
+            arch: arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
         with:
-          arch: x64
+          arch: ${{ matrix.toolchain }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: native-windows-x86_64
-          path: .build/artifacts/windows-x86_64
+          name: native-windows-${{ matrix.arch }}
+          path: .build/artifacts/windows-${{ matrix.arch }}
       - name: Verify exact ZIP with restricted runtime PATH (no models or inference)
         shell: pwsh
         run: |
           ./tests/packaging/windows-policy.ps1
-          ./tests/packaging/windows.ps1 -Artifacts .build/artifacts/windows-x86_64
-          ./tests/packaging/windows.ps1 -Artifacts .build/artifacts/windows-x86_64
+          ./tests/packaging/windows.ps1 -Architecture '${{ matrix.arch }}' -Artifacts .build/artifacts/windows-${{ matrix.arch }}
+          ./tests/packaging/windows.ps1 -Architecture '${{ matrix.arch }}' -Artifacts .build/artifacts/windows-${{ matrix.arch }}
   smoke-windows:
-    name: smoke (windows-x86_64)
+    name: smoke (windows-${{ matrix.arch }})
     needs: package-windows
-    runs-on: windows-2025
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            arch: x86_64
+          - os: windows-11-arm
+            arch: arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: windows-test-binaries
+          name: windows-test-binaries-${{ matrix.arch }}
           path: .build/windows/bin
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: native-windows-x86_64
-          path: .build/artifacts/windows-x86_64
+          name: native-windows-${{ matrix.arch }}
+          path: .build/artifacts/windows-${{ matrix.arch }}
       - name: Extract exact ZIP
         shell: pwsh
         run: |
-          $archive = Get-ChildItem .build/artifacts/windows-x86_64 -Filter '*.zip'
+          $archive = Get-ChildItem .build/artifacts/windows-${{ matrix.arch }} -Filter '*.zip'
           Expand-Archive $archive.FullName .build/archive
       - name: Prepare public 11-second fixture and tiny weights
         shell: bash

@@ -1,7 +1,7 @@
 # Package an existing tested MSVC build. No compilation, model downloads or inference.
 param(
     [string]$Build = '.build/windows', [string]$Media = '.build/windows-ffmpeg',
-    [string]$Vcpkg = '.build/vcpkg', [string]$Output = '.build/artifacts/windows-x86_64'
+    [string]$Vcpkg = '.build/vcpkg', [string]$Output
 )
 . "$PSScriptRoot/windows-common.ps1"
 $root = Split-Path $PSScriptRoot -Parent
@@ -10,6 +10,11 @@ try {
     $Build = (Resolve-Path $Build).Path
     $Media = (Resolve-Path $Media).Path
     $Vcpkg = (Resolve-Path $Vcpkg).Path
+    $metadata = Read-Metadata "$Build/generated/package.env"
+    if ($metadata.WT_TARGET_OS -ne 'windows') { throw 'Expected a Windows build' }
+    $arch = $metadata.WT_TARGET_ARCH
+    $target = Get-WindowsTarget $arch
+    if (!$Output) { $Output = ".build/artifacts/windows-$arch" }
     New-Item -ItemType Directory -Force $Output | Out-Null
     $Output = (Resolve-Path $Output).Path
     $bundle = Join-Path $Build 'bundle'
@@ -17,21 +22,17 @@ try {
     foreach ($directory in @('bin', 'share', 'licenses', 'sources')) {
         New-Item -ItemType Directory "$bundle/$directory" | Out-Null
     }
-    $metadata = Read-Metadata "$Build/generated/package.env"
-    if ($metadata.WT_TARGET_OS -ne 'windows' -or $metadata.WT_TARGET_ARCH -ne 'x86_64') {
-        throw 'Expected a Windows x64 build'
-    }
     $pins = Get-Content -Raw vcpkg.json | ConvertFrom-Json
     $baseline = (Invoke-Checked git @('-C', $Vcpkg, 'rev-parse', 'HEAD')).Trim()
     if ($baseline -ne $pins.'builtin-baseline') { throw 'vcpkg checkout differs from pinned baseline' }
-    $crt = @(Get-ChildItem (Join-Path $env:VCToolsRedistDir 'x64') -Directory -Filter 'Microsoft.VC*.CRT')
-    if ($crt.Count -ne 1) { throw 'Expected one release x64 CRT redistributable directory' }
-    $installed = Join-Path $Build 'vcpkg_installed/x64-windows'
+    $crt = @(Get-ChildItem (Join-Path $env:VCToolsRedistDir $target.Toolchain) -Directory -Filter 'Microsoft.VC*.CRT')
+    if ($crt.Count -ne 1) { throw "Expected one release $arch CRT redistributable directory" }
+    $installed = Join-Path $Build "vcpkg_installed/$($target.Toolchain)-windows"
     $search = @("$Build/bin", "$Media/prefix/bin", "$installed/bin")
     $queue = [Collections.Generic.Queue[string]]::new()
     $queue.Enqueue('whisper-transcribator.exe')
-    $backends = @(Get-ChildItem "$Build/bin/ggml-cpu-*.dll" | Sort-Object Name | ForEach-Object Name)
-    if ('ggml-cpu-x64.dll' -notin $backends) { throw 'Missing baseline CPU plugin' }
+    $backends = @(Get-ChildItem "$Build/bin/ggml-cpu*.dll" | Sort-Object Name | ForEach-Object Name)
+    if ($target.Baseline -notin $backends) { throw 'Missing baseline CPU plugin' }
     foreach ($plugin in $backends) { $queue.Enqueue($plugin) }
     $copied = @{}
     $links = @()
@@ -46,7 +47,7 @@ try {
         if (Test-MsvcRuntime $name) {
             $runtime += "$name $($source.VersionInfo.FileVersion) SHA256=$((Get-FileHash $source.FullName).Hash.ToLowerInvariant())"
         }
-        $imports = @(Get-Imports "$bundle/bin/$name")
+        $imports = @(Get-Imports "$bundle/bin/$name" $arch)
         $links += "# $name"
         $links += $imports
         foreach ($dependency in $imports) {
@@ -89,7 +90,7 @@ try {
         "$((Get-FileHash $_.FullName).Hash.ToLowerInvariant())  $relative"
     })
     Write-Utf8 "$bundle/share/files.sha256" $checksums
-    $name = "whisper-transcribator-$version-windows-x86_64-cpu.zip"
+    $name = "whisper-transcribator-$version-windows-$arch-cpu.zip"
     $archive = Join-Path $Output $name
     if (Test-Path $archive) { Remove-Item $archive }
     # Retain every staged entry without Compress-Archive's hidden-file filtering.

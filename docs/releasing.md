@@ -97,9 +97,12 @@ no `cacert.pem`, and SHA-256 uses CommonCrypto, so it contains no OpenSSL.
 
 ## Windows
 
-Native Windows x64 CPU builds use MSVC, the same pinned minimal FFmpeg recipe and vcpkg's pinned libcurl with Schannel. Follow [the contributor build instructions](../CONTRIBUTING.md#windows). CNG supplies SHA-256; OpenSSL is only a test-server dependency. The DLL-filled development/test directory is not a distribution archive: it also contains test executables and test-only libraries.
+Native Windows CPU builds use MSVC on x64 and ClangCL on ARM64, the same pinned minimal FFmpeg recipe and vcpkg's pinned libcurl with Schannel. Follow [the contributor build instructions](../CONTRIBUTING.md#windows). CNG supplies SHA-256; OpenSSL is only a test-server dependency. The DLL-filled development/test directory is not a distribution archive: it also contains test executables and test-only libraries.
 
 `test (windows-2025, x64)` builds and runs model-free CTest, including private ACLs, long and Unicode paths, junction rejection, locking, interruption and crash recovery. An additional standard-user check catches assumptions hidden by elevated CI.
+`test (windows-11-arm, arm64)` repeats these checks natively on Windows ARM64 with
+the `arm64-windows` vcpkg triplet and baseline ARMv8-A/NEON inference. It does not
+inherit Linux's ARM multi-variant plugins. See [ARM64 toolchain limitations](windows.md#arm64).
 
 After a successful source build, run in the same x64 developer PowerShell:
 
@@ -110,7 +113,7 @@ After a successful source build, run in the same x64 developer PowerShell:
 
 The bundle script reuses the build instead of compiling again. It traverses PE imports for the CLI
 and every CPU plugin; only an explicit Windows-system DLL allowlist may remain external.
-Required MSVC runtime files come exclusively from `VCToolsRedistDir/x64/Microsoft.VC*.CRT`, never
+Required MSVC runtime files come exclusively from `VCToolsRedistDir/<x64|arm64>/Microsoft.VC*.CRT`, never
 the build tree, System32 or debug directories. Every bundled CRT DLL must match its provenance
 inventory. The unsigned ZIP includes dependency sources/notices, build metadata, vcpkg
 SPDX records, DLL inventories and per-file checksums. The archive checksum is in `SHA256SUMS`.
@@ -128,6 +131,12 @@ application's network access and checks CPU inference, Unicode paths and interru
 Test helpers are downloaded separately and never included in the ZIP. Hosted Windows CI checks
 the baseline plugin explicitly; it does not emulate physical hardware without AVX2. None of
 these jobs publishes a release.
+
+The ARM64 build creates `.build/artifacts/windows-arm64/` automatically. Its
+`package (windows-arm64)` and `smoke (windows-arm64)` jobs verify the matching ZIP
+on fresh `windows-11-arm` runners. Pass `-Architecture arm64` to
+`tests/packaging/windows.ps1`; mixing x64 and ARM64 PE images is an error.
+The Server Core clean-runtime check remains x64-only, not an ARM64 certification.
 
 The manual `run_windows_benchmark` input compares MSVC with ClangCL on the same runner. It is
 not a packaging gate and does not change the production compiler. See [Windows validation and
@@ -170,7 +179,7 @@ with narrowly scoped mounts once device permissions are configured.
 ## Gates
 
 1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks, and CTest on macOS arm64.
-2. Build Linux x86_64 CPU/CUDA, Linux aarch64 CPU, macOS arm64 and Windows x64 CPU archives. Inspect bundled
+2. Build Linux x86_64 CPU/CUDA, Linux aarch64 CPU, macOS arm64 and Windows x64/ARM64 CPU archives. Inspect bundled
    dependencies, source packages, vendor notices and SHA256SUMS. No glibc, host driver or
    macOS or Windows system library may be bundled.
 3. Run `tests/smoke/prepare-smoke.sh` once, then `tests/smoke/smoke.sh` with networking disabled
@@ -230,10 +239,11 @@ memory tests use synthetic audio and fake inference, not full lecture recognitio
 
 The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Current development targets `0.5.0-dev`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
 
-Keep the five archives and their original `SHA256SUMS` under
+Keep the six archives and their original `SHA256SUMS` under
 `.build/artifacts/cpu/`, `.build/artifacts/cuda/`, `.build/artifacts/cpu-aarch64/` and
-`.build/artifacts/macos-arm64/`, plus `.build/artifacts/windows-x86_64/` for the ZIP
-(the `native-cpu-aarch64`, `native-macos-arm64` and `native-windows-x86_64` CI artifacts
+`.build/artifacts/macos-arm64/`, plus `.build/artifacts/windows-x86_64/` and
+`.build/artifacts/windows-arm64/` for the ZIPs
+(the `native-cpu-aarch64`, `native-macos-arm64`, `native-windows-x86_64` and `native-windows-arm64` CI artifacts
 of the release commit). Prepare from a clean checkout
 of the release commit after its `main` CI has passed. The helper verifies every
 checksum, target system and architecture and packaged project source against Git (using `unzip`
@@ -249,7 +259,7 @@ bash packaging/release.sh "$version" .build/artifacts --draft
 gh release view "v$version"
 ```
 
-The draft contains the five archives, combined checksums, release notes and the
+The draft contains the six archives, combined checksums, release notes and the
 source commit/CI link. This validates artifact integrity and source correspondence,
 not that CUDA inference ran: the short hardware smoke gate above remains mandatory
 for the exact archive to be published. After reviewing the draft and the GPU check:

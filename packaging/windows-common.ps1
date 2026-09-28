@@ -15,9 +15,22 @@ function Read-Metadata([string]$Path) {
     }
     return $values
 }
-function Get-Imports([string]$Binary) {
+function Get-WindowsTarget([string]$Architecture) {
+    switch ($Architecture) {
+        'x86_64' { return @{ Toolchain = 'x64'; Machine = '8664'; Baseline = 'ggml-cpu-x64.dll' } }
+        'arm64' { return @{ Toolchain = 'arm64'; Machine = 'AA64'; Baseline = 'ggml-cpu.dll' } }
+        default { throw "Unsupported Windows target: $Architecture" }
+    }
+}
+function Assert-PeArchitecture([string]$Headers, [string]$Architecture, [string]$Binary) {
+    $target = Get-WindowsTarget $Architecture
+    if ($Headers -notmatch "(?im)^\s*$($target.Machine) machine \(") {
+        throw "Not $Architecture PE: $Binary"
+    }
+}
+function Get-Imports([string]$Binary, [string]$Architecture = 'x86_64') {
     $headers = Invoke-Checked dumpbin @('/nologo', '/headers', $Binary)
-    if (($headers -join "`n") -notmatch '8664 machine \(x64\)') { throw "Not x64 PE: $Binary" }
+    Assert-PeArchitecture ($headers -join "`n") $Architecture $Binary
     $lines = Invoke-Checked dumpbin @('/nologo', '/dependents', $Binary)
     # Includes delay-load imports too. Anything not in the OS allowlist must be bundled.
     $imports = @($lines | ForEach-Object {

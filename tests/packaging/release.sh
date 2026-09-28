@@ -39,12 +39,13 @@ git add .
 git commit -qm 'Fixture'
 assets="$root/artifacts with spaces"
 targets=(cpu:linux:x86_64:cpu cuda:linux:x86_64:cuda cpu-aarch64:linux:aarch64:cpu
-    macos-arm64:macos:arm64:metal windows-x86_64:windows:x86_64:cpu)
+    macos-arm64:macos:arm64:metal windows-arm64:windows:arm64:cpu windows-x86_64:windows:x86_64:cpu)
 # Set to another architecture or system to mislabel the aarch64 or macOS archive's metadata.
 aarch64_metadata=aarch64
 macos_metadata=macos
 windows_metadata=windows
 windows_arch=x86_64
+windows_arm_arch=arm64
 repack_assets() {
     local target directory os arch flavor metadata_os metadata_arch name
     for target in "${targets[@]}"; do
@@ -53,7 +54,8 @@ repack_assets() {
         metadata_arch=$arch
         if [[ $arch == aarch64 ]]; then metadata_arch=$aarch64_metadata; fi
         if [[ $os == macos ]]; then metadata_os=$macos_metadata; fi
-        if [[ $os == windows ]]; then metadata_os=$windows_metadata; metadata_arch=$windows_arch; fi
+        if [[ $directory == windows-x86_64 ]]; then metadata_os=$windows_metadata; metadata_arch=$windows_arch; fi
+        if [[ $directory == windows-arm64 ]]; then metadata_arch=$windows_arm_arch; fi
         rm -rf "$root/staged"
         cp -a "$root/bundle" "$root/staged"
         printf 'WT_TARGET_OS=%s\nWT_TARGET_ARCH=%s\n' "$metadata_os" "$metadata_arch" \
@@ -126,6 +128,16 @@ build_assets
 reject 'Archive architecture differs from its name: windows-x86_64' 0.3.0 "$assets"
 windows_arch=x86_64
 build_assets
+rm -r "$assets/windows-arm64"
+reject 'Missing archive' 0.3.0 "$assets"
+windows_arm_arch=x86_64
+build_assets
+reject 'Archive architecture differs from its name: windows-arm64' 0.3.0 "$assets"
+windows_arm_arch=arm64
+build_assets
+printf 'broken checksum\n' >"$assets/windows-arm64/SHA256SUMS"
+reject 'Checksum mismatch: windows-arm64' 0.3.0 "$assets"
+build_assets
 printf 'broken checksum\n' >"$assets/windows-x86_64/SHA256SUMS"
 reject 'Checksum mismatch: windows-x86_64' 0.3.0 "$assets"
 build_assets
@@ -172,4 +184,5 @@ grep -Fxq -- "$assets/cpu/whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz" "
 grep -Fxq -- "$assets/cpu-aarch64/whisper-transcribator-0.3.0-linux-aarch64-cpu.tar.gz" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/macos-arm64/whisper-transcribator-0.3.0-macos-arm64-metal.tar.gz" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/windows-x86_64/whisper-transcribator-0.3.0-windows-x86_64-cpu.zip" "$GH_TEST_LOG"
+grep -Fxq -- "$assets/windows-arm64/whisper-transcribator-0.3.0-windows-arm64-cpu.zip" "$GH_TEST_LOG"
 echo 'Release preparation checks passed'

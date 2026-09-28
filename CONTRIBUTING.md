@@ -91,7 +91,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 
 ## Windows
 
-Use PowerShell 7.4+ with an x64 Visual Studio 2022 (or later) developer environment, the Windows SDK, CMake, Ninja, Git for Windows and MSYS2. The supported compiler is MSVC; MinGW/Wine checks are supplementary, not a native Windows CI substitute. Enable Windows long-path support and Developer Mode (or the symlink privilege) for the path and symlink tests.
+Use PowerShell 7.4+ with a matching x64 or ARM64 Visual Studio 2022 (or later) developer environment, the Windows SDK, CMake, Ninja, Git for Windows and MSYS2. x64 uses MSVC; ARM64 requires LLVM/ClangCL for ggml. MinGW/Wine checks are supplementary, not a native Windows CI substitute. Enable Windows long-path support and Developer Mode (or the symlink privilege) for the path and symlink tests.
 
 Clone vcpkg into `.build/vcpkg` and check out the `builtin-baseline` commit from `vcpkg.json`. Install MSYS2's `make`, `nasm`, `diffutils` and `mingw-w64-x86_64-pkgconf`. Start its MSYS shell from the developer shell with `msys2_shell.cmd -defterm -no-start -msys -use-full-path`; put the directory containing MSVC's `cl.exe` first in `PATH`, so Microsoft's `link.exe` wins over the unrelated MSYS utility. Then run:
 
@@ -102,6 +102,14 @@ bash packaging/windows-ffmpeg.sh
 Back in developer PowerShell, `./packaging/windows-build.ps1` builds the application and runs CTest. It enables vcpkg's test feature for the local OpenSSL HTTPS server; production TLS uses Schannel and hashing uses CNG. Executables and their DLLs are in `.build/windows/bin`. All executable targets embed the UTF-8/long-path manifest. Keep `/MD` consistent across the build and dependencies. The script accepts explicit build, FFmpeg, vcpkg and pkg-config paths.
 
 For an experimental ClangCL build, install LLVM and run `./packaging/windows-build.ps1 -Compiler clangcl -Build .build/windows-clangcl` in the same MSVC developer environment. Always use separate build directories for the two compilers. The manual CI input `run_windows_benchmark` compares both on one native runner using a short public sample; see [Windows validation](docs/windows.md). MSVC remains the default.
+
+On native Windows ARM64, use the ARM64 developer shell, run `bash packaging/windows-ffmpeg.sh arm64`
+in MSYS2, then `./packaging/windows-build.ps1 -Architecture arm64` in PowerShell.
+ClangCL and the `arm64-windows` vcpkg triplet are selected automatically; ARM64 does
+not support `-Compiler msvc` or `-Vulkan`. Use a fresh FFmpeg/application build
+directory when changing architecture. Packaging reads the target from build
+metadata; verify with `./tests/packaging/windows.ps1 -Architecture arm64 -Artifacts .build/artifacts/windows-arm64`.
+See [ARM64 coverage and limitations](docs/windows.md#arm64).
 
 `packaging/windows-bundle.ps1` packages that tested build without recompiling or running inference;
 `windows-sources.ps1` collects pinned third-party sources and notices, and `windows-common.ps1`

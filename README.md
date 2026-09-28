@@ -67,11 +67,12 @@ cmake --build --preset cpu -j
 Archives and source builds include whisper.cpp's Metal backend, so `--device auto` runs on the GPU; `--device cpu` uses the CPU with Accelerate. A source build loads its whisper.cpp libraries from the build directory, so keep that directory. CI tests archives on macOS 14 and 15 and source builds on macOS 15, all on Apple silicon; Intel Macs are not supported by the archive and untested from source. The default APFS volume, like FAT and exFAT drives, ignores letter case: see [batch output names](docs/resume.md#batch-output-names).
 
 ## Windows
-Native Windows x64 CPU builds use MSVC and require Windows 10 version 1903 or later. Releases after 0.4.0 include `windows-x86_64-cpu.zip`; the published 0.4.0 release does not contain one. Windows CUDA and ARM64 builds are not supported yet. Download the ZIP and `SHA256SUMS` from the same release, then use PowerShell:
+Native Windows CPU builds support x64 (MSVC, Windows 10 version 1903+) and ARM64 (ClangCL, Windows 11). Releases after 0.4.0 include `windows-x86_64-cpu.zip` and `windows-arm64-cpu.zip`; the published 0.4.0 release has neither. Windows CUDA and ARM64 GPU/NPU acceleration are not supported. Download the ZIP for your processor and `SHA256SUMS` from the same release, then use PowerShell:
 
 ```powershell
 $version = 'X.Y.Z' # a release after 0.4.0
-$archive = "whisper-transcribator-$version-windows-x86_64-cpu.zip"
+$arch = 'x86_64' # 'arm64' for Windows on ARM, without x64 emulation
+$archive = "whisper-transcribator-$version-windows-$arch-cpu.zip"
 $expected = (Get-Content SHA256SUMS | Where-Object { $_.EndsWith("  $archive") }).Split(' ')[0]
 if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Checksum mismatch' }
 Expand-Archive $archive whisper-transcribator

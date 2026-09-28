@@ -21,7 +21,7 @@ git ls-tree -r --name-only HEAD -- "${inputs[@]}" | LC_ALL=C sort >"$temporary/e
 assets=()
 # Artifact directory, operating system, architecture and flavor of every published archive.
 targets=(cpu:linux:x86_64:cpu cuda:linux:x86_64:cuda cpu-aarch64:linux:aarch64:cpu
-    macos-arm64:macos:arm64:metal windows-x86_64:windows:x86_64:cpu)
+    macos-arm64:macos:arm64:metal windows-arm64:windows:arm64:cpu windows-x86_64:windows:x86_64:cpu)
 archive_read() {
     if [[ $os == windows ]]; then unzip -p "$archive" "${1#./}"; else tar -xOzf "$archive" "$1"; fi
 }
@@ -52,7 +52,7 @@ for target in "${targets[@]}"; do
     assets+=("$archive")
     cat "$temporary/$directory.sha" >>"$temporary/SHA256SUMS"
 done
-echo "All five Linux, macOS and Windows archive checksums and packaged sources match $commit"
+echo "All six Linux, macOS and Windows archive checksums and packaged sources match $commit"
 [[ $mode = --draft ]] || exit 0
 
 tag="v$version"
