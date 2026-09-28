@@ -67,7 +67,8 @@ try {
     Write-Utf8 "$bundle/share/windows-toolchain.txt" @(
         "VCPKG_BASELINE=$baseline", "MSVC_VERSION=$env:VCToolsVersion", "SDK_VERSION=$env:WindowsSDKVersion"
     )
-    Copy-Item "$Build/generated/package.env" "$bundle/share/build-metadata.env"
+    # CMake writes CRLF on Windows; release.sh compares portable LF metadata.
+    Write-Utf8 "$bundle/share/build-metadata.env" (Get-Content "$Build/generated/package.env")
     Copy-Item 'packaging/windows-runtime-notice.txt' "$bundle/licenses/MSVC-runtime.txt"
     Copy-Item 'LICENSE' "$bundle/licenses/whisper-transcribator-MIT.txt"
     $ffmpeg = @(Get-ChildItem $Media -Directory -Filter 'ffmpeg-*')

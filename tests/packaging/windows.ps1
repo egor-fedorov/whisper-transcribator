@@ -11,6 +11,9 @@ $bundle = Join-Path $Artifacts $Unpacked
 if (Test-Path $bundle) { throw "Use a fresh extraction directory: $bundle" }
 [IO.Compression.ZipFile]::ExtractToDirectory($archive.FullName, $bundle)
 $metadata = Read-Metadata "$bundle/share/build-metadata.env"
+if ((Get-Content -Raw "$bundle/share/build-metadata.env").Contains("`r")) {
+    throw 'Build metadata must use LF for the cross-platform release helper'
+}
 if ($metadata.WT_TARGET_OS -ne 'windows' -or $metadata.WT_TARGET_ARCH -ne 'x86_64' -or
     $archive.Name -ne "whisper-transcribator-$($metadata.WT_PACKAGE_VERSION)-windows-x86_64-cpu.zip") {
     throw 'ZIP target or version metadata mismatch'
