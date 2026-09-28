@@ -11,6 +11,9 @@
 #include <windows.h>
 #include <winioctl.h>
 
+// Security APIs require windows.h first.
+#include <aclapi.h>
+
 using namespace wt;
 using namespace wt::test;
 namespace {
@@ -19,6 +22,18 @@ void private_files(const fs::path& root) {
     require(platform::create_private_directory(directory));
     auto status = platform::status(directory);
     require(status && status->owned && status->permissions == 0700);
+    auto opened = platform::open_directory(directory);
+    PSECURITY_DESCRIPTOR security = nullptr;
+    require(GetSecurityInfo(reinterpret_cast<HANDLE>(opened.native()), SE_FILE_OBJECT,
+                            DACL_SECURITY_INFORMATION, nullptr, nullptr, nullptr, nullptr,
+                            &security) == ERROR_SUCCESS);
+    SECURITY_DESCRIPTOR_CONTROL control = 0;
+    DWORD revision = 0;
+    bool protected_acl = GetSecurityDescriptorControl(security, &control, &revision) &&
+                         (control & SE_DACL_PROTECTED);
+    LocalFree(security);
+    require(protected_acl, "Checkpoint ACL must not inherit access from its parent");
+    opened.close();
     auto file = platform::open_private(directory / "state");
     status = platform::status(file);
     require(status && status->owned && status->permissions == 0600);

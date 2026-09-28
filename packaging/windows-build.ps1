@@ -29,7 +29,7 @@ try {
         '-DWT_TEST_OPENSSL=C:/Program Files/Git/usr/bin/openssl.exe',
         '-DGGML_NATIVE=OFF', '-DGGML_BACKEND_DL=ON', '-DGGML_CPU_ALL_VARIANTS=ON',
         '-DGGML_OPENMP=OFF')
-    Invoke-Checked cmake @('--build', $Build, '--parallel', '3')
+    Invoke-Checked cmake @('--build', $Build, '--parallel', '3', '--', '-k', '0')
     Copy-Item "$mediaPath/bin/*.dll" "$Build/bin" -Force
     Copy-Item "$Build/vcpkg_installed/x64-windows/bin/*.dll" "$Build/bin" -Force
     Invoke-Checked ctest @('--test-dir', $Build, '--output-on-failure')
