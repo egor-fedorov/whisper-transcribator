@@ -62,12 +62,16 @@ grep -Eq '"cpu_threads": [1-9][0-9]*' "$root/stdout"
 grep -q '"ffmpeg"' "$root/stdout"
 grep -q '"system_info"' "$root/stdout"
 grep -q '"cpu_backend"' "$root/stdout"
+grep -q '"available_devices"' "$root/stdout"
+grep -q '"selected_device"' "$root/stdout"
+grep -q '"gpu_index": -1' "$root/stdout"
 grep -Fq "$WT_SOURCE_REVISION" "$root/stdout"
 expect 0 doctor --device cpu --cpu-threads 3 --json
 grep -q '"cpu_threads": 3' "$root/stdout"
 expect 2 --timestamp-gaps invalid
 grep -q 'timestamp-gaps' "$root/stderr"
 expect 0 --help
+grep -q 'vulkan' "$root/stdout"
 grep -q -- '--timestamp-gaps' "$root/stdout"
 grep -q -- '--decode-errors' "$root/stdout"
 grep -q -- '--decode-error-limit-seconds' "$root/stdout"

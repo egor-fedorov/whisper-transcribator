@@ -58,6 +58,9 @@ void execution_settings(const fs::path& root) {
         rejects([&] { Journal journal(f.job, f.options, changed); }, std::string("/run/") + key);
     }
     auto changed = saved;
+    changed["run"]["device"] = "vulkan";
+    rejects([&] { Journal journal(f.job, f.options, changed); }, "/run/device");
+    changed = saved;
     changed["backend"]["model_sha256"] = "different weights";
     rejects([&] { Journal journal(f.job, f.options, changed); }, "/backend/model_sha256");
     f.options.decode_errors = "strict";

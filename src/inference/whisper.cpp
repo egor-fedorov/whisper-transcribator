@@ -1,4 +1,5 @@
 #include "inference/whisper.hpp"
+#include "inference/runtime.hpp"
 #include "models/models.hpp"
 #include "support/cancel.hpp"
 #include "support/io.hpp"
@@ -13,17 +14,19 @@ namespace wt {
 struct WhisperSession::Impl {
     Options options;
     PreparedModel model, vad;
+    DeviceSelection device;
     // whisper.cpp takes UTF-8 paths on every system and keeps the VAD path during inference.
     std::string model_path = model.path.u8string(), vad_path = vad.path.u8string();
     std::unique_ptr<whisper_context, decltype(&whisper_free)> context{nullptr, whisper_free};
     std::unique_ptr<whisper_vad_context, decltype(&whisper_vad_free)> splitter{nullptr,
                                                                                whisper_vad_free};
-    Impl(const Options& options, const PreparedModel& model, const PreparedModel& vad)
-        : options(options), model(model), vad(vad) {}
+    Impl(const Options& options, const PreparedModel& model, const PreparedModel& vad,
+         const DeviceSelection& device)
+        : options(options), model(model), vad(vad), device(device) {}
 };
 WhisperSession::WhisperSession(const Options& options, const PreparedModel& model,
-                               const PreparedModel& vad)
-    : impl(std::make_unique<Impl>(options, model, vad)) {}
+                               const PreparedModel& vad, const DeviceSelection& device)
+    : impl(std::make_unique<Impl>(options, model, vad, device)) {}
 WhisperSession::~WhisperSession() = default;
 size_t WhisperSession::choose_cut(const std::vector<float>& pcm) {
     auto& options = impl->options;
@@ -68,12 +71,17 @@ Transcript WhisperSession::recognize(const std::vector<float>& pcm,
     if (!context) {
         report_progress("Loading model", model.path.filename().string());
         auto params = whisper_context_default_params();
-        params.use_gpu = options.device != "cpu";
+        params.use_gpu = impl->device.backend != "cpu";
+        params.gpu_device = impl->device.gpu_index;
         params.flash_attn = true;
         context.reset(whisper_init_from_file_with_params(impl->model_path.c_str(), params));
         check_cancelled();
         if (!context)
-            throw std::runtime_error("Cannot initialize GGML model: " + model.path.string());
+            throw std::runtime_error("Cannot initialize GGML model on " + impl->device.backend +
+                                     " (" + impl->device.description + "): " + model.path.string() +
+                                     (params.use_gpu ? "; no CPU fallback was attempted. Check "
+                                                       "GPU memory/driver or use --device cpu"
+                                                     : ""));
     }
     auto inference = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
     if (options.cpu_threads > 0)

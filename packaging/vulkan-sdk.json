@@ -1,0 +1,11 @@
+{
+  "version": "1.4.357.0",
+  "linux": {
+    "url": "https://sdk.lunarg.com/sdk/download/1.4.357.0/linux/vulkansdk-linux-x86_64-1.4.357.0.tar.xz",
+    "sha256": "0f09bf6a0625e346bf004be70b92907e934a4c76606b323441b2baf3a5a0e66d"
+  },
+  "windows": {
+    "url": "https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/vulkansdk-windows-X64-1.4.357.0.exe",
+    "sha256": "81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d"
+  }
+}

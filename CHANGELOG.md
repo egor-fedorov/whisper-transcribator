@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Add experimental, source-build-only Vulkan on Linux/Windows through `WT_VULKAN` and explicit `--device vulkan`; leave automatic selection and release archives unchanged. Select the correct GPU ordinal in mixed-backend builds, report GPU diagnostics, and reject silent CPU fallback on GPU initialization failure. Add model-free Vulkan CI and short public-fixture validation/benchmark tooling.
 - Identify post-0.4.0 builds as 0.5.0-dev with source provenance. Document Windows Smart App Control restrictions and the pending signing setup.
 - Harden Windows packaging with retried source downloads, exclusive redist CRT lookup and inventory checks, normalized SDK metadata, repeatable temporary verification, and a Git source-blob comparison. Check the ZIP in Server Core without a preinstalled VC++ runtime and keep native artifacts for seven days.
 - Add an opt-in same-Windows-runner MSVC/ClangCL comparison using small and a 41-second public fixture; keep MSVC as the production default and record actual CPU plugin coverage.

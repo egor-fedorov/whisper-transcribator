@@ -5,7 +5,7 @@ Model weights are downloaded separately and retain their upstream terms.
 
 | Component | Pin / origin | Notices in archive |
 | --- | --- | --- |
-| whisper.cpp / GGML | commit 927cfce34f31707e17f2bff35c349632fb9e2c3a, one-line VAD thread patch | MIT, patched source archive |
+| whisper.cpp / GGML | commit 927cfce34f31707e17f2bff35c349632fb9e2c3a, VAD thread and GPU-init patches | MIT, patched source archive |
 | CLI11 | 2.5.0 | BSD, source archive |
 | nlohmann JSON | 3.11.2, independent hash-pinned dependency | MIT, source archive |
 | FFmpeg | 8.0.1, no GPL/nonfree components | LGPL-2.1, source and configure log |
@@ -37,8 +37,12 @@ GCC runtime exception notices are included; GCC source archives are not bundled.
 CUDA libraries remain subject to their vendor terms.
 
 `cmake/patch-whisper.cmake` makes whisper.cpp's built-in VAD use the requested CPU thread count
-instead of a fixed four; the build fails if the pinned code no longer matches. The archived
-whisper.cpp source is the patched tree that was compiled.
+instead of a fixed four, and rejects a failed requested GPU initialization rather than silently
+continuing on CPU, with value-initialized state for safe early-error cleanup.
+The build fails if the pinned code no longer matches or a local source override
+lacks the GPU guard. The archived whisper.cpp source is the patched tree that was compiled.
+The experimental Vulkan SDK is a hash-pinned development/CI dependency only; no SDK or Vulkan
+driver is added to release archives. See [Vulkan builds](vulkan.md).
 
 CMake dependencies, FFmpeg and catalog models are hash-pinned. Apt security
 packages are intentionally refreshed, so builds are not claimed to be

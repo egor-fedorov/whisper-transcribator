@@ -22,8 +22,12 @@ Json doctor(const Options& options) {
                    {"cpu_threads", threads},
                    {"errors", Json::array()}};
     try {
-        result["device"] = select_device(options.device);
         result.update(inference_diagnostics());
+        auto selected = select_device(options.device);
+        result["device"] = selected.backend;
+        result["selected_device"] = {{"name", selected.name},
+                                     {"description", selected.description},
+                                     {"gpu_index", selected.gpu_index}};
     } catch (const std::exception& error) {
         result["errors"].push_back(error.what());
     }

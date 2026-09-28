@@ -51,7 +51,8 @@ int transcribe(Options options) {
         if (jobs.empty())
             return failed ? 1 : 0;
     }
-    options.device = select_device(options.device);
+    auto device = select_device(options.device);
+    options.device = device.backend;
     if (!options.cpu_threads)
         options.cpu_threads = platform::automatic_cpu_threads();
     log_message(LogLevel::info, "CPU threads: " + std::to_string(options.cpu_threads));
@@ -61,11 +62,12 @@ int transcribe(Options options) {
         vad =
             prepare_model(options.vad_model.empty() ? "silero-v6.2.0" : options.vad_model, options);
     check_cancelled();
-    log_message(LogLevel::info, "Model: " + model.path.string() + "; device: " + options.device);
+    log_message(LogLevel::info, "Model: " + model.path.string() + "; device: " + options.device +
+                                    " (" + device.description + ")");
     Json backend = {{"model_sha256", model.hash},
                     {"vad_sha256", vad.hash},
                     {"ffmpeg", audio_backend_version()}};
-    WhisperSession session(options, model, vad);
+    WhisperSession session(options, model, vad, device);
     auto cut = [&](const std::vector<float>& pcm) { return session.choose_cut(pcm); };
     size_t job_index = 0;
     PublishedOutputs published;
