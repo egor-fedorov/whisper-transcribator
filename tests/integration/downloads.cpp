@@ -1,8 +1,9 @@
 #include "models/download.hpp"
 #include "models/models.hpp"
+#include "support/atomic.hpp"
 #include "support/cancel.hpp"
+#include "support/files.hpp"
 #include "support/hash.hpp"
-#include "support/io.hpp"
 #include "support/socket.hpp"
 #include "support/test.hpp"
 #include <atomic>

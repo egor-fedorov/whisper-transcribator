@@ -1,5 +1,6 @@
 #pragma once
 #include "support/json.hpp"
+#include "support/permissions.hpp"
 #include "transcript/options.hpp"
 #include "transcript/types.hpp"
 #include <cstdint>
@@ -26,7 +27,7 @@ class Journal {
 
   public:
     Journal(const Job& job, const CheckpointOptions& options, const Json& fingerprint,
-            const Json& output_metadata);
+            const Json& output_metadata, PermissionProbe permissions = probe_permissions);
     ~Journal();
     int64_t samples() const;
     std::string language() const;

@@ -1,7 +1,8 @@
 #include "transcript/checkpoint/journal.hpp"
 #include "platform/file.hpp"
+#include "support/atomic.hpp"
 #include "support/hash.hpp"
-#include "support/io.hpp"
+#include "support/strings.hpp"
 #include "transcript/checkpoint/detail/privacy.hpp"
 #include "transcript/checkpoint/detail/publication.hpp"
 #include "transcript/checkpoint/detail/records.hpp"
@@ -33,9 +34,10 @@ struct Journal::Lock {
     }
 };
 Journal::Journal(const Job& job, const CheckpointOptions& options, const Json& fingerprint,
-                 const Json& output_metadata)
+                 const Json& output_metadata, PermissionProbe permissions)
     : directory(checkpoint_path(job)) {
-    privacy = std::make_unique<checkpoint_detail::Privacy>(directory.parent_path().parent_path());
+    privacy = std::make_unique<checkpoint_detail::Privacy>(directory.parent_path().parent_path(),
+                                                           std::move(permissions));
     checkpoint_detail::private_directory(directory.parent_path(), *privacy);
     checkpoint_detail::reject_legacy_outputs(job);
     lock = std::make_unique<Lock>(directory.string() + ".lock", *privacy);

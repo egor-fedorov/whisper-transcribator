@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.22)
 # <csignal>, and library headers such as CommonCrypto's, are allowed everywhere.
 set(system_headers
   "unistd|fcntl|dlfcn|sched|signal|pthread|spawn|dirent|poll|pwd|grp|termios"
-  "windows|winbase|io|direct|process|shlobj"
+  "windows|winbase|io|direct|process|shlobj|aclapi|winioctl"
   "sys/[^>]+|mach/[^>]+|mach-o/[^>]+")
 string(JOIN "|" system_headers ${system_headers})
 set(pattern "^[ \t]*#[ \t]*include[ \t]*<(${system_headers})\\.h>")

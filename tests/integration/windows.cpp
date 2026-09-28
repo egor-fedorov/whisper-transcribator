@@ -1,8 +1,9 @@
 #include "platform/file.hpp"
 #include "platform/system.hpp"
+#include "support/atomic.hpp"
+#include "support/files.hpp"
 #include "support/fixtures.hpp"
 #include "support/hash.hpp"
-#include "support/io.hpp"
 #include "support/test.hpp"
 #include "transcript/checkpoint/journal.hpp"
 #include <algorithm>

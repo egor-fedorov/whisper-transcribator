@@ -1,6 +1,7 @@
 #include "transcript/jobs.hpp"
+#include "support/atomic.hpp"
 #include "support/error.hpp"
-#include "support/io.hpp"
+#include "support/files.hpp"
 #include "support/report.hpp"
 #include "transcript/checkpoint/journal.hpp"
 #include <algorithm>

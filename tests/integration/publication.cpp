@@ -1,6 +1,7 @@
 #include "transcript/publication.hpp"
+#include "support/atomic.hpp"
+#include "support/files.hpp"
 #include "support/fixtures.hpp"
-#include "support/io.hpp"
 #include "support/test.hpp"
 #include "transcript/checkpoint/journal.hpp"
 #include "transcript/jobs.hpp"

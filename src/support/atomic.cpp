@@ -1,54 +1,13 @@
-#include "support/io.hpp"
+#include "support/atomic.hpp"
 #include "platform/file.hpp"
-#include "platform/system.hpp"
 #include "support/cancel.hpp"
-#include "support/error.hpp"
 #include <cerrno>
-#include <cstdlib>
 #include <cstring>
-#include <fstream>
-#include <sstream>
+#include <ostream>
+#include <stdexcept>
 #include <streambuf>
 
 namespace wt {
-std::string env(const char* key) {
-    const char* value = std::getenv(key);
-    return value ? value : "";
-}
-fs::path resolve_path(const fs::path& path) {
-    auto text = path.string();
-    if (text == "~" || text.rfind("~/", 0) == 0) {
-        auto home = platform::home_directory();
-        if (home.empty())
-            throw UsageError("HOME is not set");
-        text = home.string() + text.substr(1);
-    }
-    return fs::weakly_canonical(fs::absolute(text));
-}
-bool same_file(const fs::path& a, const fs::path& b) {
-    return resolve_path(a) == resolve_path(b) ||
-           (fs::exists(a) && fs::exists(b) && fs::equivalent(a, b));
-}
-std::string read_text(const fs::path& path) {
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream)
-        throw std::runtime_error("Cannot read: " + path.string());
-    std::ostringstream data;
-    data << stream.rdbuf();
-    if (stream.bad())
-        throw std::runtime_error("Read failed: " + path.string());
-    return data.str();
-}
-void probe_directory(const fs::path& path) {
-    fs::create_directories(path);
-    fs::path probe;
-    auto file = platform::create_temporary(path, ".whisper-probe-", probe);
-    if (!file)
-        throw std::runtime_error("Cannot write directory: " + path.string());
-    file.close();
-    std::error_code ignored;
-    fs::remove(probe, ignored);
-}
 namespace {
 class FileBuffer : public std::streambuf {
     platform::File& file;
@@ -93,22 +52,6 @@ bool apply_permissions(platform::File& file, unsigned permissions) {
     auto status = platform::status(file);
     return status && !status->owned;
 }
-StoredPermissions probe_with_file(const fs::path& directory) {
-    fs::path probe;
-    auto file = platform::create_temporary(directory, ".whisper-probe-", probe);
-    // Keep every check when the filesystem cannot be probed.
-    if (!file)
-        return {};
-    bool changed = platform::set_permissions(file, 0600);
-    auto status = platform::status(file);
-    file.close();
-    std::error_code ignored;
-    fs::remove(probe, ignored);
-    if (!status)
-        return {};
-    return {status->owned && !platform::ownership_ignored(directory),
-            changed && status->permissions == 0600};
-}
 // Replaces `to` or, without `overwrite`, fails if it exists.
 void rename_output(const fs::path& from, const fs::path& to, bool overwrite) {
     std::error_code error;
@@ -118,10 +61,6 @@ void rename_output(const fs::path& from, const fs::path& to, bool overwrite) {
         throw std::runtime_error("Cannot publish " + to.string() + ": " + error.message());
 }
 } // namespace
-StoredPermissions (*probe_permissions)(const fs::path&) = probe_with_file;
-bool StoredPermissions::accepts(const platform::FileStatus& status, bool owner_only) const {
-    return (status.owned || !owner) && (owner_only || !mode);
-}
 void sync_directory(const fs::path& path) {
     auto directory = platform::open_directory(path);
     if (!directory)
@@ -175,11 +114,5 @@ void atomic_write_stream(const fs::path& path, const std::function<void(std::ost
 }
 void atomic_write(const fs::path& path, const std::string& content, bool overwrite) {
     atomic_write_stream(path, [&](auto& stream) { stream << content; }, overwrite);
-}
-std::string trim(const std::string& value) {
-    auto first = value.find_first_not_of(" \t\r\n");
-    return first == std::string::npos
-               ? ""
-               : value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
 }
 } // namespace wt

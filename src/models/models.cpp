@@ -3,11 +3,13 @@
 #include "models/download.hpp"
 #include "platform/file.hpp"
 #include "platform/system.hpp"
+#include "support/atomic.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
+#include "support/files.hpp"
 #include "support/hash.hpp"
-#include "support/io.hpp"
 #include "support/report.hpp"
+#include "support/strings.hpp"
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -53,7 +55,7 @@ static bool valid_model(const Model& model, const fs::path& path) {
            stable_hash(path) == model.hash;
 }
 PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offline,
-                            const Fetch& fetch) {
+                            const Fetch& fetch, const PermissionProbe& permissions) {
     auto target = root / model.file;
     auto cached = [&]() -> PreparedModel {
         if (!valid_model(model, target))
@@ -93,7 +95,7 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
     if (fs::exists(target) || fs::is_symlink(target))
         return cached();
     auto temporary = partial_model_path(model, root);
-    auto partial = open_partial_model(temporary);
+    auto partial = open_partial_model(temporary, permissions);
     partial.close();
     sync_directory(root);
     std::error_code ignored;

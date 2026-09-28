@@ -1,8 +1,10 @@
 #include "models/download.hpp"
 #include "models/models.hpp"
 #include "platform/file.hpp"
+#include "support/atomic.hpp"
+#include "support/files.hpp"
 #include "support/fixtures.hpp"
-#include "support/io.hpp"
+#include "support/permissions.hpp"
 #include "support/test.hpp"
 #include "transcript/checkpoint/journal.hpp"
 #include <iostream>
@@ -20,17 +22,10 @@ bool stores_permissions(const fs::path& directory) {
 // Simulates a FAT/exFAT mount owned by this user, which reports mode 0777 for every entry. With
 // TMPDIR on such a filesystem (tests/integration/exfat.sh) the real one is used instead.
 class PermissionlessFilesystem {
-    decltype(probe_permissions) previous = probe_permissions;
-
   public:
     bool simulated;
-    explicit PermissionlessFilesystem(const fs::path& root) : simulated(stores_permissions(root)) {
-        if (simulated)
-            probe_permissions = without_modes;
-    }
-    ~PermissionlessFilesystem() { probe_permissions = previous; }
-    PermissionlessFilesystem(const PermissionlessFilesystem&) = delete;
-    PermissionlessFilesystem& operator=(const PermissionlessFilesystem&) = delete;
+    explicit PermissionlessFilesystem(const fs::path& root) : simulated(stores_permissions(root)) {}
+    PermissionProbe probe() const { return simulated ? without_modes : probe_permissions; }
     // Applies the mount's fixed mode to entries this program created with private modes.
     void expose(const fs::path& path) const {
         if (!simulated)
@@ -53,7 +48,7 @@ void checkpoints_resume_and_publish(const fs::path& root) {
     Audio complete;
     {
         Journal journal(reference.job, reference.options.checkpoint, reference.fingerprint(),
-                        describe_output(reference.options));
+                        describe_output(reference.options), filesystem.probe());
         run(reference, journal, complete);
     }
     auto checkpoints = root / "job/.whisper-transcribator";
@@ -64,14 +59,15 @@ void checkpoints_resume_and_publish(const fs::path& root) {
         StreamCapture capture(std::cerr, log.rdbuf());
         {
             Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
-                            describe_output(f.options));
+                            describe_output(f.options), filesystem.probe());
             Audio audio;
             rejects([&] { run(f, journal, audio, 1); }, "injected inference failure");
         }
         require(fs::exists(checkpoint_path(f.job) / "chunk-0.json"));
         filesystem.expose(checkpoints);
         f.options.checkpoint.resume = true;
-        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
+        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options),
+                        filesystem.probe());
         require(journal.samples() > 0);
         Audio audio;
         run(f, journal, audio);
@@ -96,7 +92,8 @@ void interrupted_first_write_is_recovered(const fs::path& root) {
     {
         std::ostringstream log;
         StreamCapture capture(std::cerr, log.rdbuf());
-        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
+        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options),
+                        filesystem.probe());
         require(journal.samples() == 0 && !has_checkpoint(f.job));
     }
     fs::create_directories(directory);
@@ -105,7 +102,7 @@ void interrupted_first_write_is_recovered(const fs::path& root) {
     rejects(
         [&] {
             Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
-                            describe_output(f.options));
+                            describe_output(f.options), filesystem.probe());
         },
         "Checkpoint manifest missing");
     require(read_text(directory / "unknown") == "preserve");
@@ -124,7 +121,7 @@ void link_protections_remain(const fs::path& root) {
     rejects(
         [&] {
             Journal journal(links.job, links.options.checkpoint, links.fingerprint(),
-                            describe_output(links.options));
+                            describe_output(links.options), filesystem.probe());
         },
         "Checkpoint directory must be owned by you");
     Fixture f(root / "hardlink");
@@ -136,7 +133,7 @@ void link_protections_remain(const fs::path& root) {
     rejects(
         [&] {
             Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
-                            describe_output(f.options));
+                            describe_output(f.options), filesystem.probe());
         },
         "Unsafe checkpoint temporary");
     require(read_text(root / "unrelated") == "preserve");
@@ -144,7 +141,7 @@ void link_protections_remain(const fs::path& root) {
     fs::create_directories(partial.parent_path());
     fs::create_hard_link(root / "unrelated", partial);
     wt::test::permissions(partial, fs::perms::all);
-    rejects([&] { open_partial_model(partial); }, "Unsafe partial model file");
+    rejects([&] { open_partial_model(partial, filesystem.probe()); }, "Unsafe partial model file");
 }
 void strict_checks_where_permissions_are_stored(const fs::path& root) {
     Fixture f(root);
@@ -180,13 +177,60 @@ void model_cache_downloads_and_publishes(const fs::path& root) {
     atomic_write(partial, "a");
     filesystem.expose(partial);
     int calls = 0;
-    auto prepared = ensure_cached(model, root, false, [&](const Model&, const fs::path& path) {
-        ++calls;
-        auto file = open_partial_model(path);
-        require(platform::seek_end(file) == uint64_t(1) && platform::write(file, "bc", 2) == 2);
-    });
+    auto prepared = ensure_cached(
+        model, root, false,
+        [&](const Model&, const fs::path& path) {
+            ++calls;
+            auto file = open_partial_model(path, filesystem.probe());
+            require(platform::seek_end(file) == uint64_t(1) && platform::write(file, "bc", 2) == 2);
+        },
+        filesystem.probe());
     require(calls == 1 && prepared.path == root / model.file && read_text(prepared.path) == "abc");
     require(!fs::exists(partial) && ensure_cached(model, root, true).hash == model.hash);
+}
+void permission_probes_are_scoped_to_the_consumer(const fs::path& root) {
+    if (!stores_permissions(root))
+        return;
+    Fixture f(root / "job");
+    auto checkpoints = root / "job/.whisper-transcribator";
+    fs::create_directory(checkpoints);
+    wt::test::permissions(checkpoints, fs::perms::all);
+    size_t journal_calls = 0, model_calls = 0, strict_calls = 0;
+    PermissionProbe relaxed = [&](const fs::path& directory) -> StoredPermissions {
+        if (directory == root / "job")
+            ++journal_calls;
+        else {
+            require(directory == root / "models");
+            ++model_calls;
+        }
+        return {true, false};
+    };
+    PermissionProbe strict = [&](const fs::path&) -> StoredPermissions {
+        ++strict_calls;
+        return {};
+    };
+    Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options),
+                    relaxed);
+    for (const auto& probe : {PermissionProbe(probe_permissions), strict})
+        rejects(
+            [&] {
+                Journal other(f.job, f.options.checkpoint, f.fingerprint(),
+                              describe_output(f.options), probe);
+            },
+            "Checkpoint directory must be owned by you with mode 0700");
+    auto partial = root / "models/model.part";
+    fs::create_directory(partial.parent_path());
+    atomic_write(partial, "preserve");
+    wt::test::permissions(partial, fs::perms::all);
+    auto opened = open_partial_model(partial, relaxed);
+    rejects([&] { open_partial_model(partial); }, "Unsafe partial model file");
+    rejects([&] { open_partial_model(partial, strict); }, "Unsafe partial model file");
+    opened.close();
+    Audio audio;
+    run(f, journal, audio);
+    require(journal_calls == 1 && model_calls == 1 && strict_calls == 2,
+            "each consumer must use only its own probe; a journal caches its result");
+    require(read_text(partial) == "preserve" && !has_checkpoint(f.job));
 }
 } // namespace
 int main() {
@@ -198,5 +242,7 @@ int main() {
         {"strict checks where permissions are stored", strict_checks_where_permissions_are_stored},
         {"model cache downloads and publishes without POSIX permissions",
          model_cache_downloads_and_publishes},
+        {"permission probes are scoped to the consumer",
+         permission_probes_are_scoped_to_the_consumer},
     });
 }

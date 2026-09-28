@@ -3,8 +3,8 @@
 #include "platform/system.hpp"
 #include "support/error.hpp"
 #include "support/fs.hpp"
-#include "support/io.hpp"
 #include "support/report.hpp"
+#include "support/strings.hpp"
 #include "whisper.h"
 
 namespace wt {

@@ -1,8 +1,9 @@
 #include "models/download.hpp"
 #include "platform/system.hpp"
 #include "support/cancel.hpp"
-#include "support/io.hpp"
+#include "support/permissions.hpp"
 #include "support/report.hpp"
+#include "support/strings.hpp"
 #include <algorithm>
 #include <cctype>
 #include <curl/curl.h>
@@ -16,10 +17,11 @@ namespace {
 // Partial downloads are private to this user. A cache on a filesystem without POSIX permissions
 // (FAT, exFAT, some FUSE/SMB mounts) cannot store their owner or mode; the file type and link
 // checks remain, and the final size/SHA-256 verification still guards published weights.
-bool private_partial(const platform::FileStatus& st, const fs::path& root) {
+bool private_partial(const platform::FileStatus& st, const fs::path& root,
+                     const PermissionProbe& permissions) {
     if (st.owned && !(st.permissions & 0077))
         return true;
-    auto stored = probe_permissions(root);
+    auto stored = permissions(root);
     static bool noted = false;
     if ((!stored.owner || !stored.mode) && !std::exchange(noted, true))
         log_message(LogLevel::debug,
@@ -27,11 +29,11 @@ bool private_partial(const platform::FileStatus& st, const fs::path& root) {
     return stored.accepts(st, !(st.permissions & 0077));
 }
 } // namespace
-platform::File open_partial_model(const fs::path& path) {
+platform::File open_partial_model(const fs::path& path, const PermissionProbe& permissions) {
     auto file = platform::open_private(path);
     auto st = file ? platform::status(file) : std::nullopt;
     if (!st || st->type != platform::FileType::regular || st->links != 1 ||
-        !private_partial(*st, path.parent_path())) {
+        !private_partial(*st, path.parent_path(), permissions)) {
         throw std::runtime_error("Unsafe partial model file: " + path.string());
     }
     return file;

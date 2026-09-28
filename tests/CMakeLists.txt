@@ -177,7 +177,10 @@ set(WT_CHECK_HEADERS
   support/error.hpp
   support/fs.hpp
   support/hash.hpp
-  support/io.hpp
+  support/files.hpp
+  support/atomic.hpp
+  support/permissions.hpp
+  support/strings.hpp
   support/json.hpp
   support/report.hpp
   transcript/jobs.hpp
@@ -196,7 +199,9 @@ set(WT_CHECK_HEADERS
   transcript/boundaries.hpp
   transcript/types.hpp
 )
-if(NOT WIN32)
+if(WIN32)
+  list(APPEND WT_CHECK_HEADERS platform/win32/handles.hpp platform/win32/security.hpp platform/win32/status.hpp)
+else()
   list(APPEND WT_CHECK_HEADERS platform/posix.hpp)
 endif()
 set(WT_HEADER_SOURCES)

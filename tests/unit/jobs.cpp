@@ -1,7 +1,8 @@
 #include "transcript/jobs.hpp"
+#include "support/atomic.hpp"
 #include "support/error.hpp"
+#include "support/files.hpp"
 #include "support/fixtures.hpp"
-#include "support/io.hpp"
 #include "support/test.hpp"
 
 using namespace wt;

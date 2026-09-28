@@ -1,5 +1,6 @@
 #include "transcript/checkpoint/detail/privacy.hpp"
 #include "platform/file.hpp"
+#include "support/atomic.hpp"
 #include "support/report.hpp"
 #include <cerrno>
 #include <regex>
@@ -14,13 +15,14 @@ namespace wt::checkpoint_detail {
 // directory cannot keep either, and only on that filesystem. Where an entry's filesystem ignores
 // ownership (macOS external volumes), every user appears to own it, so the owner check alone
 // never accepts it. Entry types, symlinks and hard links are always checked.
-Privacy::Privacy(fs::path directory) : output_directory(std::move(directory)) {}
+Privacy::Privacy(fs::path directory, PermissionProbe permissions)
+    : output_directory(std::move(directory)), probe(std::move(permissions)) {}
 bool Privacy::accepts(const fs::path& path, const platform::FileStatus& st, bool owner_only) {
     if (st.owned && owner_only && !platform::ownership_ignored(path))
         return true;
     if (!stored) {
         auto output = platform::status(output_directory);
-        stored = output ? probe_permissions(output_directory) : StoredPermissions{};
+        stored = output ? probe(output_directory) : StoredPermissions{};
         device = output ? output->id.device : 0;
         static std::set<fs::path> warned;
         if ((!stored->owner || !stored->mode) && warned.insert(output_directory).second)

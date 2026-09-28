@@ -1,14 +1,19 @@
-#include "support/io.hpp"
 #include "platform/file.hpp"
+#include "support/atomic.hpp"
+#include "support/files.hpp"
+#include "support/permissions.hpp"
 #ifndef _WIN32
 #include "platform/posix.hpp"
 #endif
 #include "support/cancel.hpp"
 #include "support/test.hpp"
 #include <cerrno>
+#include <ostream>
+#include <type_traits>
 
 using namespace wt;
 using namespace wt::test;
+static_assert(std::is_function_v<decltype(probe_permissions)>);
 #ifndef _WIN32
 using platform::NoReplaceSteps;
 #endif
@@ -66,6 +71,58 @@ void cancellation_preserves_output(const fs::path& root) {
     stop_signal = 0;
     require(stopped && read_text(path) == "old");
     require(std::distance(fs::directory_iterator(root), fs::directory_iterator{}) == 1);
+}
+void writer_failure_removes_temporary_output(const fs::path& root) {
+    auto path = root / "result";
+    atomic_write(path, "old");
+    rejects(
+        [&] {
+            atomic_write_stream(
+                path,
+                [](std::ostream& stream) {
+                    stream << std::string(100000, 'x');
+                    throw std::runtime_error("injected writer failure");
+                },
+                true);
+        },
+        "injected writer failure");
+    require(read_text(path) == "old");
+    require(std::distance(fs::directory_iterator(root), fs::directory_iterator{}) == 1);
+    bool stopped = false;
+    try {
+        atomic_write_stream(
+            path,
+            [](std::ostream& stream) {
+                stream << "new";
+                stream.flush();
+                stop_signal = SIGTERM;
+            },
+            true);
+    } catch (const Cancelled&) {
+        stopped = true;
+    } catch (...) {
+        stop_signal = 0;
+        throw;
+    }
+    stop_signal = 0;
+    require(stopped && read_text(path) == "old");
+    require(std::distance(fs::directory_iterator(root), fs::directory_iterator{}) == 1);
+}
+void publication_preserves_permissions_and_staged_data(const fs::path& root) {
+    auto staging = root / "staging", output = root / "output";
+    fs::create_directory(staging);
+    fs::create_directory(output);
+    auto target = output / "result", staged = staging / "result";
+    atomic_write_stream(target, [](auto& stream) { stream << "old"; }, false, true);
+    auto permissions = platform::status(target)->permissions;
+    atomic_write(target, "replacement", true);
+    require(platform::status(target)->permissions == permissions);
+    atomic_write(staged, "new");
+    rejects([&] { publish_file(staged, target, false); }, "Cannot publish");
+    require(read_text(staged) == "new" && read_text(target) == "replacement");
+    publish_file(staged, target, true);
+    require(fs::is_empty(staging) && read_text(target) == "new");
+    require(platform::status(target)->permissions == permissions);
 }
 void rename_noreplace_keeps_existing_targets(const fs::path& root) {
     atomic_write(root / "staged", "new");
@@ -145,6 +202,9 @@ int main() {
     return run_tests({
         {"atomic no clobber and replacement", atomic_no_clobber_and_replacement},
         {"cancellation preserves output", cancellation_preserves_output},
+        {"writer failure removes temporary output", writer_failure_removes_temporary_output},
+        {"publication preserves permissions and staged data",
+         publication_preserves_permissions_and_staged_data},
         {"no-replace rename keeps existing targets", rename_noreplace_keeps_existing_targets},
 #ifndef _WIN32
         {"no-replace rename falls back to hard links", rename_noreplace_falls_back_to_hard_links},
