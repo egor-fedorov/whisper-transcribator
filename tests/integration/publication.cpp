@@ -90,10 +90,77 @@ void late_publication_failure(const fs::path& root) {
     for (const auto& [format, path] : job.outputs)
         require(read_text(path) == expected.at(format), "Changed resumed " + format);
 }
+void staging_failure_preserves_committed_state(const fs::path& root) {
+    Fixture f(root);
+    const auto directory = checkpoint_path(f.job);
+    std::string manifest;
+    {
+        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
+        journal.append(sample_rate, {"en", 1, {{0, 1, "Saved.", 0}}});
+        journal.finish();
+        manifest = read_text(directory / "manifest.json");
+        int rendered = 0;
+        rejects(
+            [&] {
+                journal.publish(f.job, false, [&](auto& out, const auto& format) {
+                    require(read_text(directory / "manifest.json") == manifest);
+                    for (const auto& [name, path] : f.job.outputs)
+                        require(!fs::exists(path), "published before all formats were staged");
+                    out << format << "\n";
+                    if (++rendered == 2)
+                        throw std::runtime_error("injected renderer failure");
+                });
+            },
+            "injected renderer failure");
+        require(rendered == 2 && journal.finished() && journal.samples() == sample_rate);
+        require(read_text(directory / "manifest.json") == manifest);
+    }
+    f.options.checkpoint.resume = true;
+    Journal resumed(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
+    require(resumed.finished() && resumed.samples() == sample_rate);
+    resumed.publish(f.job, false, [](auto& out, const auto& format) { out << format << "\n"; });
+    for (const auto& [format, path] : f.job.outputs)
+        require(read_text(path) == format + "\n");
+    require(!has_checkpoint(f.job) && !fs::exists(directory.string() + ".completed"));
+}
+void changed_reconstruction_does_not_publish(const fs::path& root) {
+    Fixture f(root);
+    auto render = [](auto& out, const auto& format) { out << format << "\n"; };
+    {
+        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
+        journal.append(sample_rate, {"en", 1, {{0, 1, "Saved.", 0}}});
+        journal.finish();
+        fs::create_directory(f.job.outputs.at("srt"));
+        rejects([&] { journal.publish(f.job, false, render); }, "Unsafe output");
+        fs::remove(f.job.outputs.at("srt"));
+    }
+    auto manifest_path = checkpoint_path(f.job) / "manifest.json";
+    auto manifest = read_text(manifest_path);
+    require(Json::parse(manifest).at("published_hashes").size() == f.job.outputs.size());
+    f.options.checkpoint.resume = true;
+    Journal resumed(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
+    rejects(
+        [&] {
+            resumed.publish(f.job, false, [](auto& out, const auto& format) {
+                out << format << (format == "text" ? "changed\n" : "\n");
+            });
+        },
+        "Reconstructed outputs differ from checkpoint");
+    require(read_text(manifest_path) == manifest);
+    require(read_text(f.job.outputs.at("json")) == "json\n");
+    require(!fs::exists(f.job.outputs.at("srt")) && !fs::exists(f.job.outputs.at("text")) &&
+            !fs::exists(f.job.outputs.at("vtt")));
+    resumed.publish(f.job, false, render);
+    require(!has_checkpoint(f.job));
+}
 } // namespace
 int main() {
     return run_tests({
         {"late publication failure and all-format recovery", late_publication_failure},
         {"partial publication and external edits", partial_publication_and_external_edits},
+        {"renderer failure preserves the committed checkpoint",
+         staging_failure_preserves_committed_state},
+        {"changed reconstruction cannot publish or replace saved hashes",
+         changed_reconstruction_does_not_publish},
     });
 }
