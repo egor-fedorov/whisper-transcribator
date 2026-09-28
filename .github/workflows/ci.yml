@@ -160,7 +160,8 @@ jobs:
       - name: Configure MSVC dependencies and application
         shell: pwsh
         run: ./packaging/windows-build.ps1 -Stage Configure -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
-      - name: Compile application and test executables with MSVC
+      - id: windows-build
+        name: Compile application and test executables with MSVC
         shell: pwsh
         run: ./packaging/windows-build.ps1 -Stage Build
       - name: Run native model-free CTest
@@ -177,6 +178,7 @@ jobs:
           path: .build/vcpkg-cache
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always() && steps.windows-build.conclusion == 'success'
         with:
           name: windows-test-binaries
           path: .build/windows/bin

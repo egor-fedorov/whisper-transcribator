@@ -328,7 +328,8 @@ bool is_directory(HANDLE file) {
 }
 // Another handle to the same file with `access`, for operations the original was not opened for.
 File reopen(const File& file, DWORD access) {
-    File result(native(ReOpenFile(handle(file), access, share_all, 0)));
+    auto flags = is_directory(handle(file)) ? FILE_FLAG_BACKUP_SEMANTICS : 0;
+    File result(native(ReOpenFile(handle(file), access, share_all, flags)));
     if (!result)
         fail();
     return result;

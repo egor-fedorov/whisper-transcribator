@@ -7,6 +7,7 @@
 #include "transcript/journal.hpp"
 #include <iostream>
 #include <sstream>
+#include <system_error>
 
 using namespace wt;
 using namespace wt::test;
@@ -80,7 +81,8 @@ void checkpoints_resume_and_publish(const fs::path& root) {
     for (const auto& format : {"text", "srt", "vtt"})
         require(read_text(f.job.outputs.at(format)) == read_text(reference.job.outputs.at(format)));
     require(fs::file_size(f.job.outputs.at("json")) > 0 && !has_checkpoint(f.job));
-    rejects([&] { atomic_write(f.job.outputs.at("text"), "replacement"); }, "File exists");
+    rejects([&] { atomic_write(f.job.outputs.at("text"), "replacement"); },
+            std::make_error_code(std::errc::file_exists).message());
 }
 void interrupted_first_write_is_recovered(const fs::path& root) {
     PermissionlessFilesystem filesystem(root);

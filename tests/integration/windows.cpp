@@ -23,6 +23,7 @@ void private_files(const fs::path& root) {
     auto status = platform::status(directory);
     require(status && status->owned && status->permissions == 0700);
     auto opened = platform::open_directory(directory);
+    require(platform::set_permissions(opened, 0700), "Changing a directory ACL must work");
     PSECURITY_DESCRIPTOR security = nullptr;
     require(GetSecurityInfo(reinterpret_cast<HANDLE>(opened.native()), SE_FILE_OBJECT,
                             DACL_SECURITY_INFORMATION, nullptr, nullptr, nullptr, nullptr,
@@ -72,6 +73,17 @@ void busy_output(const fs::path& root) {
     atomic_write(path, "replacement", true);
     require(read_text(path) == "replacement");
 }
+void readonly_directory(const fs::path& root) {
+    wt::test::permissions(root, fs::perms::owner_read | fs::perms::owner_exec);
+    try {
+        rejects([&] { probe_directory(root); }, "Cannot write directory");
+    } catch (...) {
+        wt::test::permissions(root, fs::perms::owner_all);
+        throw;
+    }
+    wt::test::permissions(root, fs::perms::owner_all);
+    probe_directory(root);
+}
 void junction_checkpoint(const fs::path& root) {
     Fixture fixture(root / "job");
     auto outside = root / "outside";
@@ -109,5 +121,6 @@ int main() {
     return run_tests({{"private and inherited ACLs", private_files},
                       {"Unicode and long paths", unicode_and_long_paths},
                       {"busy output preserves old contents", busy_output},
+                      {"read-only fixture ACLs deny writes", readonly_directory},
                       {"checkpoint rejects junction", junction_checkpoint}});
 }

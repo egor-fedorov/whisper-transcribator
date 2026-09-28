@@ -15,10 +15,14 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
+    if ($Stage -ne 'Test') {
+        $mediaPath = (Resolve-Path $Media).Path.Replace('\', '/')
+        $env:PKG_CONFIG_LIBDIR = "$mediaPath/lib/pkgconfig"
+        $env:PKG_CONFIG_PATH = ''
+    }
     if ($Stage -in @('All', 'Configure')) {
         $PkgConfig = (Resolve-Path $PkgConfig).Path.Replace('\', '/')
         Invoke-Checked $PkgConfig @('--version')
-        $mediaPath = (Resolve-Path $Media).Path.Replace('\', '/')
         # FFmpeg installs MSVC import libraries beside its DLLs, not in lib/.
         foreach ($library in @('avformat', 'avcodec', 'swresample', 'avutil')) {
             if (!(Test-Path "$mediaPath/bin/$library.lib")) {
@@ -26,8 +30,6 @@ try {
             }
         }
         $vcpkgPath = (Resolve-Path $Vcpkg).Path.Replace('\', '/')
-        $env:PKG_CONFIG_LIBDIR = "$mediaPath/lib/pkgconfig"
-        $env:PKG_CONFIG_PATH = ''
         Invoke-Checked "$vcpkgPath/bootstrap-vcpkg.bat" @('-disableMetrics')
         Invoke-Checked cmake @('-S', '.', '-B', $Build, '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release', '-DWT_WERROR=ON',
