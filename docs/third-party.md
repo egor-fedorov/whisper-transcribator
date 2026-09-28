@@ -38,7 +38,8 @@ CUDA libraries remain subject to their vendor terms.
 
 `cmake/patch-whisper.cmake` makes whisper.cpp's built-in VAD use the requested CPU thread count
 instead of a fixed four, and rejects a failed requested GPU initialization rather than silently
-continuing on CPU. The build fails if the pinned code no longer matches or a local source override
+continuing on CPU, with value-initialized state for safe early-error cleanup.
+The build fails if the pinned code no longer matches or a local source override
 lacks the GPU guard. The archived whisper.cpp source is the patched tree that was compiled.
 The experimental Vulkan SDK is a hash-pinned development/CI dependency only; no SDK or Vulkan
 driver is added to release archives. See [Vulkan builds](vulkan.md).

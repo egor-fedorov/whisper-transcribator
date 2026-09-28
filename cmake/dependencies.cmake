@@ -35,8 +35,9 @@ FetchContent_Declare(nlohmann_json
 FetchContent_MakeAvailable(whisper cli11 nlohmann_json)
 file(READ "${whisper_SOURCE_DIR}/src/whisper.cpp" WT_WHISPER_SOURCE_TEXT)
 string(FIND "${WT_WHISPER_SOURCE_TEXT}" "if (params.use_gpu && !backend_gpu)" WT_GPU_GUARD)
-if(WT_GPU_GUARD EQUAL -1)
-  message(FATAL_ERROR "whisper.cpp lacks the GPU initialization guard; apply cmake/patch-whisper.cmake to the source override")
+string(FIND "${WT_WHISPER_SOURCE_TEXT}" "whisper_state * state = new whisper_state{};" WT_STATE_INIT)
+if(WT_GPU_GUARD EQUAL -1 OR WT_STATE_INIT EQUAL -1)
+  message(FATAL_ERROR "whisper.cpp lacks the safe GPU initialization guard; apply cmake/patch-whisper.cmake to the source override")
 endif()
 unset(WT_WHISPER_SOURCE_TEXT)
 # Pinned ggml defines AVX-VNNI for MSVC-style builds but omits ClangCL's target flag.

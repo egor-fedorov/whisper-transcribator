@@ -25,7 +25,8 @@ The prototype CI pins LunarG SDK 1.4.357.0, with hashes in
 headers, a loader library, `glslc` and the `SPIRV-Headers` CMake package.
 Keep the build directory, including its adjacent ggml plugins and dependencies.
 
-Linux, after extracting the SDK and sourcing its `setup-env.sh`:
+Linux, after installing the loader development library (`libvulkan-dev` on Ubuntu),
+extracting the SDK and sourcing its `setup-env.sh`:
 
 ```bash
 cmake --preset vulkan -DWT_WERROR=ON
