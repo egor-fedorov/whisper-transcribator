@@ -1,3 +1,4 @@
+#requires -Version 7.4
 # Shared by the model-free ZIP builder and verifier. Requires developer PowerShell.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest

@@ -133,14 +133,14 @@ build_assets
 printf 'WT_PACKAGE_VERSION=0.3.0\nWT_SOURCE_REVISION=%040d\nWT_SOURCE_DIRTY=false\nWT_TARGET_OS=windows\nWT_TARGET_ARCH=x86_64\n' 0 \
     >"$root/staged/share/build-metadata.env"
 (cd "$root/staged" && cmake -E tar cf "$assets/windows-x86_64/whisper-transcribator-0.3.0-windows-x86_64-cpu.zip" --format=zip sources share)
-(cd "$assets/windows-x86_64" && sha256sum *.zip >SHA256SUMS)
+(cd "$assets/windows-x86_64" && sha256sum -- *.zip >SHA256SUMS)
 reject 'Archive revision differs from HEAD: windows-x86_64' 0.3.0 "$assets"
 build_assets
 printf 'tampered Windows source\n' >src/main.cpp
 tar -czf "$root/staged/sources/whisper-transcribator-0.3.0.tar.gz" CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE
 git show HEAD:src/main.cpp >src/main.cpp
 (cd "$root/staged" && cmake -E tar cf "$assets/windows-x86_64/whisper-transcribator-0.3.0-windows-x86_64-cpu.zip" --format=zip sources share)
-(cd "$assets/windows-x86_64" && sha256sum *.zip >SHA256SUMS)
+(cd "$assets/windows-x86_64" && sha256sum -- *.zip >SHA256SUMS)
 reject 'Source differs from HEAD: windows-x86_64' 0.3.0 "$assets"
 build_assets
 reject 'Expected --check or --draft' 0.3.0 "$assets" --publish

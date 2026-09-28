@@ -97,7 +97,7 @@ try {
     $name = "whisper-transcribator-$version-windows-x86_64-cpu.zip"
     $archive = Join-Path $Output $name
     if (Test-Path $archive) { Remove-Item $archive }
-    # Unlike Compress-Archive, this retains hidden files inside the source tarballs.
+    # Retain every staged entry without Compress-Archive's hidden-file filtering.
     [IO.Compression.ZipFile]::CreateFromDirectory($bundle, $archive)
     Write-Utf8 "$Output/SHA256SUMS" @("$((Get-FileHash $archive).Hash.ToLowerInvariant())  $name")
     Write-Output "Archive: $archive"

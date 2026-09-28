@@ -29,7 +29,7 @@ subject to [Microsoft's terms](https://learn.microsoft.com/en-us/visualstudio/re
 App-local runtimes require an application update for servicing. No Windows system DLL, debug runtime,
 OpenSSL test library or test executable belongs in the ZIP.
 CPU archives do not include CUDA libraries. CUDA archives include redistributable
-runtime libraries, but **not** the NVIDIA driver or glibc. The archive contains
+runtime libraries, but **not** the NVIDIA driver or glibc. Linux archives contain
 `licenses/`, `sources/` and `share/system-sources.tsv`; the packaging script fails
 on an unrecognized library owner instead of silently omitting its notices.
 Distro source archives correspond to the selected binary package versions.

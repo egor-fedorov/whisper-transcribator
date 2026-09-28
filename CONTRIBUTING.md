@@ -89,7 +89,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 
 ## Windows
 
-Use an x64 Visual Studio 2022 (or later) developer PowerShell with the Windows SDK, CMake, Ninja, Git for Windows and MSYS2. The supported compiler is MSVC; MinGW/Wine checks are supplementary, not a native Windows CI substitute. Enable Windows long-path support and Developer Mode (or the symlink privilege) for the path and symlink tests.
+Use PowerShell 7.4+ with an x64 Visual Studio 2022 (or later) developer environment, the Windows SDK, CMake, Ninja, Git for Windows and MSYS2. The supported compiler is MSVC; MinGW/Wine checks are supplementary, not a native Windows CI substitute. Enable Windows long-path support and Developer Mode (or the symlink privilege) for the path and symlink tests.
 
 Clone vcpkg into `.build/vcpkg` and check out the `builtin-baseline` commit from `vcpkg.json`. Install MSYS2's `make`, `nasm`, `diffutils` and `mingw-w64-x86_64-pkgconf`. Start its MSYS shell from the developer shell with `msys2_shell.cmd -defterm -no-start -msys -use-full-path`; put the directory containing MSVC's `cl.exe` first in `PATH`, so Microsoft's `link.exe` wins over the unrelated MSYS utility. Then run:
 
