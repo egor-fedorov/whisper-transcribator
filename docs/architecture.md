@@ -63,10 +63,31 @@ Keep the safety sequence intact: identify a reopened file before changing its AC
 Checkpoint fingerprints exclude execution-only CPU counts and application build identifiers. Output metadata retains the original model spelling and run information for byte-stable resumed publication. Refactoring must preserve both contracts, as well as the schema/algorithm versions, atomic write order, permission checks and bounded-memory traversal. An actual change to decoding, windowing or serialization requires a separate compatibility review.
 
 ## Tests And Build Boundaries
-`tests/unit` checks small policies and contracts; `tests/integration` checks their composition, native I/O, crash recovery, synthetic media and loopback TLS. `tests/resource` measures synthetic memory/planning behavior. These are model-free. `tests/smoke` alone exercises short public recordings with real inference; benchmarks are opt-in. `tests/packaging` checks distribution artifacts and release gates. Shared fixtures/process helpers live in `tests/support`, and reviewed compatibility snapshots in `tests/fixtures`.
+Test paths distinguish execution scope from domain ownership. `tests/unit` and `tests/integration` contain subsystem directories matching the production owners: `app`, `audio`, `inference`, `models`, `platform`, `support` and `transcript`, only where there are tests. Do not change a CTest name or move a check between labels merely because its source moves.
+
+| Directory | Responsibility |
+| --- | --- |
+| `tests/unit/<domain>` | Focused policies and contracts, including fake model caches and safe native I/O |
+| `tests/unit/architecture` | Source/module ownership and test-helper dependency checks |
+| `tests/integration/<domain>` | Composed behavior, crash recovery, synthetic decoding, loopback TLS and CLI/native-platform checks |
+| `tests/resource` | Synthetic bounded-memory and planning-scale checks |
+| `tests/smoke` | Short real inference and resume using public fixtures; opt-in comparisons live in `tests/benchmarks` |
+| `tests/packaging` | Archive, source-provenance and release-helper checks |
+| `tests/support` | Assertions and scenario runner (`test.*`), scoped environment/current-directory/stream restoration (`scoped.*`) |
+| `tests/support/fixtures` | Temporary directories, job/model/transcript builders, fake PCM/inference and WAV encoding helpers |
+| `tests/support/platform` | Child processes, sockets, fixture permissions, RSS measurements and Windows crash diagnostics |
+| `tests/support/tools` | The separate `wt-audio-fixture` and `wt-process-runner` helper executables |
+| `tests/fixtures` | Reviewed, committed compatibility snapshots, not generated fixture builders |
+| `tests/cmake` | Explicit test/support/tool registration and standalone header checks |
+
+Unit, integration and resource checks are model-free. The small resource, smoke and packaging groups are not further split merely for symmetry. Real inference remains separate from packaging and default CTest, and no private recordings or model weights belong in the source tree.
+
+`support/test.hpp` is an assertions/runner API, not an umbrella for fixtures or native helpers. Include the scoped, fixture or platform header actually used. The runner creates a private temporary directory per scenario, retains it on failure, restores cancellation state and scopes native crash diagnostics to the run. Domain fixtures may use the runner's assertions; platform helpers must not depend on domain fixtures or application settings.
 
 Integration fixtures may compose application settings to exercise the same metadata mapping as the CLI. This does not permit production modules to depend on `app`, or tests to regenerate compatibility expectations using the code under test. Rendering tests provide their own prepared metadata.
 
-`unit/module-boundary` rejects application dependencies outside `app`, backend API includes outside their adapters, cross-dependencies between checkpoint storage and rendering, and imports of private helpers outside their implementations, including `platform/win32`. Renderers cannot import application services or construct metadata. It checks positive and negative examples as well as the actual sources. `unit/platform-boundary` separately enforces native system-header ownership. Standalone header compilation catches accidental transitive includes; private Windows headers are checked on native Windows builds only. These lightweight checks supplement review; they are not a complete C++ dependency analyzer.
+`unit/module-boundary` rejects application dependencies outside `app`, backend API includes outside their adapters, cross-dependencies between checkpoint storage and rendering, and imports of private helpers outside their implementations, including `platform/win32`. Renderers cannot import application services or construct metadata. The same check enforces the test-helper boundaries above. It checks positive and negative examples as well as the actual sources. `unit/platform-boundary` separately enforces native system-header ownership in production. Standalone compilation checks both production and test headers for accidental transitive includes; private Windows headers are checked on native Windows builds only. These lightweight checks supplement review; they are not a complete C++ dependency analyzer.
+
+`tests/CMakeLists.txt` composes `tests/cmake` through `include`, not nested build directories. `support.cmake` owns the shared library and registration functions; `unit.cmake`, `integration.cmake` and `resource.cmake` own checks and their existing dependency/platform conditions; `tools.cmake` owns auxiliary executables; `headers.cmake` lists standalone headers. Keep source lists explicit. Test names, labels, timeouts, native executable locations and the Windows manifest/link settings are part of the CI contract; moving sources must not create a new library or build target per directory.
 
 Build targets remain `wt_core` (model-free services), `wt_engine` (audio/inference adapters and command execution) and the CLI (parsing/entry point). `cmake` holds pinned dependencies and generated metadata. `packaging` owns archive/container construction; workflows orchestrate native validation and preserve separate model-free packaging and real-inference gates. All generated artifacts belong under `.build`; models, recordings and local benchmark results are not repository sources.

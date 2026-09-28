@@ -1,17 +1,11 @@
 #pragma once
 #include "support/fs.hpp"
-#include <cstdint>
 #include <functional>
 #include <initializer_list>
-#include <iosfwd>
-#include <optional>
 #include <stdexcept>
 #include <string>
 
 namespace wt::test {
-int64_t peak_rss_kib();
-void permissions(const fs::path& path, fs::perms mode);
-void permissions(const fs::path& path, fs::perms mode, std::error_code& error);
 struct AssertionFailure : std::logic_error {
     using std::logic_error::logic_error;
 };
@@ -37,46 +31,6 @@ void rejects(F action, const std::string& reason, const char* file = __builtin_F
     }
     require(false, "expected failure containing: " + reason, file, line);
 }
-class TempDirectory {
-    bool retained = false;
-
-  public:
-    fs::path path;
-    explicit TempDirectory(const fs::path& parent = fs::temp_directory_path());
-    ~TempDirectory();
-    TempDirectory(const TempDirectory&) = delete;
-    TempDirectory& operator=(const TempDirectory&) = delete;
-    void preserve() { retained = true; }
-};
-class ScopedCurrentPath {
-    fs::path previous;
-
-  public:
-    explicit ScopedCurrentPath(const fs::path& path);
-    ~ScopedCurrentPath();
-    ScopedCurrentPath(const ScopedCurrentPath&) = delete;
-    ScopedCurrentPath& operator=(const ScopedCurrentPath&) = delete;
-};
-class ScopedEnv {
-    std::string key;
-    std::optional<std::string> previous;
-
-  public:
-    ScopedEnv(const std::string& key, const std::optional<std::string>& value);
-    ~ScopedEnv();
-    ScopedEnv(const ScopedEnv&) = delete;
-    ScopedEnv& operator=(const ScopedEnv&) = delete;
-};
-class StreamCapture {
-    std::ostream& stream;
-    std::streambuf* previous;
-
-  public:
-    StreamCapture(std::ostream& stream, std::streambuf* buffer);
-    ~StreamCapture();
-    StreamCapture(const StreamCapture&) = delete;
-    StreamCapture& operator=(const StreamCapture&) = delete;
-};
 struct TestCase {
     const char* name;
     std::function<void(const fs::path&)> action;
