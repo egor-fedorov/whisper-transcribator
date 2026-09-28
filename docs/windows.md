@@ -9,6 +9,11 @@ curl/zlib and decoding-only FFmpeg use the ARM64 MSVC toolchain. FFmpeg's handwr
 assembly is disabled to avoid a separate gas-preprocessor toolchain; this does
 not disable ggml's NEON inference.
 
+The ARM64 vcpkg overlay builds test-only OpenSSL with ClangCL as well: the
+MSVC 14.51 build crashes inside `libssl` during the loopback TLS handshake.
+The pinned source version and TLS checks are unchanged. OpenSSL is not shipped
+in the ZIP; model downloads use libcurl with Windows Schannel.
+
 Pinned ggml has no Windows ARM multi-variant dispatcher. The ZIP therefore uses
 one dynamically loaded `ggml-cpu.dll`, compiled for baseline ARMv8-A/NEON without
 host-native tuning, rather than Linux's SVE/SME variants. GPU/NPU acceleration

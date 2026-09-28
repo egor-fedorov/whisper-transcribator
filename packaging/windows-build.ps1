@@ -54,9 +54,11 @@ try {
             }
         }
         $cpuOptions = @('-DGGML_CPU_ALL_VARIANTS=ON')
+        $dependencyOptions = @()
         if ($Architecture -eq 'arm64') {
             # Pinned ggml has no Windows ARM variant dispatcher; keep a portable NEON plugin.
             $cpuOptions = @('-DGGML_CPU_ALL_VARIANTS=OFF', '-DGGML_CPU_ARM_ARCH=armv8-a')
+            $dependencyOptions = @("-DVCPKG_OVERLAY_TRIPLETS=$root/packaging/triplets")
         }
         Invoke-Checked cmake (@('-S', '.', '-B', $Build, '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release', '-DWT_WERROR=ON',
@@ -67,7 +69,7 @@ try {
             "-DCMAKE_LIBRARY_PATH=$mediaPath/bin",
             '-DWT_TEST_OPENSSL=C:/Program Files/Git/usr/bin/openssl.exe',
             '-DGGML_NATIVE=OFF', '-DGGML_BACKEND_DL=ON',
-            '-DGGML_OPENMP=OFF') + $compilerOptions + $cpuOptions)
+            '-DGGML_OPENMP=OFF') + $compilerOptions + $cpuOptions + $dependencyOptions)
     }
     if ($Stage -in @('All', 'Build')) {
         Invoke-Checked cmake @('--build', $Build, '--parallel', '3', '--', '-k', '0')

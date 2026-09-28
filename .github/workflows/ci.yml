@@ -164,7 +164,7 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/vcpkg-cache
-          key: vcpkg-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ steps.pins.outputs.clang }}-${{ hashFiles('vcpkg.json', 'packaging/triplets/*.cmake', 'packaging/windows-arm64-clang.cmake') }}
       - id: windows-ccache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
