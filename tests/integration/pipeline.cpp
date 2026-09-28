@@ -2,8 +2,8 @@
 #include "support/fixtures.hpp"
 #include "support/io.hpp"
 #include "support/test.hpp"
-#include "transcript/journal.hpp"
-#include "transcript/outputs.hpp"
+#include "transcript/checkpoint/journal.hpp"
+#include "transcript/publication.hpp"
 #include <algorithm>
 #include <limits>
 

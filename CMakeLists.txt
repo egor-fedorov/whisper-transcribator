@@ -83,8 +83,13 @@ add_library(wt_core STATIC
   src/support/io.cpp src/support/hash.cpp src/support/cancel.cpp src/support/report.cpp
   src/inference/devices.cpp
   src/models/models.cpp src/models/download.cpp
-  src/transcript/jobs.cpp src/transcript/metadata.cpp src/transcript/outputs.cpp
-  src/transcript/journal.cpp src/transcript/pipeline.cpp src/transcript/boundaries.cpp
+  src/transcript/jobs.cpp src/transcript/metadata.cpp
+  src/transcript/checkpoint/journal.cpp src/transcript/checkpoint/privacy.cpp
+  src/transcript/checkpoint/storage.cpp src/transcript/checkpoint/records.cpp
+  src/transcript/checkpoint/recovery.cpp src/transcript/checkpoint/publication.cpp
+  src/transcript/render/render.cpp src/transcript/render/text.cpp
+  src/transcript/render/subtitles.cpp src/transcript/render/json.cpp
+  src/transcript/pipeline.cpp src/transcript/boundaries.cpp
   src/transcript/publication.cpp)
 target_include_directories(wt_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(wt_core PUBLIC CURL::libcurl ${WT_CRYPTO} nlohmann_json::nlohmann_json)

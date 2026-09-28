@@ -1,6 +1,6 @@
 #include "support/json.hpp"
 #include "support/test.hpp"
-#include "transcript/outputs.hpp"
+#include "transcript/render/render.hpp"
 #include <algorithm>
 #include <sstream>
 
@@ -103,7 +103,11 @@ void exact_format_bytes(const fs::path&) {
     require(render("vtt", segments) ==
             "WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.250\nA &amp; &lt;B&gt;\n\n");
     const std::string expected =
-        R"({"schema_version":2,"source":"/fixture/source.wav","model":"fixture","language":"en","languages":["en"],"language_probability":null,"duration":20.0,"duration_after_vad":null,"text":"A & <B>","segments":[{"id":0,"start":0.0,"end":1.25,"text":" A \n & <B> ","language":"en","avg_logprob":null,"compression_ratio":null,"no_speech_prob":0.125}],"run":{"vad":true}})"
+        R"({"schema_version":2,"source":"/fixture/source.wav","model":"fixture","language":"en",)"
+        R"("languages":["en"],"language_probability":null,"duration":20.0,"duration_after_vad":null,)"
+        R"("text":"A & <B>","segments":[{"id":0,"start":0.0,"end":1.25,"text":" A \n & <B> ",)"
+        R"("language":"en","avg_logprob":null,"compression_ratio":null,"no_speech_prob":0.125}],)"
+        R"("run":{"vad":true}})"
         "\n";
     auto actual = render("json", segments);
     require(actual == expected, "JSON byte contract changed: " + actual);

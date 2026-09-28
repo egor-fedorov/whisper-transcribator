@@ -2,7 +2,7 @@
 #include "support/cancel.hpp"
 #include "support/report.hpp"
 #include "transcript/boundaries.hpp"
-#include "transcript/journal.hpp"
+#include "transcript/checkpoint/journal.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>

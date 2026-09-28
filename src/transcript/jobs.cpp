@@ -2,7 +2,7 @@
 #include "support/error.hpp"
 #include "support/io.hpp"
 #include "support/report.hpp"
-#include "transcript/journal.hpp"
+#include "transcript/checkpoint/journal.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
