@@ -44,14 +44,8 @@ RUN . .build/release/generated/package.env \
     && cp /src/ffmpeg.tar.xz /bundle/sources/ffmpeg-8.0.1.tar.xz \
     && cp /src/ffmpeg-8.0.1/COPYING.LGPLv2.1 /bundle/licenses/FFmpeg-LGPL-2.1.txt \
     && cp /src/ffmpeg-8.0.1/ffbuild/config.log /bundle/sources/ffmpeg-config.log \
-    && tar -C .build/release/_deps/whisper-src -czf "/bundle/sources/whisper.cpp-${WT_WHISPER_REVISION}.tar.gz" . \
-    && cp .build/release/_deps/whisper-src/LICENSE /bundle/licenses/whisper.cpp-MIT.txt \
-    && cp .build/release/_deps/nlohmann_json-src/LICENSE.MIT /bundle/licenses/nlohmann-json-MIT.txt \
-    && tar -C .build/release/_deps/nlohmann_json-src -czf "/bundle/sources/nlohmann-json-${WT_JSON_VERSION}.tar.gz" . \
-    && tar -C .build/release/_deps/cli11-src -czf "/bundle/sources/CLI11-${WT_CLI11_VERSION}.tar.gz" . \
-    && cp .build/release/_deps/cli11-src/LICENSE /bundle/licenses/CLI11-BSD.txt \
-    && cp LICENSE /bundle/licenses/whisper-transcribator-MIT.txt \
-    && tar -czf "/bundle/sources/whisper-transcribator-${WT_PACKAGE_VERSION}.tar.gz" CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE
+    && cmake -DWT_SOURCE_DIR=/app -DWT_BUILD_DIR=/app/.build/release -DWT_BUNDLE_DIR=/bundle \
+        -P packaging/cmake/sources.cmake
 RUN . .build/release/generated/package.env && mkdir -p /export \
     && if [ "${WT_CUDA}" = ON ]; then flavor=cuda; else flavor=cpu; fi \
     && tar -C /bundle -czf "/export/whisper-transcribator-${WT_PACKAGE_VERSION}-linux-${WT_TARGET_ARCH}-${flavor}.tar.gz" . \

@@ -4,6 +4,7 @@ param(
     [string]$Vcpkg = '.build/vcpkg', [string]$Output
 )
 . "$PSScriptRoot/windows-common.ps1"
+. "$PSScriptRoot/windows/runtime.ps1"
 $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
@@ -28,36 +29,7 @@ try {
     $crt = @(Get-ChildItem (Join-Path $env:VCToolsRedistDir $target.Toolchain) -Directory -Filter 'Microsoft.VC*.CRT')
     if ($crt.Count -ne 1) { throw "Expected one release $arch CRT redistributable directory" }
     $installed = Join-Path $Build "vcpkg_installed/$($target.Toolchain)-windows"
-    $search = @("$Build/bin", "$Media/prefix/bin", "$installed/bin")
-    $queue = [Collections.Generic.Queue[string]]::new()
-    $queue.Enqueue('whisper-transcribator.exe')
-    $backends = @(Get-ChildItem "$Build/bin/ggml-cpu*.dll" | Sort-Object Name | ForEach-Object Name)
-    if ($target.Baseline -notin $backends) { throw 'Missing baseline CPU plugin' }
-    foreach ($plugin in $backends) { $queue.Enqueue($plugin) }
-    $copied = @{}
-    $links = @()
-    $runtime = @()
-    while ($queue.Count) {
-        $name = $queue.Dequeue()
-        if ($copied.ContainsKey($name)) { continue }
-        if (Test-SystemLibrary $name) { throw "Refusing to bundle an OS library: $name" }
-        $source = Resolve-WindowsDependency $name $search $crt[0].FullName
-        Copy-Item -LiteralPath $source.FullName -Destination "$bundle/bin/$name"
-        $copied[$name] = $true
-        if (Test-MsvcRuntime $name) {
-            $runtime += "$name $($source.VersionInfo.FileVersion) SHA256=$((Get-FileHash $source.FullName).Hash.ToLowerInvariant())"
-        }
-        $imports = @(Get-Imports "$bundle/bin/$name" $arch)
-        $links += "# $name"
-        $links += $imports
-        foreach ($dependency in $imports) {
-            if (!(Test-SystemLibrary $dependency)) { $queue.Enqueue($dependency) }
-        }
-    }
-    if ($runtime.Count -eq 0) { throw 'No app-local MSVC runtime collected' }
-    Write-Utf8 "$bundle/share/backends.txt" $backends
-    Write-Utf8 "$bundle/share/linked-libraries.txt" $links
-    Write-Utf8 "$bundle/share/msvc-runtime.txt" $runtime
+    Copy-WindowsRuntime $Build $Media $installed $bundle $arch $crt[0].FullName
     Write-Utf8 "$bundle/share/windows-toolchain.txt" @(
         "VCPKG_BASELINE=$baseline", "MSVC_VERSION=$env:VCToolsVersion",
         "SDK_VERSION=$($env:WindowsSDKVersion.TrimEnd([char[]]'\/'))"
@@ -65,26 +37,15 @@ try {
     # CMake writes CRLF on Windows; release.sh compares portable LF metadata.
     Write-Utf8 "$bundle/share/build-metadata.env" (Get-Content "$Build/generated/package.env")
     Copy-Item 'packaging/windows-runtime-notice.txt' "$bundle/licenses/MSVC-runtime.txt"
-    Copy-Item 'LICENSE' "$bundle/licenses/whisper-transcribator-MIT.txt"
     $ffmpeg = @(Get-ChildItem $Media -Directory -Filter 'ffmpeg-*')
     if ($ffmpeg.Count -ne 1) { throw 'Expected one pinned FFmpeg source directory' }
     Copy-Item "$Media/ffmpeg.tar.xz" "$bundle/sources/$($ffmpeg[0].Name).tar.xz"
     Copy-Item "$($ffmpeg[0].FullName)/COPYING.LGPLv2.1" "$bundle/licenses/FFmpeg-LGPL-2.1.txt"
     Copy-Item "$($ffmpeg[0].FullName)/ffbuild/config.log" "$bundle/sources/ffmpeg-config.log"
-    $dependencies = @(
-        @('whisper', "whisper.cpp-$($metadata.WT_WHISPER_REVISION)", 'LICENSE', 'whisper.cpp-MIT'),
-        @('cli11', "CLI11-$($metadata.WT_CLI11_VERSION)", 'LICENSE', 'CLI11-BSD'),
-        @('nlohmann_json', "nlohmann-json-$($metadata.WT_JSON_VERSION)", 'LICENSE.MIT', 'nlohmann-json-MIT')
-    )
-    foreach ($entry in $dependencies) {
-        $source = "$Build/_deps/$($entry[0])-src"
-        Invoke-Checked tar @('-C', $source, '-czf', "$bundle/sources/$($entry[1]).tar.gz", '.')
-        Copy-Item "$source/$($entry[2])" "$bundle/licenses/$($entry[3]).txt"
-    }
+    Invoke-Checked cmake @("-DWT_SOURCE_DIR=$root", "-DWT_BUILD_DIR=$Build", "-DWT_BUNDLE_DIR=$bundle",
+        '-P', "$PSScriptRoot/cmake/sources.cmake")
     & "$PSScriptRoot/windows-sources.ps1" -Vcpkg $Vcpkg -Installed $installed -Bundle $bundle
     $version = $metadata.WT_PACKAGE_VERSION
-    Invoke-Checked tar @('-czf', "$bundle/sources/whisper-transcribator-$version.tar.gz",
-        'CMakeLists.txt', 'CMakePresets.json', 'vcpkg.json', '.gitattributes', 'cmake', 'src', 'tests', 'packaging', 'LICENSE')
     $checksums = @(Get-ChildItem $bundle -File -Recurse | Sort-Object FullName | ForEach-Object {
         $relative = [IO.Path]::GetRelativePath($bundle, $_.FullName).Replace('\', '/')
         "$((Get-FileHash $_.FullName).Hash.ToLowerInvariant())  $relative"
