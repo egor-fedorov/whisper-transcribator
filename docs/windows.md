@@ -14,14 +14,22 @@ MSVC 14.51 build crashes inside `libssl` during the loopback TLS handshake.
 The pinned source version and TLS checks are unchanged. OpenSSL is not shipped
 in the ZIP; model downloads use libcurl with Windows Schannel.
 
-Pinned ggml has no Windows ARM multi-variant dispatcher. The ZIP therefore uses
-one dynamically loaded `ggml-cpu.dll`, compiled for baseline ARMv8-A/NEON without
-host-native tuning, rather than Linux's SVE/SME variants. GPU/NPU acceleration
-is outside this target; use `--device cpu` or `auto`.
+The ZIP includes four dynamically loaded CPU variants: baseline ARMv8-A/NEON
+(`ggml-cpu-armv8.0_1.dll`), DOTPROD (`armv8.2_1`), DOTPROD+FP16 (`armv8.2_2`),
+and DOTPROD+FP16+I8MM (`armv8.6_1`). The pinned ggml already uses
+`IsProcessorFeaturePresent` on Windows; our build-time patch adds the missing
+Windows variant list. Feature probes remain baseline-safe, and an unavailable
+feature leaves a lower variant eligible rather than risking an illegal instruction.
+There is no host-native tuning or assumption based on a processor's marketing name.
+SVE/SME variants are not included: Windows SVE vector-length handling needs separate
+validation. GPU/NPU acceleration is outside this target; use `--device cpu` or `auto`.
 
 The native `windows-11-arm` CI runner builds and runs model-free CTest, verifies
 the exact ZIP on a fresh runner, then runs separate short offline inference,
-Unicode-path and interruption/resume checks. Every bundled PE image must be
+Unicode-path and interruption/resume checks. Both Windows architectures also decode
+and transcribe the pinned 11-second `jfk.mp3` offline, checking expected speech and
+duration. Packaging checks ARM64 runtime selection against Windows feature flags
+and startup with only the baseline plugin. Every bundled PE image must be
 ARM64, including dependencies and the app-local Microsoft runtime; an x64 DLL
 cannot silently pass validation through Windows emulation. MSYS2's build utilities
 may themselves run under x64 emulation; the shipped application does not.

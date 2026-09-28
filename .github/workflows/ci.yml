@@ -308,7 +308,7 @@ jobs:
           Expand-Archive $archive.FullName .build/archive
       - name: Prepare public 11-second fixture and tiny weights
         shell: bash
-        run: bash tests/smoke/prepare-smoke.sh .build/archive/bin/whisper-transcribator.exe .build/fixtures
+        run: bash tests/smoke/prepare-smoke.sh .build/archive/bin/whisper-transcribator.exe .build/fixtures --mp3
       - name: Block application network access during inference
         shell: pwsh
         run: |
@@ -325,7 +325,7 @@ jobs:
           bash tests/smoke/streaming-smoke.sh "$binary" "$PWD/.build/windows/bin/wt-audio-fixture.exe" \
             "$PWD/.build/fixtures/jfk.wav" "$PWD/.build/fixtures/ggml-tiny.bin" \
             "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline-streaming"
-      - name: Check Unicode input, cache and output paths offline
+      - name: Check WAV and MP3 decoding with Unicode paths offline
         shell: pwsh
         run: |
           $env:PATH = "$env:SystemRoot/System32;$env:SystemRoot"

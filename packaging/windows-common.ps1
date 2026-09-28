@@ -18,7 +18,7 @@ function Read-Metadata([string]$Path) {
 function Get-WindowsTarget([string]$Architecture) {
     switch ($Architecture) {
         'x86_64' { return @{ Toolchain = 'x64'; Machine = '8664'; Baseline = 'ggml-cpu-x64.dll' } }
-        'arm64' { return @{ Toolchain = 'arm64'; Machine = 'AA64'; Baseline = 'ggml-cpu.dll' } }
+        'arm64' { return @{ Toolchain = 'arm64'; Machine = 'AA64'; Baseline = 'ggml-cpu-armv8.0_1.dll' } }
         default { throw "Unsupported Windows target: $Architecture" }
     }
 }
