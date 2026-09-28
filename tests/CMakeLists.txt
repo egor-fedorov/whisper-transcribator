@@ -154,7 +154,10 @@ set(WT_CHECK_HEADERS
   app/commands.hpp
   app/options.hpp
   app/configuration.hpp
-  audio/audio.hpp
+  audio/reader.hpp
+  audio/runtime.hpp
+  audio/detail/error.hpp
+  audio/detail/logging.hpp
   audio/options.hpp
   audio/resampler.hpp
   audio/recovery.hpp
@@ -183,6 +186,7 @@ set(WT_CHECK_HEADERS
   transcript/outputs.hpp
   transcript/options.hpp
   transcript/pipeline.hpp
+  transcript/boundaries.hpp
   transcript/types.hpp
 )
 if(NOT WIN32)

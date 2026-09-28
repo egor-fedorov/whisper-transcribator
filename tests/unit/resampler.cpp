@@ -55,6 +55,13 @@ void frame_changes(const fs::path&) {
         append(expected, reference.convert(*frame));
         drain(reference, expected);
         append(actual, changing.convert(*frame));
+        FrameResampler reset;
+        auto first = reset.convert(*frame);
+        auto delay = reset.delay();
+        reset.reset();
+        require(reset.delay() == 0 && reset.drain().empty());
+        compare(reset.convert(*frame), first);
+        require(reset.delay() == delay, "reset must restore a fresh resampler");
     }
     drain(changing, actual);
     compare(actual, expected);

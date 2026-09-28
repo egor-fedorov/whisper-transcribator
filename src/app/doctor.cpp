@@ -1,6 +1,6 @@
 #include "app/commands.hpp"
 #include "app/options.hpp"
-#include "audio/audio.hpp"
+#include "audio/runtime.hpp"
 #include "inference/runtime.hpp"
 #include "models/models.hpp"
 #include "platform/cpu.hpp"

@@ -1,4 +1,5 @@
-#include "audio/audio.hpp"
+#include "audio/reader.hpp"
+#include "audio/runtime.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include "support/io.hpp"
@@ -77,6 +78,44 @@ void reader(const fs::path& root) {
     }
     stop_signal = 0;
     require(cancelled);
+}
+void reader_block_sizes(const fs::path& root) {
+    auto path = root / "blocks.wav";
+    atomic_write(path, wav());
+    auto expected = decode_audio(path);
+    for (size_t block : {1, 113, 1024, 16000, 16001}) {
+        AudioReader reader(path);
+        require(reader.stream_index() == 0 && std::abs(reader.duration() - 1) < 0.001);
+        for (size_t invalid : {size_t(0), size_t(600 * 16000 + 1)}) {
+            bool rejected = false;
+            try {
+                reader.read(invalid);
+            } catch (const std::runtime_error&) {
+                rejected = true;
+            }
+            require(rejected);
+        }
+        std::vector<float> actual;
+        append(actual, reader.read(block));
+        stop_signal = SIGTERM;
+        bool cancelled = false;
+        try {
+            reader.read(block);
+        } catch (const Cancelled&) {
+            cancelled = true;
+        }
+        stop_signal = 0;
+        require(cancelled);
+        while (true) {
+            auto part = reader.read(block);
+            require(part.size() <= block);
+            if (part.empty())
+                break;
+            append(actual, part);
+        }
+        require(actual == expected, "read size or cancellation changed PCM/drain");
+        require(reader.read(block).empty() && reader.read(block).empty(), "EOF must be stable");
+    }
 }
 } // namespace
 int main(int argc, char** argv) {
@@ -193,5 +232,7 @@ int main(int argc, char** argv) {
                 "MPEG-TS relative PCM error: " + std::to_string(error / energy));
         return 0;
     }
-    return run_tests({{"bounded decoding, invalid media and cancellation", reader}});
+    return run_tests(
+        {{"bounded decoding, invalid media and cancellation", reader},
+         {"read sizes, drain, repeated EOF and in-flight cancellation", reader_block_sizes}});
 }

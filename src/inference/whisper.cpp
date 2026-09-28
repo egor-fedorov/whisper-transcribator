@@ -4,7 +4,7 @@
 #include "support/cancel.hpp"
 #include "support/io.hpp"
 #include "support/report.hpp"
-#include "transcript/pipeline.hpp"
+#include "transcript/boundaries.hpp"
 #include "whisper.h"
 #include <algorithm>
 #include <stdexcept>

@@ -1,4 +1,5 @@
-#include "audio/audio.hpp"
+#include "audio/reader.hpp"
+#include "audio/runtime.hpp"
 #include "support/fixtures.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"

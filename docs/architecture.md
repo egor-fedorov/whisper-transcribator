@@ -23,6 +23,15 @@ Model descriptions and prepared paths/hashes live in `models/types.hpp`. The mod
 
 Use small value types, free functions, RAII and composition. Introduce a callback or interface at a real substitution boundary, not an abstract base class for each concrete type. Keep independent calculations testable without filesystem access or a model. Do not add a target, factory or generic configuration registry for every directory.
 
+## Audio And Window Boundaries
+`audio/reader.hpp` exposes bounded PCM reads, stream selection and duration without FFmpeg headers or JSON diagnostics. Its implementation owns the demuxer, decoder, packets and frames. Opening/probing, packet submission, frame placement and EOF draining are named steps, not separate public services. The reader composes `FrameResampler`, `AudioTimeline` and `DecodeRecovery`; it does not duplicate their policies.
+
+`audio/resampler.cpp` owns sample conversion and reconfiguration; `timeline.cpp` owns timestamp placement; `recovery.cpp` owns decoder error budgets. `runtime.hpp` exposes backend diagnostics and logging setup, implemented in `runtime.cpp` and `logging.cpp`. The private `audio/detail` headers declare shared error checking and a scoped metadata-probe logging guard, and are not dependencies of application code or public audio headers.
+
+Input EOF, decoder EOF and an exhausted resampler are distinct states. At a timestamp boundary the reader drains the old resampler before converting the retained frame; format changes inside the resampler likewise preserve delayed samples. Opening happens after the reader's implementation has been constructed, so its destructor releases partially acquired FFmpeg resources on failure. Keep these lifetimes and the order of recovery/cancellation checks intact when changing the decode loop.
+
+`transcript/boundaries.hpp` contains the pure pause/segment cut API, with no journal, filesystem or pipeline dependency. Both whisper's VAD adapter and `pipeline.cpp` use it; inference does not include the pipeline orchestration API. `boundaries.cpp` stays in `wt_core`, while FFmpeg-specific code stays in `wt_engine`.
+
 ## Data Flow And Durability
 1. The application parses arguments, plans safe destinations and validates explicit stream selection before preparing models.
 2. It resolves CPU/device settings and verifies models, then shares a lazily initialized whisper session across sequential jobs.
