@@ -326,10 +326,39 @@ bool is_directory(HANDLE file) {
     return GetFileInformationByHandleEx(file, FileBasicInfo, &basic, sizeof(basic)) &&
            (basic.FileAttributes & FILE_ATTRIBUTE_DIRECTORY);
 }
+std::wstring final_path(HANDLE file) {
+    std::wstring name(MAX_PATH, L'\0');
+    while (true) {
+        auto length =
+            GetFinalPathNameByHandleW(file, name.data(), static_cast<DWORD>(name.size()), 0);
+        if (!length) {
+            fail();
+            return {};
+        }
+        if (length < name.size()) {
+            name.resize(length);
+            return name;
+        }
+        name.resize(length);
+    }
+}
 // Another handle to the same file with `access`, for operations the original was not opened for.
 File reopen(const File& file, DWORD access) {
-    auto flags = is_directory(handle(file)) ? FILE_FLAG_BACKUP_SEMANTICS : 0;
-    File result(native(ReOpenFile(handle(file), access, share_all, flags)));
+    File result;
+    if (is_directory(handle(file))) {
+        auto path = final_path(handle(file));
+        if (path.empty())
+            return {};
+        result = File(native(CreateFileW(path.c_str(), access, share_all, nullptr, OPEN_EXISTING,
+                                         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                                         nullptr)));
+        // A path replacement between lookup and open must never redirect an ACL change.
+        if (result && !same_file(handle(file), handle(result))) {
+            errno = ELOOP;
+            return {};
+        }
+    } else
+        result = File(native(ReOpenFile(handle(file), access, share_all, 0)));
     if (!result)
         fail();
     return result;
@@ -492,20 +521,9 @@ bool set_permissions(File& file, unsigned permissions) {
     } else {
         // An empty unprotected list takes the directory's inheritable entries, as a new file
         // would; only the named variant reads the parent directory to find them.
-        std::wstring name(MAX_PATH, L'\0');
-        while (true) {
-            auto length = GetFinalPathNameByHandleW(handle(writable), name.data(),
-                                                    static_cast<DWORD>(name.size()), 0);
-            if (!length) {
-                fail();
-                return false;
-            }
-            if (length < name.size()) {
-                name.resize(length);
-                break;
-            }
-            name.resize(length);
-        }
+        auto name = final_path(handle(writable));
+        if (name.empty())
+            return false;
         ACL empty{};
         if (!InitializeAcl(&empty, sizeof(empty), ACL_REVISION)) {
             fail();
