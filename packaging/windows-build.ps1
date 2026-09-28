@@ -5,6 +5,7 @@ param(
     [string]$Vcpkg = '.build/vcpkg',
     [string]$PkgConfig = 'C:/msys64/mingw64/bin/pkgconf.exe',
     [ValidateSet('msvc', 'clangcl')][string]$Compiler = 'msvc',
+    [switch]$Vulkan,
     [ValidateSet('All', 'Configure', 'Build', 'Test')][string]$Stage = 'All'
 )
 $ErrorActionPreference = 'Stop'
@@ -33,6 +34,7 @@ try {
         $vcpkgPath = (Resolve-Path $Vcpkg).Path.Replace('\', '/')
         Invoke-Checked "$vcpkgPath/bootstrap-vcpkg.bat" @('-disableMetrics')
         $compilerOptions = @('-DCMAKE_C_COMPILER=cl', '-DCMAKE_CXX_COMPILER=cl')
+        $vulkanOption = if ($Vulkan) { 'ON' } else { 'OFF' }
         if ($Compiler -eq 'clangcl') {
             $clang = (Get-Command clang-cl.exe -ErrorAction Stop).Source.Replace('\', '/')
             # Use the same linker/SDK manifest merger as MSVC, not LLVM's XML merger.
@@ -43,6 +45,7 @@ try {
         }
         Invoke-Checked cmake (@('-S', '.', '-B', $Build, '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release', '-DWT_WERROR=ON',
+            "-DWT_VULKAN=$vulkanOption",
             "-DCMAKE_TOOLCHAIN_FILE=$vcpkgPath/scripts/buildsystems/vcpkg.cmake",
             '-DVCPKG_TARGET_TRIPLET=x64-windows', '-DVCPKG_MANIFEST_FEATURES=tests',
             "-DPKG_CONFIG_EXECUTABLE=$PkgConfig",

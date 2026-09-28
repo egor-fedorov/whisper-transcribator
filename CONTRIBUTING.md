@@ -9,6 +9,8 @@ On Ubuntu 24.04 install `cmake ninja-build g++ git pkg-config libavformat-dev
 libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev`.
 Upstream sources are fetched at pinned revisions with SHA-256 checks.
 
+For opt-in Vulkan source builds and short GPU validation, see [Experimental Vulkan](docs/vulkan.md).
+
 ```bash
 cmake --preset cpu
 cmake --build --preset cpu -j4
@@ -80,7 +82,7 @@ lectures for routine checks or benchmarks.
 The streaming smoke generates a 41-second fixture by repeating the public sample
 and inserting silence. It checks VAD boundaries, actual SIGTERM/resume and
 inference bypass on fully zero-valued windows with and without VAD. Pass
-`cuda` as the final argument to either smoke script for a trusted GPU check.
+`cuda`, `metal` or `vulkan` as the final argument to either smoke script for a trusted GPU check.
 Model-free pipeline tests cover SIGINT/SIGTERM/SIGKILL, checkpoint corruption,
 incompatible settings, disk-write failures and interrupted multi-format output.
 The non-sanitized memory test decodes synthetic 120/3600-second WAV files with
