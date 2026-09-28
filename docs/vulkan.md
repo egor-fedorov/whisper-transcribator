@@ -36,10 +36,16 @@ ctest --preset vulkan
 .build/vulkan/whisper-transcribator lecture.mkv --device vulkan --model small
 ```
 
-To compare CUDA and Vulkan in the same Linux binary, also configure with
-`-DWT_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89` for an RTX 4060 Ti; choose the CUDA
-architecture appropriate to other hardware. This requires a CUDA toolkit and
-its supported host compiler. Do not mix incompatible compilers in one build directory.
+To compare CUDA and Vulkan in the same Linux binary, use a separate directory:
+
+```bash
+cmake --preset vulkan -B .build/vulkan-cuda -DWT_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89
+cmake --build .build/vulkan-cuda -j4
+```
+
+Architecture 89 is for an RTX 4060 Ti; choose the architecture appropriate to
+other hardware. This requires a CUDA toolkit and its supported host compiler.
+Do not mix incompatible compilers in one build directory.
 
 Windows, from the x64 MSVC developer PowerShell described in CONTRIBUTING,
 after building FFmpeg and checking out the pinned vcpkg:
@@ -70,19 +76,47 @@ VAD and silence handling; they are not an evaluation of transcription quality.
 For a short Linux/NVIDIA comparison with a mixed CUDA/Vulkan binary:
 
 ```bash
-bash tests/benchmarks/vulkan.sh .build/vulkan/whisper-transcribator \
-  .build/vulkan/tests/wt-audio-fixture .build/fixtures/jfk.wav \
+bash tests/benchmarks/vulkan.sh .build/vulkan-cuda/whisper-transcribator \
+  .build/vulkan-cuda/tests/wt-audio-fixture .build/fixtures/jfk.wav \
   models/whisper-cpp/ggml-small.bin .build/vulkan-benchmark
 ```
 
 This script rejects audio/models other than the pinned fixtures. It performs one
 warmup and three rotating-order measurements per backend, with two CPU threads,
-beam size 1, no VAD and identical weights. CLI time includes verification/loading;
+beam size 1, no VAD and identical weights. Install GNU time (`time` on Ubuntu),
+or set `WT_BENCH_TIME` to its executable. CLI time includes verification/loading;
 round zero is retained separately. RSS comes from GNU time. VRAM is sampled on
 the entire NVIDIA device every 100 ms and includes background applications; the
 report records baseline, observed peak and their difference, not an exact
 per-process peak. `WT_BENCH_GPU` selects the NVIDIA telemetry device (default 0),
 not the inference GPU; ensure they match. Use a fresh output directory.
+
+## Local Comparison
+
+2026-09-28, application commit `982b7d19be6a`, Linux x86_64, i5-12400F,
+RTX 4060 Ti 16 GiB, NVIDIA 615.71.09, GCC 15.3, CUDA 13.4 (SM 89),
+Vulkan SDK 1.4.357.0, FFmpeg 9.0.2. One Release binary loaded the Alder Lake CPU
+plugin and both GPU plugins; Vulkan used GPU ordinal 1, CUDA ordinal 0.
+No compilation or other test runs overlapped the measurements.
+
+| Device | Three runs (s) | Median (s) | RTF | Peak RSS (MiB) | VRAM above baseline (MiB) |
+| --- | --- | --- | --- | --- | --- |
+| CPU | 11.66 / 11.82 / 11.75 | 11.75 | 0.287 | 979 | 3 (background variation) |
+| CUDA | 1.44 / 1.25 / 1.41 | 1.41 | 0.034 | 699 | 864 |
+| Vulkan | 1.28 / 1.25 / 1.42 | 1.28 | 0.031 | 456 | 745 |
+
+RTF is wall time divided by the 41-second input duration (lower is better).
+RSS/VRAM are maxima over the three measured runs. Device-wide VRAM baseline
+was 1573 MiB; peaks were 1576/2437/2318 MiB for CPU/CUDA/Vulkan. Warmup times
+were 11.68/1.39/2.29 seconds and are excluded from the medians.
+The two-thread CPU result is a controlled comparison, not maximum CPU throughput.
+CUDA/Vulkan ranges overlap: this supports comparable performance on this host,
+not a general claim that Vulkan is faster. CUDA remains supported.
+
+Tiny-model hardware smoke passed on CPU, CUDA and Vulkan, including all output
+formats and Vulkan interruption/resume in a mixed-backend build. Linux CTest
+passed 32/32 on CPU, Vulkan and mixed builds; ASan/UBSan passed 31/31. These
+checks do not establish word-error rates or validate every model/driver combination.
 
 Native Windows GPU execution and AMD/Intel hardware are not yet validated.
 Hosted model-free CI, Wine, and software Vulkan are not evidence of hardware

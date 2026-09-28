@@ -1,6 +1,7 @@
 param([Parameter(Mandatory)][string]$Binary)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$PSNativeCommandUseErrorActionPreference = $false # Exit 1 is expected for explicit Vulkan below.
 $root = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
 New-Item -ItemType Directory $root | Out-Null
 $previousDriver = $env:VK_DRIVER_FILES
@@ -27,3 +28,5 @@ try {
     $env:VK_ICD_FILENAMES = $previousIcd
     Remove-Item $root -Recurse -Force
 }
+# GitHub's pwsh wrapper otherwise propagates the last (expected) native exit code.
+exit 0

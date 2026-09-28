@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Linux/NVIDIA, one mixed CUDA+Vulkan binary, only the pinned public 41-second fixture.
 set -euo pipefail
+time_binary=${WT_BENCH_TIME:-/usr/bin/time}
+if [[ ! -x $time_binary ]]; then
+    echo 'GNU time is required; install it or set WT_BENCH_TIME to its executable.' >&2
+    exit 2
+fi
 binary=$(realpath "$1")
 helper=$(realpath "$2")
 sample=$(realpath "$3")
@@ -29,7 +34,7 @@ measure() {
     baseline=$(nvidia-smi --id="$gpu" --query-gpu=memory.used --format=csv,noheader,nounits)
     nvidia-smi --id="$gpu" --query-gpu=memory.used --format=csv,noheader,nounits --loop-ms=100 >"$prefix.vram.log" &
     sampler=$!
-    /usr/bin/time -f '%e\t%M' -o "$prefix.time" "$binary" "$root/sample.wav" \
+    "$time_binary" -f '%e\t%M' -o "$prefix.time" "$binary" "$root/sample.wav" \
         --model "$model" --device "$device" --local-files-only --language en --beam-size 1 \
         --cpu-threads 2 --no-vad --chunk-seconds 120 --format json -o "$prefix.json" \
         --verbose >"$prefix.stdout.log" 2>"$prefix.stderr.log"
