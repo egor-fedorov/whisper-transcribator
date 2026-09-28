@@ -28,6 +28,10 @@ builds record their actual plugin inventory and selected backend. Extending that
 inventory requires a separate upstream/toolchain compatibility change and tests,
 not overriding CMake's compiler identity.
 
+For ClangCL, the Alder Lake plugin explicitly enables AVX-VNNI: pinned ggml
+defines its intrinsics but omits the compiler target flag. This flag is private
+to that plugin, never global or applied to the baseline loader.
+
 ## Clean Runtime
 
 `package (windows-servercore)` runs the exact ZIP's `doctor` in a pinned Windows
