@@ -8,7 +8,9 @@ The product is a local C++17 CLI with one inference implementation, whisper.cpp.
 | `src/audio` | FFmpeg decoding/resampling, stream selection, bounded timeline alignment and decode recovery | Models, transcript serialization, CLI parsing |
 | `src/inference` | Device selection, backend initialization, whisper/VAD sessions and backend logging | Model downloads, output publication, CLI parsing |
 | `src/models` | Pinned catalog, cache verification/locking, HTTPS transfers and download recovery | Inference and transcript storage |
-| `src/transcript` | Transcript value types, job planning, window boundaries, compatibility metadata, checkpoints and rendering | FFmpeg, whisper, curl and CLI11 APIs |
+| `src/transcript` | Shared value/options types, job planning, window policy/orchestration, compatibility metadata and the publication adapter | FFmpeg, whisper, curl and CLI11 APIs |
+| `src/transcript/checkpoint` | Journal state, private record storage, chain validation, recovery, locking and durable publication | Output formatting and backend APIs |
+| `src/transcript/render` | Streaming TXT/SRT/VTT/JSON formatting from prepared metadata and a repeatable segment source | Filesystem access, checkpoints and metadata construction |
 | `src/platform` | Native files, locks, renames, permissions, system information, signals, CPU limits and SHA-256 | Application policy, logging and CLI settings |
 | `src/support` | Shared filesystem/string utilities, atomic publication, hashing, cancellation and reporting | Backend APIs and command orchestration |
 
@@ -32,6 +34,15 @@ Input EOF, decoder EOF and an exhausted resampler are distinct states. At a time
 
 `transcript/boundaries.hpp` contains the pure pause/segment cut API, with no journal, filesystem or pipeline dependency. Both whisper's VAD adapter and `pipeline.cpp` use it; inference does not include the pipeline orchestration API. `boundaries.cpp` stays in `wt_core`, while FFmpeg-specific code stays in `wt_engine`.
 
+## Checkpoints And Rendering
+`checkpoint/journal.hpp` remains the public checkpoint facade. `journal.cpp` owns state transitions, lock lifetime and append/finish operations; `storage.cpp` owns bounded record I/O and synchronized removal; `privacy.cpp` owns permission probing and entry safety; `records.cpp` validates manifest fields, segments, languages and the committed hash chain; `recovery.cpp` handles saved, empty, orphaned and retired checkpoints; `checkpoint/publication.cpp` verifies existing outputs, stages results and performs durable publication. Their shared declarations are private under `checkpoint/detail`, not a second application-facing API.
+
+The durable sequence is deliberate: acquire the lock before recovery; on the first append persist the initial manifest, then write the chunk before advancing the manifest; stage and hash every output before saving publication hashes; publish destinations only after that commit; finally rename the checkpoint to `.completed`, sync, remove it and sync again. Keep original record order, hash inputs and restored output metadata intact. Recovery validates orphaned records against a candidate state without mutating the committed one.
+
+`render/render.hpp` exposes only `TranscriptSource`, timestamp formatting and `render_stream`. `render.cpp` dispatches formats, `text.cpp` shares whitespace/paragraph rules with JSON, `subtitles.cpp` handles SRT/VTT timestamps and escaping, and `json.cpp` streams text and segments without accumulating the full transcript. Helpers under `render/detail` are private. JSON intentionally visits the source twice, and serialization order and whitespace are part of the byte-stable publication contract.
+
+`transcript/publication.hpp/.cpp` is the adapter between these independent modules: it supplies the journal's segment visitor and frozen metadata to a renderer callback. Neither module includes the other's API or the adapter. Keep them in the existing `wt_core` target; directories express ownership, not a requirement for additional libraries or interface hierarchies.
+
 ## Data Flow And Durability
 1. The application parses arguments, plans safe destinations and validates explicit stream selection before preparing models.
 2. It resolves CPU/device settings and verifies models, then shares a lazily initialized whisper session across sequential jobs.
@@ -46,6 +57,6 @@ Checkpoint fingerprints exclude execution-only CPU counts and application build 
 
 Integration fixtures may compose application settings to exercise the same metadata mapping as the CLI. This does not permit production modules to depend on `app`, or tests to regenerate compatibility expectations using the code under test. Rendering tests provide their own prepared metadata.
 
-`unit/module-boundary` rejects application dependencies outside `app`, backend API includes outside their adapters, and storage/metadata construction in the renderer. It checks positive and negative examples as well as the actual sources. `unit/platform-boundary` separately enforces native system-header ownership. Standalone header compilation catches accidental transitive includes. These lightweight checks supplement review; they are not a complete C++ dependency analyzer.
+`unit/module-boundary` rejects application dependencies outside `app`, backend API includes outside their adapters, cross-dependencies between checkpoint storage and rendering, and imports of private helpers outside their implementations. Renderers cannot import application services or construct metadata. It checks positive and negative examples as well as the actual sources. `unit/platform-boundary` separately enforces native system-header ownership. Standalone header compilation catches accidental transitive includes. These lightweight checks supplement review; they are not a complete C++ dependency analyzer.
 
 Build targets remain `wt_core` (model-free services), `wt_engine` (audio/inference adapters and command execution) and the CLI (parsing/entry point). `cmake` holds pinned dependencies and generated metadata. `packaging` owns archive/container construction; workflows orchestrate native validation and preserve separate model-free packaging and real-inference gates. All generated artifacts belong under `.build`; models, recordings and local benchmark results are not repository sources.

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Separate checkpoint storage, privacy, record validation, recovery and publication behind the existing Journal facade; isolate streaming renderers and their publication adapter without changing durable ordering, output bytes or checkpoint compatibility.
 - Separate audio reading, resampling, logging and diagnostics; extract pure window-boundary calculations and named decode steps without changing audio policies or checkpoint compatibility.
 - Narrow subsystem settings and separate model descriptors from transfer implementation; enforce application/backend boundaries and document architecture without changing CLI defaults or checkpoint/output schemas.
 - Dispatch Windows ARM64 CPU inference to baseline, DOTPROD, FP16 or I8MM plugins using ggml's existing Windows feature probes. Keep a baseline fallback, add the missing Windows build variants without updating whisper.cpp, and verify CPU selection from the packaged ZIP.
