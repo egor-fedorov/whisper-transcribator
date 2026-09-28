@@ -108,7 +108,7 @@ Git Bash runs portable shell tests. `tests/support/process.*` owns native child 
 - `src/inference/`: whisper.cpp device discovery, logging and a lazily initialized RAII session shared across files.
 - `src/models/`: pinned catalog, model cache, locking and HTTPS transfers.
 - `src/transcript/`: value types, job planning, windowing, metadata, checkpoint integrity and output rendering.
-- `src/platform/`: operating-system files, locks, renames, signals, CPU limits and the system SHA-256 behind a small interface; the `-posix.cpp` files implement it for Linux and macOS and the `-win32.cpp` files for Windows (compiled and checked under Wine, not yet built by CMake or CI).
+- `src/platform/`: operating-system files, locks, renames, signals, CPU limits and the system SHA-256 behind a small interface; the `-posix.cpp` files implement it for Linux and macOS and the `-win32.cpp` files for Windows. Native CI compiles and tests both implementations.
 - `src/support/`: plain options, atomic publication, hashing, cancellation and reporting.
 - `cmake/`: pinned dependencies and generated metadata.
 - `tests/unit/` and `tests/integration/`: focused component checks and cross-component recovery, audio, CLI and process scenarios.
@@ -116,7 +116,7 @@ Git Bash runs portable shell tests. `tests/support/process.*` owns native child 
 - `tests/fixtures/`: reviewed synthetic checkpoint and output snapshots for cross-version compatibility.
 - `tests/smoke/`: public fixture preparation and short real-inference checks, separate from default CTest.
 - `tests/packaging/`: archive, release-helper and portable-loader checks; QEMU inference remains explicitly opt-in.
-- `tests/support/`: assertions, scoped fixtures, fake audio/inference and the separate `wt-audio-fixture` generator.
+- `tests/support/`: assertions, scoped fixtures, native process/socket helpers, fake audio/inference and the separate `wt-audio-fixture` and `wt-process-runner` executables.
 - `packaging/`: archive/container recipes and dependency collection.
 - `docs/`: usage, migration, distribution and design decisions.
 - `.build/`: all generated build, test and release artifacts.

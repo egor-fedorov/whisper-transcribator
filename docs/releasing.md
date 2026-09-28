@@ -95,6 +95,12 @@ The archive has no Apple Developer ID signature and is not notarized; the README
 quarantined browser downloads. HTTPS uses the system libcurl and trust store, so the archive has
 no `cacert.pem`, and SHA-256 uses CommonCrypto, so it contains no OpenSSL.
 
+## Windows Source Builds
+
+Native Windows x64 CPU builds use MSVC, the same pinned minimal FFmpeg recipe and vcpkg's pinned libcurl with Schannel. Follow [the contributor build instructions](../CONTRIBUTING.md#windows). CNG supplies SHA-256; OpenSSL is only a test-server dependency. The DLL-filled development/test directory is not a distribution archive: it also contains test executables and test-only libraries.
+
+`test (windows-2025, x64)` builds and runs model-free CTest, including private ACLs, long and Unicode paths, junction rejection, locking, interruption and crash recovery. An additional standard-user check catches assumptions hidden by elevated CI. `smoke (windows-x86_64)` downloads those exact test binaries on a separate runner, prepares the public short fixture, blocks the application's network access and checks CPU inference, Unicode paths and interrupted resume. Neither job publishes artifacts to a release. Native ZIP packaging is a separate follow-up; the four-archive release contract below is unchanged.
+
 ## CUDA
 
 Use the pinned CUDA 12.8 builder; only the runtime and driver are needed to run

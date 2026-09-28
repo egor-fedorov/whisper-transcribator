@@ -72,7 +72,7 @@ void junction_checkpoint(const fs::path& root) {
     require(target.size() + 1 < 4096);
     data.tag = IO_REPARSE_TAG_MOUNT_POINT;
     data.substitute_length = static_cast<WORD>(target.size() * sizeof(wchar_t));
-    data.print_offset = data.substitute_length + sizeof(wchar_t);
+    data.print_offset = static_cast<WORD>(data.substitute_length + sizeof(wchar_t));
     data.length = static_cast<WORD>(8 + data.print_offset + sizeof(wchar_t));
     std::copy(target.begin(), target.end(), data.path);
     platform::File handle(reinterpret_cast<platform::File::Native>(

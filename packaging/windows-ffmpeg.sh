@@ -3,7 +3,8 @@
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 work="$repo/.build/windows-ffmpeg"
-export PATH="$(dirname "$(command -v cl.exe)"):$PATH"
+compiler_dir=$(dirname "$(command -v cl.exe)")
+export PATH="$compiler_dir:$PATH"
 if [[ ! -f $work/prefix/lib/pkgconfig/libavcodec.pc ]]; then
     bash "$repo/packaging/ffmpeg.sh" "$work" "$(cygpath -m "$work/prefix")" \
         --toolchain=msvc --arch=x86_64 --extra-cflags=-MD

@@ -1,5 +1,6 @@
 #include "platform/system.hpp"
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
 #include <io.h>

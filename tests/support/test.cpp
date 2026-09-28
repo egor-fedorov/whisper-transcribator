@@ -6,10 +6,12 @@
 #include <iostream>
 #include <random>
 #ifdef _WIN32
+#include <windows.h>
+
+// Windows SDK extensions require windows.h first.
 #include <aclapi.h>
 #include <psapi.h>
 #include <sddl.h>
-#include <windows.h>
 #else
 #include <sys/resource.h>
 #include <unistd.h>
@@ -84,7 +86,7 @@ void permissions(const fs::path& path, fs::perms mode, std::error_code& error) {
     if ((mode & fs::perms::others_all) != fs::perms::none) {
         PSECURITY_DESCRIPTOR descriptor = nullptr;
         if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                L"D:P(A;;FA;;;WD)", SDDL_REVISION_1, &descriptor, nullptr)) {
+                L"D:P(A;OICI;FA;;;WD)", SDDL_REVISION_1, &descriptor, nullptr)) {
             error.assign(static_cast<int>(GetLastError()), std::system_category());
             return;
         }

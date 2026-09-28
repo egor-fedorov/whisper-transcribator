@@ -124,7 +124,8 @@ jobs:
           repository: microsoft/vcpkg
           ref: ${{ steps.pins.outputs.vcpkg }}
           path: .build/vcpkg
-      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+      - id: msys
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
         with:
           msystem: MSYS
           path-type: inherit
@@ -149,7 +150,7 @@ jobs:
           key: ${{ steps.ffmpeg-cache.outputs.cache-primary-key }}
       - name: Compile application and run model-free CTest
         shell: pwsh
-        run: ./packaging/windows-build.ps1
+        run: ./packaging/windows-build.ps1 -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
         with:
@@ -161,6 +162,9 @@ jobs:
           path: .build/windows/bin
           retention-days: 7
           if-no-files-found: error
+      - name: Verify file safety and startup as a standard Windows user
+        shell: pwsh
+        run: ./tests/integration/windows-user.ps1 -Bin .build/windows/bin
   smoke-windows:
     name: smoke (windows-x86_64)
     needs: windows
@@ -191,6 +195,9 @@ jobs:
           bash tests/smoke/streaming-smoke.sh "$binary" "$PWD/.build/windows/bin/wt-audio-fixture.exe" \
             "$PWD/.build/fixtures/jfk.wav" "$PWD/.build/fixtures/ggml-tiny.bin" \
             "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline-streaming"
+      - name: Check Unicode input, cache and output paths offline
+        shell: pwsh
+        run: ./tests/smoke/windows-paths.ps1 -Binary .build/windows/bin/whisper-transcribator.exe -Fixtures .build/fixtures -Output .build/windows-paths
       - name: Remove test firewall rule
         if: always()
         shell: pwsh

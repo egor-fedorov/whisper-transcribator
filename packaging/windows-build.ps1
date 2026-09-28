@@ -14,6 +14,8 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
+    $PkgConfig = (Resolve-Path $PkgConfig).Path.Replace('\', '/')
+    Invoke-Checked $PkgConfig @('--version')
     $mediaPath = (Resolve-Path $Media).Path.Replace('\', '/')
     $vcpkgPath = (Resolve-Path $Vcpkg).Path.Replace('\', '/')
     $env:PKG_CONFIG_LIBDIR = "$mediaPath/lib/pkgconfig"
