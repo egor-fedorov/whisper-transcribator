@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Identify post-0.4.0 builds as 0.5.0-dev with source provenance. Document Windows Smart App Control restrictions and the pending signing setup.
+- Harden Windows packaging with retried source downloads, exclusive redist CRT lookup and inventory checks, normalized SDK metadata, repeatable temporary verification, and a Git source-blob comparison. Check the ZIP in Server Core without a preinstalled VC++ runtime and keep native artifacts for seven days.
+- Add an opt-in same-Windows-runner MSVC/ClangCL comparison using small and a 41-second public fixture; keep MSVC as the production default and record actual CPU plugin coverage.
 - Add a model-free Windows x64 CPU ZIP with the runtime dependency closure, app-local MSVC runtime, licenses, sources and checksums. Verify the exact archive on fresh native runners; keep packaging separate from short offline inference/resume checks. Require the ZIP as the fifth artifact in future release preparation. Existing 0.4.0 assets are unchanged.
 - Enable native Windows x64 CPU builds with MSVC, a UTF-8/long-path manifest, Schannel downloads, CNG hashing and private checkpoint ACLs. Add native Windows CTest and separate short offline inference/resume CI; port process, TLS and memory tests without dropping recovery coverage. Use thread-safe cancellation, refuse failed private ACL initialization, and request write-through output replacement.
 - Document running the Linux archives on Windows under WSL 2, including CUDA and `/mnt/c` limitations. Move operating-system calls (files, locks, no-replace renames, signals, library paths and CPU limits) into `src/platform/` with a POSIX implementation for Linux and macOS, as preparation for a native Windows port; behavior is unchanged, and a CTest check keeps system headers out of the rest of the sources.

@@ -36,3 +36,16 @@ function Test-SystemLibrary([string]$Name) {
 function Write-Utf8([string]$Path, [string[]]$Lines) {
     [IO.File]::WriteAllText($Path, (($Lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
 }
+function Test-MsvcRuntime([string]$Name) {
+    return $Name -match '^(msvcp|vcruntime|concrt)[0-9][a-z0-9_]*\.dll$'
+}
+function Resolve-WindowsDependency([string]$Name, [string[]]$Directories, [string]$Redist) {
+    # Never take a stale, untracked or debug CRT copy from the build tree or PATH.
+    if (Test-MsvcRuntime $Name) { $Directories = @($Redist) }
+    foreach ($directory in $Directories) {
+        if (Test-Path -LiteralPath "$directory/$Name" -PathType Leaf) {
+            return Get-Item -LiteralPath "$directory/$Name"
+        }
+    }
+    throw "Cannot resolve non-system dependency: $Name (MSVC runtime must come from redist)"
+}

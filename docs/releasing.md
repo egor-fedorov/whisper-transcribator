@@ -110,19 +110,28 @@ After a successful source build, run in the same x64 developer PowerShell:
 
 The bundle script reuses the build instead of compiling again. It traverses PE imports for the CLI
 and every CPU plugin; only an explicit Windows-system DLL allowlist may remain external.
-Required MSVC runtime files come from `VCToolsRedistDir/x64/Microsoft.VC*.CRT`, never System32 or
-debug directories. The unsigned ZIP includes dependency sources/notices, build metadata, vcpkg
+Required MSVC runtime files come exclusively from `VCToolsRedistDir/x64/Microsoft.VC*.CRT`, never
+the build tree, System32 or debug directories. Every bundled CRT DLL must match its provenance
+inventory. The unsigned ZIP includes dependency sources/notices, build metadata, vcpkg
 SPDX records, DLL inventories and per-file checksums. The archive checksum is in `SHA256SUMS`.
 No model or inference is needed to package it. The app-local runtime must be updated with the
 application; an installed system-wide redistributable does not service those copies.
 
 `package (windows-x86_64)` verifies the exact ZIP on a fresh Windows runner, including imports,
-checksums and baseline/missing-plugin diagnostics with a restricted runtime PATH. The separate
+checksums, source blobs against Git HEAD and baseline/missing-plugin diagnostics with a restricted
+runtime PATH. It runs verification twice in private temporary directories to check repeatability.
+`package (windows-servercore)` checks the exact ZIP without an installed VC++ runtime, plus a
+negative control with an app-local CRT DLL removed. Native artifacts expire after seven days.
+The separate
 `smoke (windows-x86_64)` downloads the same ZIP, prepares the public short fixture, blocks the
 application's network access and checks CPU inference, Unicode paths and interrupted resume.
 Test helpers are downloaded separately and never included in the ZIP. Hosted Windows CI checks
 the baseline plugin explicitly; it does not emulate physical hardware without AVX2. None of
 these jobs publishes a release.
+
+The manual `run_windows_benchmark` input compares MSVC with ClangCL on the same runner. It is
+not a packaging gate and does not change the production compiler. See [Windows validation and
+signing status](windows.md); unsigned releases can be blocked by Windows 11 Smart App Control.
 
 ## CUDA
 
@@ -219,7 +228,7 @@ memory tests use synthetic audio and fake inference, not full lecture recognitio
 
 ## Prepare And Publish
 
-The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
+The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Current development targets `0.5.0-dev`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
 
 Keep the five archives and their original `SHA256SUMS` under
 `.build/artifacts/cpu/`, `.build/artifacts/cuda/`, `.build/artifacts/cpu-aarch64/` and

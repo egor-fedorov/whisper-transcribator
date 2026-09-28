@@ -99,10 +99,12 @@ bash packaging/windows-ffmpeg.sh
 
 Back in developer PowerShell, `./packaging/windows-build.ps1` builds the application and runs CTest. It enables vcpkg's test feature for the local OpenSSL HTTPS server; production TLS uses Schannel and hashing uses CNG. Executables and their DLLs are in `.build/windows/bin`. All executable targets embed the UTF-8/long-path manifest. Keep `/MD` consistent across the build and dependencies. The script accepts explicit build, FFmpeg, vcpkg and pkg-config paths.
 
+For an experimental ClangCL build, install LLVM and run `./packaging/windows-build.ps1 -Compiler clangcl -Build .build/windows-clangcl` in the same MSVC developer environment. Always use separate build directories for the two compilers. The manual CI input `run_windows_benchmark` compares both on one native runner using a short public sample; see [Windows validation](docs/windows.md). MSVC remains the default.
+
 `packaging/windows-bundle.ps1` packages that tested build without recompiling or running inference;
 `windows-sources.ps1` collects pinned third-party sources and notices, and `windows-common.ps1`
 holds PE-import/metadata helpers shared with `tests/packaging/windows.ps1`. The latter verifies
-the exact ZIP on a fresh runner. Short archive inference remains in the separate smoke job.
+the exact ZIP on a fresh runner, including source blobs against Git HEAD and complete CRT provenance. Verification uses a temporary directory and is safe to repeat. `windows-policy.ps1` tests dependency lookup without a compiler, and `windows-servercore*.ps1` checks the ZIP without a preinstalled VC++ runtime. Short archive inference remains in the separate smoke job.
 
 Git Bash runs portable shell tests. `tests/support/process.*` owns native child processes, bounded waits and console interruption; Windows uses Ctrl+Break, not Bash `kill`, while POSIX uses signals. Set `WT_PROCESS_RUNNER` to the built `wt-process-runner` executable to use the same native-process smoke path locally. The test helper is not part of the distributed application. Existing POSIX-only syscall fallback tests remain on Linux/macOS; recovery, TLS, locking and bounded-memory scenarios also run on Windows.
 
@@ -120,6 +122,7 @@ Git Bash runs portable shell tests. `tests/support/process.*` owns native child 
 - `tests/resource/`: synthetic bounded-memory and planning-scale checks.
 - `tests/fixtures/`: reviewed synthetic checkpoint and output snapshots for cross-version compatibility.
 - `tests/smoke/`: public fixture preparation and short real-inference checks, separate from default CTest.
+- `tests/benchmarks/`: opt-in, short same-host performance comparisons with recorded inputs and raw measurements; never part of model-free packaging.
 - `tests/packaging/`: archive, release-helper and portable-loader checks; QEMU inference remains explicitly opt-in.
 - `tests/support/`: assertions, scoped fixtures, native process/socket helpers, fake audio/inference and the separate `wt-audio-fixture` and `wt-process-runner` executables.
 - `packaging/`: archive/container recipes and dependency collection.

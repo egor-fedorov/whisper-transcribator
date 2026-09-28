@@ -19,7 +19,7 @@ foreach ($port in @('curl', 'zlib')) {
     }
     $url = "https://github.com/$repository/archive/$ref.tar.gz"
     $archive = Join-Path $Bundle "sources/$port-$version.tar.gz"
-    Invoke-WebRequest -Uri $url -OutFile $archive
+    Invoke-WebRequest -Uri $url -OutFile $archive -MaximumRetryCount 3 -RetryIntervalSec 5
     if ((Get-FileHash $archive -Algorithm SHA512).Hash -ne $hash) { throw "Source checksum mismatch: $port" }
     Invoke-Checked tar @('-C', $Vcpkg, '-czf', "$Bundle/sources/$port-vcpkg-recipe.tar.gz", "ports/$port")
     Copy-Item "$Installed/share/$port/copyright" "$Bundle/licenses/$port.txt"

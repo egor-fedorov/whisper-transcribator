@@ -4,6 +4,7 @@ param(
     [string]$Media = '.build/windows-ffmpeg/prefix',
     [string]$Vcpkg = '.build/vcpkg',
     [string]$PkgConfig = 'C:/msys64/mingw64/bin/pkgconf.exe',
+    [ValidateSet('msvc', 'clangcl')][string]$Compiler = 'msvc',
     [ValidateSet('All', 'Configure', 'Build', 'Test')][string]$Stage = 'All'
 )
 $ErrorActionPreference = 'Stop'
@@ -31,7 +32,12 @@ try {
         }
         $vcpkgPath = (Resolve-Path $Vcpkg).Path.Replace('\', '/')
         Invoke-Checked "$vcpkgPath/bootstrap-vcpkg.bat" @('-disableMetrics')
-        Invoke-Checked cmake @('-S', '.', '-B', $Build, '-G', 'Ninja',
+        $compilerOptions = @('-DCMAKE_C_COMPILER=cl', '-DCMAKE_CXX_COMPILER=cl')
+        if ($Compiler -eq 'clangcl') {
+            $clang = (Get-Command clang-cl.exe -ErrorAction Stop).Source.Replace('\', '/')
+            $compilerOptions = @("-DCMAKE_C_COMPILER=$clang", "-DCMAKE_CXX_COMPILER=$clang")
+        }
+        Invoke-Checked cmake (@('-S', '.', '-B', $Build, '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release', '-DWT_WERROR=ON',
             "-DCMAKE_TOOLCHAIN_FILE=$vcpkgPath/scripts/buildsystems/vcpkg.cmake",
             '-DVCPKG_TARGET_TRIPLET=x64-windows', '-DVCPKG_MANIFEST_FEATURES=tests',
@@ -39,7 +45,7 @@ try {
             "-DCMAKE_LIBRARY_PATH=$mediaPath/bin",
             '-DWT_TEST_OPENSSL=C:/Program Files/Git/usr/bin/openssl.exe',
             '-DGGML_NATIVE=OFF', '-DGGML_BACKEND_DL=ON', '-DGGML_CPU_ALL_VARIANTS=ON',
-            '-DGGML_OPENMP=OFF')
+            '-DGGML_OPENMP=OFF') + $compilerOptions)
     }
     if ($Stage -in @('All', 'Build')) {
         Invoke-Checked cmake @('--build', $Build, '--parallel', '3', '--', '-k', '0')

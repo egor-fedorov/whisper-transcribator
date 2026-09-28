@@ -27,7 +27,7 @@ try {
     $crt = @(Get-ChildItem (Join-Path $env:VCToolsRedistDir 'x64') -Directory -Filter 'Microsoft.VC*.CRT')
     if ($crt.Count -ne 1) { throw 'Expected one release x64 CRT redistributable directory' }
     $installed = Join-Path $Build 'vcpkg_installed/x64-windows'
-    $search = @("$Build/bin", "$Media/prefix/bin", "$installed/bin", $crt[0].FullName)
+    $search = @("$Build/bin", "$Media/prefix/bin", "$installed/bin")
     $queue = [Collections.Generic.Queue[string]]::new()
     $queue.Enqueue('whisper-transcribator.exe')
     $backends = @(Get-ChildItem "$Build/bin/ggml-cpu-*.dll" | Sort-Object Name | ForEach-Object Name)
@@ -40,17 +40,10 @@ try {
         $name = $queue.Dequeue()
         if ($copied.ContainsKey($name)) { continue }
         if (Test-SystemLibrary $name) { throw "Refusing to bundle an OS library: $name" }
-        $source = $null
-        foreach ($directory in $search) {
-            if (Test-Path -LiteralPath "$directory/$name" -PathType Leaf) {
-                $source = Get-Item -LiteralPath "$directory/$name"
-                break
-            }
-        }
-        if (!$source) { throw "Cannot resolve non-system dependency: $name" }
+        $source = Resolve-WindowsDependency $name $search $crt[0].FullName
         Copy-Item -LiteralPath $source.FullName -Destination "$bundle/bin/$name"
         $copied[$name] = $true
-        if ($source.DirectoryName -eq $crt[0].FullName) {
+        if (Test-MsvcRuntime $name) {
             $runtime += "$name $($source.VersionInfo.FileVersion) SHA256=$((Get-FileHash $source.FullName).Hash.ToLowerInvariant())"
         }
         $imports = @(Get-Imports "$bundle/bin/$name")
@@ -65,7 +58,8 @@ try {
     Write-Utf8 "$bundle/share/linked-libraries.txt" $links
     Write-Utf8 "$bundle/share/msvc-runtime.txt" $runtime
     Write-Utf8 "$bundle/share/windows-toolchain.txt" @(
-        "VCPKG_BASELINE=$baseline", "MSVC_VERSION=$env:VCToolsVersion", "SDK_VERSION=$env:WindowsSDKVersion"
+        "VCPKG_BASELINE=$baseline", "MSVC_VERSION=$env:VCToolsVersion",
+        "SDK_VERSION=$($env:WindowsSDKVersion.TrimEnd([char[]]'\/'))"
     )
     # CMake writes CRLF on Windows; release.sh compares portable LF metadata.
     Write-Utf8 "$bundle/share/build-metadata.env" (Get-Content "$Build/generated/package.env")

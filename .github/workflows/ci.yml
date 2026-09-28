@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      run_windows_benchmark:
+        description: Compare MSVC and ClangCL with small on one Windows VM (41-second public fixture)
+        type: boolean
+        default: false
       verify_ccache:
         description: Verify clean rebuild cache hits (extra build for each compiler)
         type: boolean
@@ -194,7 +198,23 @@ jobs:
         with:
           name: native-windows-x86_64
           path: .build/artifacts/windows-x86_64
+          retention-days: 7
           if-no-files-found: error
+      - name: Build experimental ClangCL on the same VM (manual benchmark only)
+        if: github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
+        shell: pwsh
+        run: ./packaging/windows-build.ps1 -Compiler clangcl -Build .build/windows-clangcl -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
+      - name: Compare warmed MSVC and ClangCL runs (manual benchmark only)
+        if: github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
+        shell: pwsh
+        run: ./tests/benchmarks/windows.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
+        with:
+          name: windows-compiler-comparison
+          path: .build/windows-benchmark/results
+          retention-days: 7
+          if-no-files-found: warn
   package-windows:
     name: package (windows-x86_64)
     needs: windows
@@ -211,7 +231,10 @@ jobs:
           path: .build/artifacts/windows-x86_64
       - name: Verify exact ZIP with restricted runtime PATH (no models or inference)
         shell: pwsh
-        run: ./tests/packaging/windows.ps1 -Artifacts .build/artifacts/windows-x86_64
+        run: |
+          ./tests/packaging/windows-policy.ps1
+          ./tests/packaging/windows.ps1 -Artifacts .build/artifacts/windows-x86_64
+          ./tests/packaging/windows.ps1 -Artifacts .build/artifacts/windows-x86_64
   smoke-windows:
     name: smoke (windows-x86_64)
     needs: package-windows
@@ -260,6 +283,22 @@ jobs:
         if: always()
         shell: pwsh
         run: Get-NetFirewallRule -DisplayName 'Whisper offline test' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+  windows-servercore:
+    name: package (windows-servercore)
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-windows-x86_64
+          path: .build/artifacts/windows-x86_64
+      - name: Verify ZIP without installed VC++ runtime (no models or inference)
+        shell: pwsh
+        run: |
+          Start-Service docker
+          ./tests/packaging/windows-servercore.ps1 -Artifacts .build/artifacts/windows-x86_64
   macos:
     name: test (macos-15, arm64)
     runs-on: macos-15
