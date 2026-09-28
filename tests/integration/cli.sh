@@ -29,6 +29,12 @@ expect() {
     fi
 }
 expect 0 --help
+for option in 'model.*\[small\]' 'language.*\[ru\]' 'format.*\[text\]' \
+    'device.*\[auto\]' 'chunk-seconds.*\[120\]' 'chunk-min-silence-ms.*\[200\]' \
+    'text-layout.*\[paragraphs\]' 'decode-errors.*\[tolerant\]' \
+    'decode-error-limit-seconds.*\[30\]' 'timestamp-gaps.*\[auto\]'; do
+    grep -Eq -- "--$option" "$root/stdout"
+done
 expect 0 --version
 test "$(<"$root/stdout")" = "$version"
 expect 2
