@@ -39,7 +39,7 @@ jobs:
       - name: Verify GPU plugin was built, without requiring a GPU
         run: test -f .build/vulkan/bin/libggml-vulkan.so
       - shell: pwsh
-        run: ./tests/integration/vulkan-unavailable.ps1 -Binary .build/vulkan/whisper-transcribator
+        run: ./tests/integration/inference/vulkan-unavailable.ps1 -Binary .build/vulkan/whisper-transcribator
   windows:
     name: vulkan (windows, model-free)
     runs-on: windows-2025
@@ -92,4 +92,4 @@ jobs:
         run: |
           if (!(Test-Path .build/windows-vulkan/bin/ggml-vulkan.dll)) { throw 'Vulkan plugin missing' }
       - shell: pwsh
-        run: ./tests/integration/vulkan-unavailable.ps1 -Binary .build/windows-vulkan/bin/whisper-transcribator.exe
+        run: ./tests/integration/inference/vulkan-unavailable.ps1 -Binary .build/windows-vulkan/bin/whisper-transcribator.exe

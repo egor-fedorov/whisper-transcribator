@@ -95,7 +95,7 @@ jobs:
       - name: Reject silent CPU fallback on GPU initialization failure (tiny, no GPU required)
         run: .build/ci/tests/wt-gpu-init-smoke .build/fixtures/ggml-tiny.bin
       - name: Check checkpoints, publication and model cache on exFAT (exfat-fuse)
-        run: bash tests/integration/exfat.sh .build/ci .build/fixtures .build/exfat
+        run: bash tests/integration/platform/exfat.sh .build/ci .build/fixtures .build/exfat
       - if: matrix.sanitize == 'OFF'
         run: bash tests/smoke/model-hash.sh .build/ci/whisper-transcribator .build/fixtures .build/model-hash
       - run: |
@@ -212,7 +212,7 @@ jobs:
           if-no-files-found: error
       - name: Verify file safety and startup as a standard Windows user
         shell: pwsh
-        run: ./tests/integration/windows-user.ps1 -Bin .build/windows/bin
+        run: ./tests/integration/platform/windows-user.ps1 -Bin .build/windows/bin
       - name: Package tested binaries, sources and notices (no inference)
         shell: pwsh
         run: ./packaging/windows-bundle.ps1
@@ -387,7 +387,7 @@ jobs:
           echo "device=$(jq -r .device .build/doctor.json)" >> "$GITHUB_OUTPUT"
       - run: bash tests/smoke/prepare-smoke.sh .build/ci/whisper-transcribator .build/fixtures
       - name: Check checkpoints, publication and model cache on exFAT (hdiutil)
-        run: bash tests/integration/exfat.sh .build/ci .build/fixtures .build/exfat
+        run: bash tests/integration/platform/exfat.sh .build/ci .build/fixtures .build/exfat
       - name: Run CPU inference without network access
         run: |
           deny='(version 1)(allow default)(deny network*)'

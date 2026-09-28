@@ -1,0 +1,6 @@
+wt_test(planning resource resource/planning.cpp)
+if(NOT WT_SANITIZERS)
+  wt_test(memory resource resource/memory.cpp)
+  target_link_libraries(wt-memory-tests PRIVATE wt_engine)
+  set_tests_properties(resource/memory PROPERTIES TIMEOUT 180)
+endif()
