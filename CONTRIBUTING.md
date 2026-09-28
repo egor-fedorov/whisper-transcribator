@@ -101,7 +101,7 @@ bash packaging/windows-ffmpeg.sh
 
 Back in developer PowerShell, `./packaging/windows-build.ps1` builds the application and runs CTest. It enables vcpkg's test feature for the local OpenSSL HTTPS server; production TLS uses Schannel and hashing uses CNG. Executables and their DLLs are in `.build/windows/bin`. All executable targets embed the UTF-8/long-path manifest. Keep `/MD` consistent across the build and dependencies. The script accepts explicit build, FFmpeg, vcpkg and pkg-config paths.
 
-For an experimental ClangCL build, install LLVM and run `./packaging/windows-build.ps1 -Compiler clangcl -Build .build/windows-clangcl` in the same MSVC developer environment. Always use separate build directories for the two compilers. The manual CI input `run_windows_benchmark` compares both on one native runner using a short public sample; see [Windows validation](docs/windows.md). MSVC remains the default.
+For an experimental x64 ClangCL build, install LLVM and run `./packaging/windows-build.ps1 -Compiler clangcl -Build .build/windows-clangcl` in the same MSVC developer environment. Always use separate build directories for the two compilers. The manual CI input `run_windows_benchmark` compares both on one native runner using a short public sample; see [Windows validation](docs/windows.md). MSVC remains the x64 default.
 
 On native Windows ARM64, use the ARM64 developer shell, run `bash packaging/windows-ffmpeg.sh arm64`
 in MSYS2, then `./packaging/windows-build.ps1 -Architecture arm64` in PowerShell.

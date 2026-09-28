@@ -2,6 +2,7 @@
 #include "platform/file.hpp"
 #include "platform/system.hpp"
 #include "support/cancel.hpp"
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <random>
@@ -18,6 +19,23 @@
 #endif
 
 namespace wt::test {
+#ifdef _WIN32
+namespace {
+LONG WINAPI report_native_crash(EXCEPTION_POINTERS* exception) {
+    const auto* record = exception->ExceptionRecord;
+    MEMORY_BASIC_INFORMATION region{};
+    char module[32768]{};
+    VirtualQuery(record->ExceptionAddress, &region, sizeof(region));
+    GetModuleFileNameA(static_cast<HMODULE>(region.AllocationBase), module, sizeof(module));
+    auto offset = reinterpret_cast<uintptr_t>(record->ExceptionAddress) -
+                  reinterpret_cast<uintptr_t>(region.AllocationBase);
+    std::fprintf(stderr, "Native crash: exception 0x%08lx in %s + 0x%llx\n",
+                 static_cast<unsigned long>(record->ExceptionCode), module,
+                 static_cast<unsigned long long>(offset));
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+} // namespace
+#endif
 TempDirectory::TempDirectory(const fs::path& parent) {
     fs::create_directories(parent);
     std::random_device random;
@@ -149,6 +167,10 @@ StreamCapture::StreamCapture(std::ostream& stream, std::streambuf* buffer)
     : stream(stream), previous(stream.rdbuf(buffer)) {}
 StreamCapture::~StreamCapture() { stream.rdbuf(previous); }
 int run_tests(std::initializer_list<TestCase> cases) {
+#ifdef _WIN32
+    // CTest otherwise sees only a signal number; retain the failing DLL and offset in CI logs.
+    SetUnhandledExceptionFilter(report_native_crash);
+#endif
     size_t failures = 0;
     for (const auto& item : cases) {
         fs::path fixtures;
