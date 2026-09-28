@@ -60,7 +60,7 @@ void cached_model_does_not_acquire_download_lock(const fs::path& root) {
 }
 void local_model_and_invalid_names(const fs::path& root) {
 
-    Options o;
+    ModelCacheOptions o;
     o.local_files_only = true;
     o.download_root = root.string();
     atomic_write(root / "local.bin", "weights");
@@ -72,7 +72,7 @@ void local_model_and_invalid_names(const fs::path& root) {
 }
 void catalog_and_listing_no_downloads(const fs::path& root) {
 
-    Options o;
+    ModelCacheOptions o;
     o.download_root = (root / "absent").string();
     auto items = list_models(o);
     require(items.size() == 9 && !fs::exists(o.download_root));

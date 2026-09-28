@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Narrow subsystem settings and separate model descriptors from transfer implementation; enforce application/backend boundaries and document architecture without changing CLI defaults or checkpoint/output schemas.
 - Dispatch Windows ARM64 CPU inference to baseline, DOTPROD, FP16 or I8MM plugins using ggml's existing Windows feature probes. Keep a baseline fallback, add the missing Windows build variants without updating whisper.cpp, and verify CPU selection from the packaged ZIP.
 - Smoke-test the pinned 11-second JFK MP3 as well as WAV on Windows x64/ARM64, offline with Unicode paths, expected speech and duration checks.
 - Add native Windows ARM64 CPU builds with ClangCL and a portable ARMv8-A/NEON plugin. Build, verify and smoke-test a separate `windows-arm64-cpu.zip` on `windows-11-arm`; validate every PE dependency's architecture, preserve app-local runtime/source inventories and require the sixth archive when preparing a release. Windows x64 remains on MSVC; ARM64 GPU/NPU acceleration is not included.

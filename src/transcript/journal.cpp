@@ -3,7 +3,6 @@
 #include "support/cancel.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
-#include "support/options.hpp"
 #include "support/report.hpp"
 #include "transcript/metadata.hpp"
 #include <algorithm>
@@ -185,7 +184,7 @@ void validate_empty_checkpoint(const fs::path& directory, const Json& state,
         visit_records(directory, candidate, privacy, [](const Segment&) {});
     }
 }
-std::optional<Json> restore_checkpoint(const fs::path& directory, const Options& options,
+std::optional<Json> restore_checkpoint(const fs::path& directory, const CheckpointOptions& options,
                                        const Json& fingerprint, CheckpointPrivacy& privacy) {
     auto completed = fs::path(directory.string() + ".completed");
     if (exists_entry(completed)) {
@@ -242,7 +241,8 @@ void reject_legacy_outputs(const Job& job) {
                                  "; finish with the previous binary or explicitly move that "
                                  "checkpoint aside before restarting");
 }
-void validate_existing_outputs(const Job& job, const Options& options, const Json& state) {
+void validate_existing_outputs(const Job& job, const CheckpointOptions& options,
+                               const Json& state) {
     for (const auto& [format, path] : job.outputs) {
         if (!exists_entry(path))
             continue;
@@ -276,7 +276,8 @@ struct Journal::Lock {
             throw std::runtime_error("Checkpoint is busy or lock is unsafe: " + path.string());
     }
 };
-Journal::Journal(const Job& job, const Options& options, const Json& fingerprint)
+Journal::Journal(const Job& job, const CheckpointOptions& options, const Json& fingerprint,
+                 const Json& output_metadata)
     : directory(checkpoint_path(job)) {
     privacy = std::make_unique<CheckpointPrivacy>(directory.parent_path().parent_path());
     private_directory(directory.parent_path(), *privacy);
@@ -290,7 +291,7 @@ Journal::Journal(const Job& job, const Options& options, const Json& fingerprint
         state = {{"schema_version", 3},
                  {"fingerprint", fingerprint},
                  {"chunks", 0},
-                 {"output_metadata", {{"model", options.model}, {"run", run_metadata(options)}}},
+                 {"output_metadata", output_metadata},
                  {"samples", 0},
                  {"languages", Json::array()},
                  {"last_hash", ""},
@@ -372,7 +373,7 @@ void Journal::finish() {
 void Journal::visit(const std::function<void(const Segment&)>& consumer) const {
     visit_records(directory, state, *privacy, consumer);
 }
-void Journal::publish(const Job& job, const Options& options, const RenderOutput& render) {
+void Journal::publish(const Job& job, bool overwrite, const RenderOutput& render) {
     if (!finished())
         throw std::runtime_error("Cannot publish unfinished transcript");
     Json hashes = Json::object();
@@ -393,10 +394,10 @@ void Journal::publish(const Job& job, const Options& options, const RenderOutput
                 throw std::runtime_error("Unsafe output: " + path.string());
             if (sha256(path) == hashes.at(format).get<std::string>())
                 continue;
-            if (!options.overwrite)
+            if (!overwrite)
                 throw std::runtime_error("Output changed during transcription: " + path.string());
         }
-        publish_file(directory / ("output." + format), path, options.overwrite);
+        publish_file(directory / ("output." + format), path, overwrite);
     }
     // Retire the checkpoint atomically before deleting its individual records.
     auto completed = fs::path(directory.string() + ".completed");

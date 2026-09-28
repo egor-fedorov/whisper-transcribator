@@ -1,7 +1,7 @@
 #include "support/fixtures.hpp"
+#include "app/configuration.hpp"
 #include "models/models.hpp"
 #include "support/io.hpp"
-#include "support/options.hpp"
 #include "support/test.hpp"
 #include "transcript/jobs.hpp"
 #include "transcript/journal.hpp"
@@ -12,35 +12,39 @@
 #include <cmath>
 
 namespace wt::test {
-Options input(const fs::path& root, const std::string& name) {
+CliOptions input(const fs::path& root, const std::string& name) {
     atomic_write(root / name, "media");
-    Options o;
-    o.inputs = {(root / name).string()};
+    CliOptions o;
+    o.jobs.inputs = {(root / name).string()};
     return o;
 }
 Model model_fixture() {
     return {"fixture", "fixture.bin", "https://example.invalid/model",
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", 3};
 }
-void write_outputs(const Job& job, const Options& options, const Transcript& result) {
-    Journal journal(job, options, job_fingerprint(job, options, Json::object()));
+void write_outputs(const Job& job, const CliOptions& options, const Transcript& result) {
+    Journal journal(
+        job, options.checkpoint,
+        job_fingerprint(job, describe_run(options), options.inference.language, Json::object()),
+        describe_output(options));
     journal.append(static_cast<int64_t>(std::llround(result.duration * sample_rate)), result);
     journal.finish();
-    publish_outputs(job, options, journal);
+    publish_outputs(job, options.rendering, journal, options.checkpoint.overwrite);
 }
 Fixture::Fixture(const fs::path& directory, bool reuse) : root(directory) {
     fs::create_directories(root);
     if (!reuse)
         atomic_write(root / "source.wav", "fake audio");
-    options.inputs = {(root / "source.wav").string()};
-    options.output_dir = root.string();
-    options.format = "all";
-    options.language = "auto";
-    options.chunk_seconds = 30;
-    job = prepare_jobs(options).at(0);
+    options.jobs.inputs = {(root / "source.wav").string()};
+    options.jobs.output_dir = root.string();
+    options.jobs.format = "all";
+    options.inference.language = "auto";
+    options.chunking.chunk_seconds = 30;
+    job = prepare_jobs(options.jobs, options.checkpoint).at(0);
 }
 Json Fixture::fingerprint() const {
-    return job_fingerprint(job, options, {{"model_sha256", "fixture"}});
+    return job_fingerprint(job, describe_run(options), options.inference.language,
+                           {{"model_sha256", "fixture"}});
 }
 std::vector<float> Audio::read(size_t limit) {
     auto count = static_cast<size_t>(std::min<int64_t>(limit, total - cursor));
@@ -73,6 +77,6 @@ void run(Fixture& f, Journal& journal, Audio& audio, int fail_at) {
             return audio.recognize(pcm);
         },
         [](const auto& pcm) { return pcm.size() - 4; }, {}, 4);
-    publish_outputs(f.job, f.options, journal);
+    publish_outputs(f.job, f.options.rendering, journal, f.options.checkpoint.overwrite);
 }
 } // namespace wt::test

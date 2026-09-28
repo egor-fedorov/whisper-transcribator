@@ -12,8 +12,7 @@ using namespace wt;
 using namespace wt::test;
 namespace {
 int64_t transcribe(Fixture& f, Journal& journal, int interrupt = 0) {
-    AudioReader reader(f.job.source, -1, TimestampGaps::automatic,
-                       {f.options.decode_errors == "strict", f.options.decode_error_limit_seconds});
+    AudioReader reader(f.job.source, -1, TimestampGaps::automatic, f.options.audio.errors);
     int64_t recognized = 0;
     run_chunks(
         journal, sample_rate, [&](size_t count) { return reader.read(count); },
@@ -31,17 +30,17 @@ int64_t transcribe(Fixture& f, Journal& journal, int interrupt = 0) {
                  throw std::runtime_error("injected interruption");
          }},
         0);
-    publish_outputs(f.job, f.options, journal);
+    publish_outputs(f.job, f.options.rendering, journal, f.options.checkpoint.overwrite);
     return recognized;
 }
 void resume(const fs::path& root, const fs::path& source, int interrupt) {
     Fixture f(root);
     f.job.source = source;
-    f.options.no_vad = true;
+    f.options.inference.no_vad = true;
     auto fingerprint = f.fingerprint();
     int64_t total;
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         total = transcribe(f, journal);
         require(total > int64_t(interrupt) * sample_rate && !has_checkpoint(f.job));
     }
@@ -51,13 +50,13 @@ void resume(const fs::path& root, const fs::path& source, int interrupt) {
         fs::remove(path);
     }
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         rejects([&] { transcribe(f, journal, interrupt); }, "injected interruption");
         require(journal.samples() == int64_t(interrupt) * sample_rate);
     }
-    f.options.resume = true;
+    f.options.checkpoint.resume = true;
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         require(transcribe(f, journal) == total - int64_t(interrupt) * sample_rate);
     }
     for (const auto& [format, path] : f.job.outputs)
@@ -67,33 +66,37 @@ void failure(const fs::path& root, const fs::path& source, const std::string& mo
     Fixture f(root);
     f.job.source = source;
     if (mode == "strict")
-        f.options.decode_errors = mode;
+        f.options.audio.errors.strict = true;
     else
-        f.options.decode_error_limit_seconds = std::stoi(mode);
+        f.options.audio.errors.limit_seconds = std::stoi(mode);
     auto reason = mode == "strict" ? "--decode-errors tolerant" : "--decode-error-limit-seconds";
     auto fingerprint = f.fingerprint();
     std::string saved;
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         rejects([&] { transcribe(f, journal); }, reason);
         require(journal.samples() > 0 && !journal.finished());
         saved = read_text(checkpoint_path(f.job) / "manifest.json");
     }
     for (const auto& [format, path] : f.job.outputs)
         require(!fs::exists(path), "severely damaged audio published a transcript");
-    f.options.resume = true;
+    f.options.checkpoint.resume = true;
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         rejects([&] { transcribe(f, journal); }, "Repeating --resume");
     }
     require(read_text(checkpoint_path(f.job) / "manifest.json") == saved);
-    f.options.decode_errors = "tolerant";
-    f.options.decode_error_limit_seconds = 0;
-    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
-            "Checkpoint is incompatible");
-    f.options.resume = false;
-    f.options.overwrite = true;
-    Journal journal(f.job, f.options, f.fingerprint());
+    f.options.audio.errors.strict = false;
+    f.options.audio.errors.limit_seconds = 0;
+    rejects(
+        [&] {
+            Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
+                            describe_output(f.options));
+        },
+        "Checkpoint is incompatible");
+    f.options.checkpoint.resume = false;
+    f.options.checkpoint.overwrite = true;
+    Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
     require(transcribe(f, journal) > 0 && !has_checkpoint(f.job));
     for (const auto& [format, path] : f.job.outputs)
         require(fs::file_size(path) > 0);

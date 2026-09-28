@@ -1,7 +1,6 @@
 #include "transcript/jobs.hpp"
 #include "support/error.hpp"
 #include "support/io.hpp"
-#include "support/options.hpp"
 #include "support/report.hpp"
 #include "transcript/journal.hpp"
 #include <algorithm>
@@ -68,7 +67,7 @@ void publish_mapping(const Mapping& mapping) {
             throw;
     }
 }
-void validate_options(const Options& o) {
+void validate_options(const JobOptions& o) {
     if (o.inputs.empty() && o.input_dir.empty())
         throw UsageError("At least one input is required");
     if (!o.inputs.empty() && !o.input_dir.empty())
@@ -82,7 +81,7 @@ void validate_options(const Options& o) {
     if (!std::regex_match(o.prefix, std::regex("[A-Za-z0-9_-]+")))
         throw UsageError("Invalid --prefix: use letters, digits, underscore or hyphen");
 }
-std::vector<fs::path> discover_inputs(const Options& o) {
+std::vector<fs::path> discover_inputs(const JobOptions& o) {
     std::vector<fs::path> inputs;
     if (!o.input_dir.empty()) {
         auto directory = resolve_path(o.input_dir);
@@ -110,7 +109,7 @@ std::vector<fs::path> discover_inputs(const Options& o) {
     }
     return inputs;
 }
-JobPlan plan_jobs(const Options& o) {
+JobPlan plan_jobs(const JobOptions& o, const CheckpointOptions& checkpoint) {
     validate_options(o);
     auto inputs = discover_inputs(o);
     PathIndex sources, outputs;
@@ -150,14 +149,14 @@ JobPlan plan_jobs(const Options& o) {
         bool complete = !job.outputs.empty();
         for (const auto& [format, path] : job.outputs)
             complete &= fs::is_regular_file(path) && fs::file_size(path) > 0;
-        if (o.skip_existing && !o.overwrite && complete) {
+        if (o.skip_existing && !checkpoint.overwrite && complete) {
             log_message(LogLevel::info,
                         "Skipping complete result: " + job.source.filename().string());
             continue;
         }
         for (const auto& [format, path] : job.outputs) {
             if ((fs::exists(path) || fs::is_symlink(path)) &&
-                ((!o.overwrite && !(o.resume && has_checkpoint(job))) ||
+                ((!checkpoint.overwrite && !(checkpoint.resume && has_checkpoint(job))) ||
                  !fs::is_regular_file(path)))
                 throw std::runtime_error("Output exists; use --overwrite: " + path.string());
         }
@@ -215,8 +214,8 @@ void PublishedOutputs::record(const Job& job) {
             files.emplace(identity.inode, path);
     }
 }
-std::vector<Job> prepare_jobs(const Options& options) {
-    auto plan = plan_jobs(options);
+std::vector<Job> prepare_jobs(const JobOptions& options, const CheckpointOptions& checkpoint) {
+    auto plan = plan_jobs(options, checkpoint);
     for (const auto& directory : plan.directories)
         probe_directory(directory);
     if (plan.mapping)

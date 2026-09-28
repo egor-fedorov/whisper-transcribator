@@ -1,12 +1,12 @@
 #include "models/models.hpp"
 #include "catalog.hpp"
+#include "models/download.hpp"
 #include "platform/file.hpp"
 #include "platform/system.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
-#include "support/options.hpp"
 #include "support/report.hpp"
 #include <cerrno>
 #include <chrono>
@@ -22,7 +22,7 @@ std::vector<Model> model_catalog() {
         result.push_back({item["name"], item["file"], item["url"], item["sha256"], item["bytes"]});
     return result;
 }
-fs::path model_root(const Options& options) {
+fs::path model_root(const ModelCacheOptions& options) {
     if (!options.download_root.empty())
         return resolve_path(options.download_root);
     if (!env("WHISPER_DOWNLOAD_ROOT").empty())
@@ -120,7 +120,10 @@ PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offli
     sync_directory(root);
     return {target, model.hash};
 }
-PreparedModel prepare_model(const std::string& value, const Options& options) {
+PreparedModel ensure_cached(const Model& model, const fs::path& root, bool offline) {
+    return ensure_cached(model, root, offline, fetch_https);
+}
+PreparedModel prepare_model(const std::string& value, const ModelCacheOptions& options) {
     std::string name = value == "large" ? "large-v3" : value == "turbo" ? "large-v3-turbo" : value;
     for (const auto& model : model_catalog())
         if (model.name == name) {
@@ -137,7 +140,7 @@ PreparedModel prepare_model(const std::string& value, const Options& options) {
     }
     throw UsageError("Unknown model: " + value + "; use models list or a local GGML file");
 }
-Json list_models(const Options& options) {
+Json list_models(const ModelCacheOptions& options) {
     Json result = Json::array();
     auto root = model_root(options);
     for (const auto& model : model_catalog()) {

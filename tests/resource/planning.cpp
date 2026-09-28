@@ -1,4 +1,4 @@
-#include "support/options.hpp"
+#include "app/configuration.hpp"
 #include "support/test.hpp"
 #include "transcript/jobs.hpp"
 #include <chrono>
@@ -7,21 +7,21 @@
 
 namespace {
 void planning(const wt::fs::path& root) {
-    wt::Options options;
-    options.output_dir = (root / "output").string();
-    options.format = "all";
+    wt::CliOptions options;
+    options.jobs.output_dir = (root / "output").string();
+    options.jobs.format = "all";
     for (int count : {200, 800, 3200}) {
-        while (options.inputs.size() < static_cast<size_t>(count)) {
-            auto path = root / (std::to_string(options.inputs.size()) + ".wav");
+        while (options.jobs.inputs.size() < static_cast<size_t>(count)) {
+            auto path = root / (std::to_string(options.jobs.inputs.size()) + ".wav");
             std::ofstream file(path);
             file << "fixture";
             file.close();
             if (!file)
                 throw std::runtime_error("Cannot create planning fixture");
-            options.inputs.push_back(path.string());
+            options.jobs.inputs.push_back(path.string());
         }
         auto start = std::chrono::steady_clock::now();
-        auto jobs = wt::prepare_jobs(options);
+        auto jobs = wt::prepare_jobs(options.jobs, options.checkpoint);
         if (jobs.size() != static_cast<size_t>(count))
             throw std::runtime_error("Unexpected job count");
         std::cout << count << " files: "

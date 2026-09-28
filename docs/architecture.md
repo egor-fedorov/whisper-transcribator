@@ -1,0 +1,42 @@
+# Architecture
+The product is a local C++17 CLI with one inference implementation, whisper.cpp. Native archives and the optional Docker image contain the same application. This document describes the current code, not a proposed rewrite.
+
+## Responsibilities
+| Directory | Owns | Does not own |
+| --- | --- | --- |
+| `src/app` | CLI parsing, command orchestration, settings composition, diagnostics presentation | Decoding algorithms, durable storage, inference implementation |
+| `src/audio` | FFmpeg decoding/resampling, stream selection, bounded timeline alignment and decode recovery | Models, transcript serialization, CLI parsing |
+| `src/inference` | Device selection, backend initialization, whisper/VAD sessions and backend logging | Model downloads, output publication, CLI parsing |
+| `src/models` | Pinned catalog, cache verification/locking, HTTPS transfers and download recovery | Inference and transcript storage |
+| `src/transcript` | Transcript value types, job planning, window boundaries, compatibility metadata, checkpoints and rendering | FFmpeg, whisper, curl and CLI11 APIs |
+| `src/platform` | Native files, locks, renames, permissions, system information, signals, CPU limits and SHA-256 | Application policy, logging and CLI settings |
+| `src/support` | Shared filesystem/string utilities, atomic publication, hashing, cancellation and reporting | Backend APIs and command orchestration |
+
+`platform` may use the lightweight `support/fs.hpp` filesystem alias; higher-level support operations may use platform primitives. This is not permission to create arbitrary circular dependencies. Pure value/configuration headers must not import native handles, backend headers or transport implementations.
+
+## Settings And Dependencies
+`app/options.hpp` is the only production owner of the aggregate `CliOptions`. It composes module-owned values rather than copying their defaults: `ModelCacheOptions`, `InferenceOptions`, `AudioOptions`, `JobOptions`, `CheckpointOptions`, `RenderOptions` and `ChunkOptions`. CLI11 binds to those values; strings used to parse audio policies are converted at the application boundary. `--model`, `--device`, command selection and batch error handling remain application concerns.
+
+Consumers take only the settings they need. Job planning receives job and checkpoint policies; a journal receives checkpoint policy and prepared metadata; a renderer receives formatting settings and a repeatable segment source. A whisper session receives inference settings and prepared model descriptors, never model-cache or output options. The VAD boundary call receives its silence threshold explicitly from the application's chunking settings.
+
+Model descriptions and prepared paths/hashes live in `models/types.hpp`. The model-cache API does not include the HTTPS adapter or native file handles. `ensure_cached` offers an explicit transfer callback for tests; its production overload selects HTTPS in the implementation.
+
+Use small value types, free functions, RAII and composition. Introduce a callback or interface at a real substitution boundary, not an abstract base class for each concrete type. Keep independent calculations testable without filesystem access or a model. Do not add a target, factory or generic configuration registry for every directory.
+
+## Data Flow And Durability
+1. The application parses arguments, plans safe destinations and validates explicit stream selection before preparing models.
+2. It resolves CPU/device settings and verifies models, then shares a lazily initialized whisper session across sequential jobs.
+3. Each job opens an audio reader, records the selected stream and prepares output metadata plus a compatibility fingerprint. Metadata assembly consumes module-owned configuration values, not the CLI aggregate.
+4. The window pipeline reads bounded PCM and calls injected recognition/boundary functions. The journal commits only completed windows; resume decodes the committed prefix without repeating inference.
+5. Publication adapts the journal into a repeatable streaming segment source. Renderers write TXT/SRT/VTT/JSON without opening files or constructing run metadata. The journal stages, hashes and publishes outputs before retiring its checkpoint.
+
+Checkpoint fingerprints exclude execution-only CPU counts and application build identifiers. Output metadata retains the original model spelling and run information for byte-stable resumed publication. Refactoring must preserve both contracts, as well as the schema/algorithm versions, atomic write order, permission checks and bounded-memory traversal. An actual change to decoding, windowing or serialization requires a separate compatibility review.
+
+## Tests And Build Boundaries
+`tests/unit` checks small policies and contracts; `tests/integration` checks their composition, native I/O, crash recovery, synthetic media and loopback TLS. `tests/resource` measures synthetic memory/planning behavior. These are model-free. `tests/smoke` alone exercises short public recordings with real inference; benchmarks are opt-in. `tests/packaging` checks distribution artifacts and release gates. Shared fixtures/process helpers live in `tests/support`, and reviewed compatibility snapshots in `tests/fixtures`.
+
+Integration fixtures may compose application settings to exercise the same metadata mapping as the CLI. This does not permit production modules to depend on `app`, or tests to regenerate compatibility expectations using the code under test. Rendering tests provide their own prepared metadata.
+
+`unit/module-boundary` rejects application dependencies outside `app`, backend API includes outside their adapters, and storage/metadata construction in the renderer. It checks positive and negative examples as well as the actual sources. `unit/platform-boundary` separately enforces native system-header ownership. Standalone header compilation catches accidental transitive includes. These lightweight checks supplement review; they are not a complete C++ dependency analyzer.
+
+Build targets remain `wt_core` (model-free services), `wt_engine` (audio/inference adapters and command execution) and the CLI (parsing/entry point). `cmake` holds pinned dependencies and generated metadata. `packaging` owns archive/container construction; workflows orchestrate native validation and preserve separate model-free packaging and real-inference gates. All generated artifacts belong under `.build`; models, recordings and local benchmark results are not repository sources.

@@ -1,19 +1,19 @@
 #pragma once
+#include "app/configuration.hpp"
 #include "models/models.hpp"
 #include "support/json.hpp"
-#include "support/options.hpp"
 #include "transcript/types.hpp"
 
 namespace wt {
 class Journal;
 }
 namespace wt::test {
-Options input(const fs::path& root, const std::string& name = "a.mp4");
+CliOptions input(const fs::path& root, const std::string& name = "a.mp4");
 Model model_fixture();
-void write_outputs(const Job& job, const Options& options, const Transcript& result);
+void write_outputs(const Job& job, const CliOptions& options, const Transcript& result);
 struct Fixture {
     fs::path root;
-    Options options;
+    CliOptions options;
     Job job;
     explicit Fixture(const fs::path& directory, bool reuse = false);
     Json fingerprint() const;

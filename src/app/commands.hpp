@@ -2,7 +2,7 @@
 #include "support/json.hpp"
 
 namespace wt {
-struct Options;
-Json doctor(const Options& options);
-int transcribe(Options options);
+struct CliOptions;
+Json doctor(const CliOptions& options);
+int transcribe(CliOptions options);
 } // namespace wt
