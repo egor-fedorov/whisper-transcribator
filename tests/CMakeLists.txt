@@ -75,8 +75,15 @@ get_filename_component(WT_OPENSSL_PREFIX "${OPENSSL_INCLUDE_DIR}" DIRECTORY)
 find_program(WT_TEST_OPENSSL openssl HINTS "${WT_OPENSSL_PREFIX}/bin" REQUIRED)
 wt_test_target(download integration/downloads.cpp)
 target_link_libraries(wt-download-tests PRIVATE OpenSSL::SSL Threads::Threads)
-add_test(NAME integration/downloads COMMAND "${WT_TEST_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/downloads.sh"
-  $<TARGET_FILE:wt-download-tests> "${WT_TEST_OPENSSL}")
+if(WIN32)
+  find_program(WT_TEST_POWERSHELL pwsh REQUIRED)
+  add_test(NAME integration/downloads COMMAND "${WT_TEST_POWERSHELL}" -NoProfile
+    -File "${CMAKE_CURRENT_SOURCE_DIR}/integration/downloads.ps1"
+    -Binary $<TARGET_FILE:wt-download-tests> -OpenSSL "${WT_TEST_OPENSSL}")
+else()
+  add_test(NAME integration/downloads COMMAND "${WT_TEST_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/downloads.sh"
+    $<TARGET_FILE:wt-download-tests> "${WT_TEST_OPENSSL}")
+endif()
 set_tests_properties(integration/downloads PROPERTIES LABELS integration TIMEOUT 45)
 
 # Homebrew's ffmpeg lacks the libvorbis encoder used for test fixtures; ffmpeg-full has it.
