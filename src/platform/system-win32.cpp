@@ -1,6 +1,8 @@
 #include "platform/system.hpp"
 #include <csignal>
 #include <cstdlib>
+#include <fcntl.h>
+#include <io.h>
 #include <string>
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -61,6 +63,9 @@ bool handle_interrupts(void (*handler)(int signal)) {
 }
 void exit_now(int status) { _exit(status); }
 void prepare_console() {
+    // Keep redirected JSON, diagnostics and checksums byte-stable across platforms.
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
     auto& state = console();
     // Text is UTF-8 throughout (the executable's manifest selects UTF-8 as its code page); the
     // console otherwise shows it in the OEM code page.

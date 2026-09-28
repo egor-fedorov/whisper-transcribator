@@ -127,6 +127,10 @@ target_include_directories(wt-audio-fixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(wt-audio-fixture PRIVATE wt_engine)
 wt_warnings(wt-audio-fixture)
 wt_manifest(wt-audio-fixture)
+add_executable(wt-process-runner support/process-runner.cpp)
+target_link_libraries(wt-process-runner PRIVATE wt_test_support)
+wt_warnings(wt-process-runner)
+wt_manifest(wt-process-runner)
 
 # Compile each project header alone, without backend or CLI include directories.
 set(WT_CHECK_HEADERS
