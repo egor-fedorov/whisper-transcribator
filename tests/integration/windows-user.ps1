@@ -22,6 +22,14 @@ try {
             FilePath = (Join-Path $Bin $test)
             Credential = $credential
             LoadUserProfile = $true
+            Environment = @{
+                TEMP = $logs
+                TMP = $logs
+                USERPROFILE = $logs
+                LOCALAPPDATA = (Join-Path $logs 'localappdata')
+                XDG_CACHE_HOME = ''
+                WHISPER_DOWNLOAD_ROOT = ''
+            }
             WorkingDirectory = $logs
             RedirectStandardOutput = (Join-Path $logs "$test.stdout")
             RedirectStandardError = (Join-Path $logs "$test.stderr")
