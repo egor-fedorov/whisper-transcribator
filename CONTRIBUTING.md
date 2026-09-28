@@ -18,6 +18,8 @@ ctest --preset cpu
 find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-18 --dry-run --Werror {} +
 find tests packaging -type f -name '*.sh' -exec shellcheck {} +
 bash tests/packaging/release.sh
+bash tests/packaging/runtime-policy.sh
+cmake -DWT_TEST_DIR=.build/source-contracts -P tests/packaging/sources.cmake
 cmake --preset asan
 cmake --build --preset asan -j4
 ctest --preset asan
@@ -111,10 +113,7 @@ directory when changing architecture. Packaging reads the target from build
 metadata; verify with `./tests/packaging/windows.ps1 -Architecture arm64 -Artifacts .build/artifacts/windows-arm64`.
 See [ARM64 coverage and limitations](docs/windows.md#arm64).
 
-`packaging/windows-bundle.ps1` packages that tested build without recompiling or running inference;
-`windows-sources.ps1` collects pinned third-party sources and notices, and `windows-common.ps1`
-holds PE-import/metadata helpers shared with `tests/packaging/windows.ps1`. The latter verifies
-the exact ZIP on a fresh runner, including source blobs against Git HEAD and complete CRT provenance. Verification uses a temporary directory and is safe to repeat. `windows-policy.ps1` tests dependency lookup without a compiler, and `windows-servercore*.ps1` checks the ZIP without a preinstalled VC++ runtime. Short archive inference remains in the separate smoke job.
+`packaging/windows-bundle.ps1` packages that tested build without recompiling or running inference. Its private `windows/runtime.ps1` collects the PE dependency closure; `windows-common.ps1` holds inspection/provenance policies shared with `tests/packaging/windows.ps1`. Common source archives come from `packaging/cmake/sources.cmake`; `windows-sources.ps1` adds pinned vcpkg sources/notices. The independent ZIP verifier checks source blobs against Git HEAD and complete CRT provenance on a fresh runner. Verification uses a temporary directory and is safe to repeat. `windows-policy.ps1` tests dependency lookup and a synthetic dependency cycle without a compiler, and `windows-servercore*.ps1` checks the ZIP without a preinstalled VC++ runtime. Short archive inference remains in the separate smoke job.
 
 Git Bash runs portable shell tests. `tests/support/platform/process.*` owns native child processes, bounded waits and console interruption; Windows uses Ctrl+Break, not Bash `kill`, while POSIX uses signals. Set `WT_PROCESS_RUNNER` to the built `wt-process-runner` executable to use the same native-process smoke path locally. The test helper is not part of the distributed application. Existing POSIX-only syscall fallback tests remain on Linux/macOS; recovery, TLS, locking and bounded-memory scenarios also run on Windows.
 
@@ -132,7 +131,8 @@ See [Architecture](docs/architecture.md) for module responsibilities, settings o
 - `tests/packaging/`: archive, release-helper and portable-loader checks; QEMU inference remains explicitly opt-in.
 - `tests/support/`: assertions/runner and scoped state helpers, with domain builders in `fixtures/`, native helpers in `platform/` and helper executable sources in `tools/`.
 - `tests/cmake/`: explicit registration of checks, shared support, helper executables and standalone headers, included from `tests/CMakeLists.txt`.
-- `packaging/`: archive/container recipes and dependency collection.
+- `packaging/`: documented archive/container entrypoints, private runtime collection in `linux/`, `macos/` and `windows/`, and common source staging in `cmake/`; see [packaging ownership](docs/architecture.md#packaging-and-ci).
+- `.github/actions/windows-tools/`: shared native Windows CI preparation, with caching, build stages and gates left in workflows.
 - `docs/`: usage, migration, distribution and design decisions.
 - `.build/`: all generated build, test and release artifacts.
 
@@ -152,5 +152,7 @@ Force pushes and deletion of `main` are disabled. Use squash merges for focused
 changes. Release preparation is documented in [releasing](docs/releasing.md).
 
 Normal CI builds each compiler configuration once and runs formatting, ShellCheck and release-helper checks only in the GCC job. Ccache statistics remain visible; use the manual workflow's `verify_ccache` input to exercise the additional clean rebuild/cache-hit check. Required test, packaging and smoke jobs are unchanged.
+
+The model-free packaging contracts above require no models, compiler or network. Use a fresh `WT_TEST_DIR`; the source check removes it on success and retains failures for inspection. Run `tests/packaging/windows-policy.ps1` under PowerShell 7.4+ on either Linux or Windows. These focused contracts supplement native archive checks, not replace them. Source verification against Git remains independent of the producer's allowlist.
 
 Write each release-note paragraph or list item on a single physical line. Do not manually wrap prose, indent continuation lines, or add blank lines after headings; let the renderer wrap text to the reader's window.
