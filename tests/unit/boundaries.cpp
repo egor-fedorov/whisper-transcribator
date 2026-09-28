@@ -1,5 +1,5 @@
+#include "transcript/boundaries.hpp"
 #include "support/test.hpp"
-#include "transcript/pipeline.hpp"
 #include <limits>
 
 using namespace wt;

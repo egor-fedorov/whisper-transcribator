@@ -1,6 +1,7 @@
 #include "app/commands.hpp"
 #include "app/configuration.hpp"
-#include "audio/audio.hpp"
+#include "audio/reader.hpp"
+#include "audio/runtime.hpp"
 #include "inference/runtime.hpp"
 #include "inference/whisper.hpp"
 #include "models/models.hpp"

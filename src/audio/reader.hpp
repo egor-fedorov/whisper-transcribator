@@ -2,10 +2,8 @@
 #include "audio/recovery.hpp"
 #include "audio/timeline.hpp"
 #include "support/fs.hpp"
-#include "support/json.hpp"
 #include <cstddef>
 #include <memory>
-#include <string>
 #include <vector>
 
 namespace wt {
@@ -22,7 +20,4 @@ class AudioReader {
     int stream_index() const;
     double duration() const;
 };
-std::string audio_backend_version();
-void configure_audio_logging(bool verbose = false);
-Json audio_diagnostics();
 } // namespace wt

@@ -84,14 +84,16 @@ add_library(wt_core STATIC
   src/inference/devices.cpp
   src/models/models.cpp src/models/download.cpp
   src/transcript/jobs.cpp src/transcript/metadata.cpp src/transcript/outputs.cpp
-  src/transcript/journal.cpp src/transcript/pipeline.cpp src/transcript/publication.cpp)
+  src/transcript/journal.cpp src/transcript/pipeline.cpp src/transcript/boundaries.cpp
+  src/transcript/publication.cpp)
 target_include_directories(wt_core PUBLIC src "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(wt_core PUBLIC CURL::libcurl ${WT_CRYPTO} nlohmann_json::nlohmann_json)
 if(WIN32)
   target_link_libraries(wt_core PUBLIC advapi32)
 endif()
 add_library(wt_engine STATIC
-  src/audio/audio.cpp src/audio/timeline.cpp src/audio/recovery.cpp
+  src/audio/reader.cpp src/audio/resampler.cpp src/audio/logging.cpp src/audio/runtime.cpp
+  src/audio/error.cpp src/audio/timeline.cpp src/audio/recovery.cpp
   src/inference/runtime.cpp src/inference/whisper.cpp
   src/app/doctor.cpp src/app/transcribe.cpp)
 target_link_libraries(wt_engine PUBLIC wt_core whisper PkgConfig::AV ${CMAKE_DL_LIBS})
