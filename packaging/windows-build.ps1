@@ -53,11 +53,10 @@ try {
                     '-DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc')
             }
         }
-        $cpuOptions = @('-DGGML_CPU_ALL_VARIANTS=ON')
+        # Clear the old ARM64 single-variant cache entry when reusing a build directory.
+        $cpuOptions = @('-DGGML_CPU_ALL_VARIANTS=ON', '-DGGML_CPU_ARM_ARCH=')
         $dependencyOptions = @()
         if ($Architecture -eq 'arm64') {
-            # Pinned ggml has no Windows ARM variant dispatcher; keep a portable NEON plugin.
-            $cpuOptions = @('-DGGML_CPU_ALL_VARIANTS=OFF', '-DGGML_CPU_ARM_ARCH=armv8-a')
             $dependencyOptions = @("-DVCPKG_OVERLAY_TRIPLETS=$root/packaging/triplets")
         }
         Invoke-Checked cmake (@('-S', '.', '-B', $Build, '-G', 'Ninja',
@@ -73,6 +72,10 @@ try {
     }
     if ($Stage -in @('All', 'Build')) {
         Invoke-Checked cmake @('--build', $Build, '--parallel', '3', '--', '-k', '0')
+        if ($Architecture -eq 'arm64' -and (Test-Path "$Build/bin/ggml-cpu-armv8.0_1.dll")) {
+            # A reused pre-dispatch build directory can retain its obsolete single plugin.
+            Remove-Item "$Build/bin/ggml-cpu.dll" -ErrorAction SilentlyContinue
+        }
         Copy-Item "$Media/bin/*.dll" "$Build/bin" -Force
         Copy-Item "$Build/vcpkg_installed/$Architecture-windows/bin/*.dll" "$Build/bin" -Force
     }

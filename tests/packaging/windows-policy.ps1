@@ -8,7 +8,7 @@ foreach ($case in @(@('8664', 'arm64'), @('AA64', 'x86_64'), @('A641', 'arm64'),
     catch { $rejected = $_.Exception.Message -match 'Not .* PE' }
     if (!$rejected) { throw 'Wrong architecture silently accepted' }
 }
-if ((Get-WindowsTarget arm64).Baseline -ne 'ggml-cpu.dll') { throw 'Wrong ARM64 baseline' }
+if ((Get-WindowsTarget arm64).Baseline -ne 'ggml-cpu-armv8.0_1.dll') { throw 'Wrong ARM64 baseline' }
 $temporary = [IO.Directory]::CreateTempSubdirectory('wt-policy-').FullName
 try {
     $build = New-Item -ItemType Directory "$temporary/build"

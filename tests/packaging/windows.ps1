@@ -50,8 +50,13 @@ try {
     if ($target.Baseline -notin $plugins -or @(Compare-Object $backends $plugins).Count) {
         throw 'CPU plugin inventory mismatch'
     }
+    if ($Architecture -eq 'arm64') {
+        $expectedPlugins = @('armv8.0_1', 'armv8.2_1', 'armv8.2_2', 'armv8.6_1') |
+            ForEach-Object { "ggml-cpu-$_.dll" }
+        if (@(Compare-Object $expectedPlugins $plugins).Count) { throw 'ARM64 variant set mismatch' }
+    }
     foreach ($file in Get-ChildItem "$bundle/bin" -File) {
-        if ($file.Name -notmatch '^(whisper-transcribator\.exe|whisper\.dll|ggml(-base|-cpu(?:-[a-z0-9]+)?)?\.dll|av(codec|format|util)-\d+\.dll|swresample-\d+\.dll|libcurl\.dll|z\.dll|(msvcp|vcruntime|concrt)140[^/]*\.dll)$') {
+        if ($file.Name -notmatch '^(whisper-transcribator\.exe|whisper\.dll|ggml(-base|-cpu(?:-[a-z0-9._]+)?)?\.dll|av(codec|format|util)-\d+\.dll|swresample-\d+\.dll|libcurl\.dll|z\.dll|(msvcp|vcruntime|concrt)140[^/]*\.dll)$') {
             throw "Unwanted executable/library: $($file.Name)"
         }
         foreach ($import in Get-Imports $file.FullName $Architecture) {
@@ -79,6 +84,32 @@ try {
         if ((Invoke-Checked $binary @('--version')).Trim() -ne $metadata.WT_PACKAGE_VERSION) { throw 'Binary version mismatch' }
         $doctor = (Invoke-Checked $binary @('doctor', '--device', 'cpu', '--json')) | ConvertFrom-Json
         if ($doctor.device -ne 'cpu' -or $doctor.errors.Count -or !$doctor.cpu_backend) { throw 'Archive doctor failed' }
+        if ($Architecture -eq 'arm64') {
+            if (!('WhisperArmFeatures' -as [type])) {
+                Add-Type @'
+using System.Runtime.InteropServices;
+public static class WhisperArmFeatures {
+    [DllImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsProcessorFeaturePresent(uint feature);
+}
+'@
+            }
+            $expectedBackend = $target.Baseline
+            if ([WhisperArmFeatures]::IsProcessorFeaturePresent(43)) {
+                $expectedBackend = 'ggml-cpu-armv8.2_1.dll'
+                if ([WhisperArmFeatures]::IsProcessorFeaturePresent(67)) {
+                    $expectedBackend = 'ggml-cpu-armv8.2_2.dll'
+                    if ([WhisperArmFeatures]::IsProcessorFeaturePresent(66)) {
+                        $expectedBackend = 'ggml-cpu-armv8.6_1.dll'
+                    }
+                }
+            }
+            if ($doctor.cpu_backend -ne $expectedBackend) {
+                throw "ARM64 dispatcher selected $($doctor.cpu_backend), expected $expectedBackend"
+            }
+            Write-Output "ARM64 runtime selection: $expectedBackend; $($doctor.system_info)"
+        }
         $baseline = Join-Path $temporary 'baseline'
         New-Item -ItemType Directory "$baseline/bin" | Out-Null
         Copy-Item "$bundle/bin/*" "$baseline/bin"
