@@ -73,14 +73,16 @@ file(READ src/models/catalog.json WT_MODEL_CATALOG)
 configure_file(cmake/catalog.hpp.in generated/catalog.hpp @ONLY)
 # Operating-system calls live only in src/platform.
 if(WIN32)
-  set(WT_PLATFORM_SOURCES src/platform/file-win32.cpp src/platform/system-win32.cpp)
+  set(WT_PLATFORM_SOURCES src/platform/file-win32.cpp src/platform/system-win32.cpp
+    src/platform/win32/handles.cpp src/platform/win32/security.cpp src/platform/win32/status.cpp)
 else()
   set(WT_PLATFORM_SOURCES src/platform/file-posix.cpp src/platform/system-posix.cpp)
 endif()
 list(APPEND WT_PLATFORM_SOURCES src/platform/cpu.cpp src/platform/sha256.cpp)
 add_library(wt_core STATIC
   ${WT_PLATFORM_SOURCES}
-  src/support/io.cpp src/support/hash.cpp src/support/cancel.cpp src/support/report.cpp
+  src/support/files.cpp src/support/atomic.cpp src/support/permissions.cpp src/support/strings.cpp
+  src/support/hash.cpp src/support/cancel.cpp src/support/report.cpp
   src/inference/devices.cpp
   src/models/models.cpp src/models/download.cpp
   src/transcript/jobs.cpp src/transcript/metadata.cpp

@@ -1,5 +1,7 @@
-#include "support/io.hpp"
 #include "platform/file.hpp"
+#include "support/atomic.hpp"
+#include "support/files.hpp"
+#include "support/permissions.hpp"
 #ifndef _WIN32
 #include "platform/posix.hpp"
 #endif
@@ -7,9 +9,11 @@
 #include "support/test.hpp"
 #include <cerrno>
 #include <ostream>
+#include <type_traits>
 
 using namespace wt;
 using namespace wt::test;
+static_assert(std::is_function_v<decltype(probe_permissions)>);
 #ifndef _WIN32
 using platform::NoReplaceSteps;
 #endif

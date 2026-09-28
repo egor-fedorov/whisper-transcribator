@@ -1,5 +1,5 @@
 #include "platform/cpu.hpp"
-#include "support/io.hpp"
+#include "support/atomic.hpp"
 #include "support/test.hpp"
 #include <iostream>
 

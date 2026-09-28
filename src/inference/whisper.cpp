@@ -2,8 +2,8 @@
 #include "inference/runtime.hpp"
 #include "models/types.hpp"
 #include "support/cancel.hpp"
-#include "support/io.hpp"
 #include "support/report.hpp"
+#include "support/strings.hpp"
 #include "transcript/boundaries.hpp"
 #include "whisper.h"
 #include <algorithm>

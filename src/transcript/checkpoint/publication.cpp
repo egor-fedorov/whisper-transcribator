@@ -1,7 +1,8 @@
 #include "transcript/checkpoint/detail/publication.hpp"
+#include "support/atomic.hpp"
 #include "support/cancel.hpp"
+#include "support/files.hpp"
 #include "support/hash.hpp"
-#include "support/io.hpp"
 #include "transcript/checkpoint/detail/storage.hpp"
 #include "transcript/checkpoint/journal.hpp"
 #include <stdexcept>

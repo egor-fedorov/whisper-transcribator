@@ -1,7 +1,7 @@
 #include "transcript/checkpoint/detail/storage.hpp"
 #include "platform/file.hpp"
+#include "support/atomic.hpp"
 #include "support/cancel.hpp"
-#include "support/io.hpp"
 #include "transcript/checkpoint/detail/privacy.hpp"
 #include <ostream>
 #include <stdexcept>
