@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cctype>
 #include <curl/curl.h>
+#include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace wt {
