@@ -20,6 +20,14 @@ links the system libcurl, libc++ and Apple frameworks (Metal, Accelerate, Founda
 part of macOS and not redistributed, and computes SHA-256 with CommonCrypto instead of OpenSSL.
 
 Windows source builds use the same decoding-only FFmpeg recipe with MSVC. A pinned vcpkg manifest supplies libcurl with Schannel (Windows' certificate store); SHA-256 uses the system CNG library. OpenSSL is used only by the test HTTPS server, not by the Windows application. TLS certificate/hostname verification and Schannel revocation checks remain enabled; `SSL_CERT_FILE` is an explicit custom CA override, not a way to disable verification.
+The Windows ZIP includes libcurl and zlib with their vcpkg-installed notices, SPDX records,
+hash-verified upstream sources and pinned port recipes/patches. It includes only the release
+x64 MSVC runtime DLLs required by the executable and plugins, from Visual Studio's redistributable
+directory, with names/versions/hashes in `share/msvc-runtime.txt` and a separate Microsoft notice.
+These proprietary DLLs are not MIT licensed and have no bundled source. Their redistribution is
+subject to [Microsoft's terms](https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution).
+App-local runtimes require an application update for servicing. No Windows system DLL, debug runtime,
+OpenSSL test library or test executable belongs in the ZIP.
 CPU archives do not include CUDA libraries. CUDA archives include redistributable
 runtime libraries, but **not** the NVIDIA driver or glibc. The archive contains
 `licenses/`, `sources/` and `share/system-sources.tsv`; the packaging script fails
@@ -41,4 +49,4 @@ before distribution. Do not discard the license/source directories when publishi
 The FFmpeg build enables local-file decoding for common lecture containers
 (MP4/MOV, Matroska/WebM, WAV, MP3, Ogg, FLAC, AAC, AIFF, AVI, ASF and MPEG).
 Not every codec inside those containers is supported. The exact decoder list
-is in [ffmpeg.sh](../packaging/ffmpeg.sh), shared by the Linux and macOS archives. No network media protocol is enabled.
+is in [ffmpeg.sh](../packaging/ffmpeg.sh), shared by the Linux, macOS and Windows archives. No network media protocol is enabled.

@@ -39,10 +39,12 @@ git add .
 git commit -qm 'Fixture'
 assets="$root/artifacts with spaces"
 targets=(cpu:linux:x86_64:cpu cuda:linux:x86_64:cuda cpu-aarch64:linux:aarch64:cpu
-    macos-arm64:macos:arm64:metal)
+    macos-arm64:macos:arm64:metal windows-x86_64:windows:x86_64:cpu)
 # Set to another architecture or system to mislabel the aarch64 or macOS archive's metadata.
 aarch64_metadata=aarch64
 macos_metadata=macos
+windows_metadata=windows
+windows_arch=x86_64
 repack_assets() {
     local target directory os arch flavor metadata_os metadata_arch name
     for target in "${targets[@]}"; do
@@ -51,13 +53,20 @@ repack_assets() {
         metadata_arch=$arch
         if [[ $arch == aarch64 ]]; then metadata_arch=$aarch64_metadata; fi
         if [[ $os == macos ]]; then metadata_os=$macos_metadata; fi
+        if [[ $os == windows ]]; then metadata_os=$windows_metadata; metadata_arch=$windows_arch; fi
         rm -rf "$root/staged"
         cp -a "$root/bundle" "$root/staged"
         printf 'WT_TARGET_OS=%s\nWT_TARGET_ARCH=%s\n' "$metadata_os" "$metadata_arch" \
             >>"$root/staged/share/build-metadata.env"
         mkdir -p "$assets/$directory"
-        name="whisper-transcribator-0.3.0-$os-$arch-$flavor.tar.gz"
-        tar -C "$root/staged" -czf "$assets/$directory/$name" .
+        if [[ $os == windows ]]; then
+            name="whisper-transcribator-0.3.0-$os-$arch-$flavor.zip"
+            rm -f "$assets/$directory/$name"
+            (cd "$root/staged" && cmake -E tar cf "$assets/$directory/$name" --format=zip sources share)
+        else
+            name="whisper-transcribator-0.3.0-$os-$arch-$flavor.tar.gz"
+            tar -C "$root/staged" -czf "$assets/$directory/$name" .
+        fi
         (cd "$assets/$directory" && sha256sum "$name" >SHA256SUMS)
     done
 }
@@ -106,6 +115,34 @@ build_assets
 rm -r "$assets/macos-arm64"
 reject 'Missing archive' 0.3.0 "$assets"
 build_assets
+rm -r "$assets/windows-x86_64"
+reject 'Missing archive' 0.3.0 "$assets"
+windows_metadata=linux
+build_assets
+reject 'Archive system differs from its name: windows-x86_64' 0.3.0 "$assets"
+windows_metadata=windows
+windows_arch=arm64
+build_assets
+reject 'Archive architecture differs from its name: windows-x86_64' 0.3.0 "$assets"
+windows_arch=x86_64
+build_assets
+printf 'broken checksum\n' >"$assets/windows-x86_64/SHA256SUMS"
+reject 'Checksum mismatch: windows-x86_64' 0.3.0 "$assets"
+build_assets
+# Earlier archives still pass, so these exercise ZIP source/provenance validation specifically.
+printf 'WT_PACKAGE_VERSION=0.3.0\nWT_SOURCE_REVISION=%040d\nWT_SOURCE_DIRTY=false\nWT_TARGET_OS=windows\nWT_TARGET_ARCH=x86_64\n' 0 \
+    >"$root/staged/share/build-metadata.env"
+(cd "$root/staged" && cmake -E tar cf "$assets/windows-x86_64/whisper-transcribator-0.3.0-windows-x86_64-cpu.zip" --format=zip sources share)
+(cd "$assets/windows-x86_64" && sha256sum *.zip >SHA256SUMS)
+reject 'Archive revision differs from HEAD: windows-x86_64' 0.3.0 "$assets"
+build_assets
+printf 'tampered Windows source\n' >src/main.cpp
+tar -czf "$root/staged/sources/whisper-transcribator-0.3.0.tar.gz" CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE
+git show HEAD:src/main.cpp >src/main.cpp
+(cd "$root/staged" && cmake -E tar cf "$assets/windows-x86_64/whisper-transcribator-0.3.0-windows-x86_64-cpu.zip" --format=zip sources share)
+(cd "$assets/windows-x86_64" && sha256sum *.zip >SHA256SUMS)
+reject 'Source differs from HEAD: windows-x86_64' 0.3.0 "$assets"
+build_assets
 reject 'Expected --check or --draft' 0.3.0 "$assets" --publish
 reject 'Expected a numeric X.Y.Z version' '../0.3.0' "$assets"
 reject 'Version differs' 0.3.1 "$assets"
@@ -134,4 +171,5 @@ grep -Fxq -- '--verify-tag' "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cpu/whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cpu-aarch64/whisper-transcribator-0.3.0-linux-aarch64-cpu.tar.gz" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/macos-arm64/whisper-transcribator-0.3.0-macos-arm64-metal.tar.gz" "$GH_TEST_LOG"
+grep -Fxq -- "$assets/windows-x86_64/whisper-transcribator-0.3.0-windows-x86_64-cpu.zip" "$GH_TEST_LOG"
 echo 'Release preparation checks passed'

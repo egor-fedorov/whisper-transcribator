@@ -95,11 +95,34 @@ The archive has no Apple Developer ID signature and is not notarized; the README
 quarantined browser downloads. HTTPS uses the system libcurl and trust store, so the archive has
 no `cacert.pem`, and SHA-256 uses CommonCrypto, so it contains no OpenSSL.
 
-## Windows Source Builds
+## Windows
 
 Native Windows x64 CPU builds use MSVC, the same pinned minimal FFmpeg recipe and vcpkg's pinned libcurl with Schannel. Follow [the contributor build instructions](../CONTRIBUTING.md#windows). CNG supplies SHA-256; OpenSSL is only a test-server dependency. The DLL-filled development/test directory is not a distribution archive: it also contains test executables and test-only libraries.
 
-`test (windows-2025, x64)` builds and runs model-free CTest, including private ACLs, long and Unicode paths, junction rejection, locking, interruption and crash recovery. An additional standard-user check catches assumptions hidden by elevated CI. `smoke (windows-x86_64)` downloads those exact test binaries on a separate runner, prepares the public short fixture, blocks the application's network access and checks CPU inference, Unicode paths and interrupted resume. Neither job publishes artifacts to a release. Native ZIP packaging is a separate follow-up; the four-archive release contract below is unchanged.
+`test (windows-2025, x64)` builds and runs model-free CTest, including private ACLs, long and Unicode paths, junction rejection, locking, interruption and crash recovery. An additional standard-user check catches assumptions hidden by elevated CI.
+
+After a successful source build, run in the same x64 developer PowerShell:
+
+```powershell
+./packaging/windows-bundle.ps1
+./tests/packaging/windows.ps1 -Artifacts .build/artifacts/windows-x86_64
+```
+
+The bundle script reuses the build instead of compiling again. It traverses PE imports for the CLI
+and every CPU plugin; only an explicit Windows-system DLL allowlist may remain external.
+Required MSVC runtime files come from `VCToolsRedistDir/x64/Microsoft.VC*.CRT`, never System32 or
+debug directories. The unsigned ZIP includes dependency sources/notices, build metadata, vcpkg
+SPDX records, DLL inventories and per-file checksums. The archive checksum is in `SHA256SUMS`.
+No model or inference is needed to package it. The app-local runtime must be updated with the
+application; an installed system-wide redistributable does not service those copies.
+
+`package (windows-x86_64)` verifies the exact ZIP on a fresh Windows runner, including imports,
+checksums and baseline/missing-plugin diagnostics with a restricted runtime PATH. The separate
+`smoke (windows-x86_64)` downloads the same ZIP, prepares the public short fixture, blocks the
+application's network access and checks CPU inference, Unicode paths and interrupted resume.
+Test helpers are downloaded separately and never included in the ZIP. Hosted Windows CI checks
+the baseline plugin explicitly; it does not emulate physical hardware without AVX2. None of
+these jobs publishes a release.
 
 ## CUDA
 
@@ -138,9 +161,9 @@ with narrowly scoped mounts once device permissions are configured.
 ## Gates
 
 1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks, and CTest on macOS arm64.
-2. Build Linux x86_64 CPU/CUDA, Linux aarch64 CPU and macOS arm64 archives. Inspect bundled
+2. Build Linux x86_64 CPU/CUDA, Linux aarch64 CPU, macOS arm64 and Windows x64 CPU archives. Inspect bundled
    dependencies, source packages, vendor notices and SHA256SUMS. No glibc, host driver or
-   macOS system library may be bundled.
+   macOS or Windows system library may be bundled.
 3. Run `tests/smoke/prepare-smoke.sh` once, then `tests/smoke/smoke.sh` with networking disabled
    and a fresh output directory. Use the public 11-second fixture, not lectures.
 4. Check the CPU archive in clean Ubuntu 22.04 without Python/system FFmpeg, and
@@ -149,6 +172,8 @@ with narrowly scoped mounts once device permissions are configured.
    with QEMU's non-AVX2 `qemu64` CPU (x86_64) or `cortex-a53` (ARMv8.0, aarch64). Omitting `FIXTURES` only checks backend loading
    and missing-plugin diagnostics, without downloading weights or running inference.
    Check the macOS archive offline on clean macOS 14 and 15 runners with CPU and Metal.
+   Check the Windows ZIP on a fresh native runner with restricted PATH, its app-local runtime,
+   Unicode paths, baseline/missing-plugin diagnostics and offline interrupted resume.
 5. On a trusted GPU machine, repeat the offline smoke with the CUDA archive and
    `cuda` as the last script argument; test the CUDA image with driver injection.
    On an Apple silicon Mac, repeat it with the macOS archive and `metal`.
@@ -165,7 +190,7 @@ or expose a personal GPU runner to pull requests. The first remote checks passed
 every release still needs a successful run for its exact source commit.
 The aarch64 legs run natively on `ubuntu-24.04-arm` as `test (gcc, g++, OFF, aarch64)`,
 `package (aarch64)` and `smoke (aarch64)`; existing x86_64 check names are unchanged.
-Add the aarch64 checks to the branch protection rules after their first successful run.
+The aarch64 checks are required by branch protection, alongside native Windows test and smoke checks.
 `test (macos-15, arm64)` builds from source with Homebrew dependencies and runs CTest, the
 `hdiutil` exFAT check and offline CPU smoke tests, with network access denied by
 `sandbox-exec`. It repeats the smoke with Metal only where the hosted runner exposes Metal.
@@ -173,7 +198,8 @@ Add the aarch64 checks to the branch protection rules after their first successf
 `smoke (macos-arm64, macOS 14)` run it on clean runners: only archive and macOS libraries may
 load, CPU and Metal inference run offline, and a quarantined copy shows how Gatekeeper treats a
 browser download. Hosted runners have a virtual GPU, so Metal on real hardware remains a manual
-gate. Add these checks to the branch protection rules after their first successful run.
+gate. These macOS checks are required by branch protection. Add `package (windows-x86_64)`
+after its first successful run without removing existing required checks.
 
 The `package` job builds and verifies the archive, dependencies and `doctor`,
 including a model-free baseline-CPU loader check (non-AVX2 x86_64 or ARMv8.0) with a 30-second timeout. It never
@@ -195,12 +221,14 @@ memory tests use synthetic audio and fake inference, not full lecture recognitio
 
 The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
 
-Keep the four archives and their original `SHA256SUMS` under
+Keep the five archives and their original `SHA256SUMS` under
 `.build/artifacts/cpu/`, `.build/artifacts/cuda/`, `.build/artifacts/cpu-aarch64/` and
-`.build/artifacts/macos-arm64/` (the `native-cpu-aarch64` and `native-macos-arm64` CI artifacts
+`.build/artifacts/macos-arm64/`, plus `.build/artifacts/windows-x86_64/` for the ZIP
+(the `native-cpu-aarch64`, `native-macos-arm64` and `native-windows-x86_64` CI artifacts
 of the release commit). Prepare from a clean checkout
 of the release commit after its `main` CI has passed. The helper verifies every
-checksum, target system and architecture and packaged project source against Git, then checks local and
+checksum, target system and architecture and packaged project source against Git (using `unzip`
+for the Windows ZIP), then checks local and
 remote tag targets and CI. It never publishes automatically or overwrites assets.
 
 ```bash
@@ -212,7 +240,7 @@ bash packaging/release.sh "$version" .build/artifacts --draft
 gh release view "v$version"
 ```
 
-The draft contains the four archives, combined checksums, release notes and the
+The draft contains the five archives, combined checksums, release notes and the
 source commit/CI link. This validates artifact integrity and source correspondence,
 not that CUDA inference ran: the short hardware smoke gate above remains mandatory
 for the exact archive to be published. After reviewing the draft and the GPU check:

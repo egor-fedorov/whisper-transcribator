@@ -67,7 +67,19 @@ cmake --build --preset cpu -j
 Archives and source builds include whisper.cpp's Metal backend, so `--device auto` runs on the GPU; `--device cpu` uses the CPU with Accelerate. A source build loads its whisper.cpp libraries from the build directory, so keep that directory. CI tests archives on macOS 14 and 15 and source builds on macOS 15, all on Apple silicon; Intel Macs are not supported by the archive and untested from source. The default APFS volume, like FAT and exFAT drives, ignores letter case: see [batch output names](docs/resume.md#batch-output-names).
 
 ## Windows
-Native Windows x64 CPU builds use MSVC and require Windows 10 version 1903 or later. See [Windows development](CONTRIBUTING.md#windows). A ready-to-run Windows ZIP is a separate packaging step; the published 0.4.0 release does not contain one. Windows CUDA and ARM64 builds are not supported yet.
+Native Windows x64 CPU builds use MSVC and require Windows 10 version 1903 or later. Releases after 0.4.0 include `windows-x86_64-cpu.zip`; the published 0.4.0 release does not contain one. Windows CUDA and ARM64 builds are not supported yet. Download the ZIP and `SHA256SUMS` from the same release, then use PowerShell:
+
+```powershell
+$version = 'X.Y.Z' # a release after 0.4.0
+$archive = "whisper-transcribator-$version-windows-x86_64-cpu.zip"
+$expected = (Get-Content SHA256SUMS | Where-Object { $_.EndsWith("  $archive") }).Split(' ')[0]
+if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Checksum mismatch' }
+Expand-Archive $archive whisper-transcribator
+.\whisper-transcribator\bin\whisper-transcribator.exe doctor --device cpu --json
+.\whisper-transcribator\bin\whisper-transcribator.exe "C:\Lectures\lecture.mp4" --model small --language ru
+```
+
+Keep the whole extracted directory. The ZIP includes FFmpeg decoding DLLs, CPU plugins, libcurl and the app-local MSVC runtime, but no models, Python, ffmpeg executable or test tools. Installation and administrator access are not required. See [Windows development](CONTRIBUTING.md#windows) to build from source, or [packaging details](docs/releasing.md#windows).
 
 After building, run `.\.build\windows\bin\whisper-transcribator.exe "C:\Lectures\lecture.mp4" --model small --language ru` from PowerShell in the repository. The default model cache is `%LOCALAPPDATA%\whisper-transcribator\models` (`XDG_CACHE_HOME` and `--download-root` can override it). Input, output and model paths support Unicode. Paths longer than 260 characters also require Windows' long-path policy to be enabled. Run as a normal user, not as administrator. Native binaries are not Authenticode-signed, so SmartScreen may warn; verify checksums and the download source instead of disabling system-wide protections.
 

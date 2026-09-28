@@ -187,9 +187,34 @@ jobs:
       - name: Verify file safety and startup as a standard Windows user
         shell: pwsh
         run: ./tests/integration/windows-user.ps1 -Bin .build/windows/bin
+      - name: Package tested binaries, sources and notices (no inference)
+        shell: pwsh
+        run: ./packaging/windows-bundle.ps1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-windows-x86_64
+          path: .build/artifacts/windows-x86_64
+          if-no-files-found: error
+  package-windows:
+    name: package (windows-x86_64)
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        with:
+          arch: x64
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-windows-x86_64
+          path: .build/artifacts/windows-x86_64
+      - name: Verify exact ZIP with restricted runtime PATH (no models or inference)
+        shell: pwsh
+        run: ./tests/packaging/windows.ps1 -Artifacts .build/artifacts/windows-x86_64
   smoke-windows:
     name: smoke (windows-x86_64)
-    needs: windows
+    needs: package-windows
     runs-on: windows-2025
     timeout-minutes: 15
     steps:
@@ -198,19 +223,28 @@ jobs:
         with:
           name: windows-test-binaries
           path: .build/windows/bin
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-windows-x86_64
+          path: .build/artifacts/windows-x86_64
+      - name: Extract exact ZIP
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem .build/artifacts/windows-x86_64 -Filter '*.zip'
+          Expand-Archive $archive.FullName .build/archive
       - name: Prepare public 11-second fixture and tiny weights
         shell: bash
-        run: bash tests/smoke/prepare-smoke.sh .build/windows/bin/whisper-transcribator.exe .build/fixtures
+        run: bash tests/smoke/prepare-smoke.sh .build/archive/bin/whisper-transcribator.exe .build/fixtures
       - name: Block application network access during inference
         shell: pwsh
         run: |
-          $exe = (Resolve-Path .build/windows/bin/whisper-transcribator.exe).Path
+          $exe = (Resolve-Path .build/archive/bin/whisper-transcribator.exe).Path
           New-NetFirewallRule -DisplayName 'Whisper offline test' -Direction Outbound -Program $exe -Action Block
       - name: Check CPU inference, interruption and resume
         shell: bash
         run: |
           export WT_PROCESS_RUNNER="$PWD/.build/windows/bin/wt-process-runner.exe"
-          binary="$PWD/.build/windows/bin/whisper-transcribator.exe"
+          binary="$PWD/.build/archive/bin/whisper-transcribator.exe"
           "$binary" doctor --device cpu --json
           bash tests/smoke/smoke.sh "$binary" "$PWD/.build/fixtures/jfk.wav" \
             "$PWD/.build/fixtures/ggml-tiny.bin" "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline"
@@ -219,7 +253,9 @@ jobs:
             "$PWD/.build/fixtures/ggml-silero-v6.2.0.bin" "$PWD/.build/offline-streaming"
       - name: Check Unicode input, cache and output paths offline
         shell: pwsh
-        run: ./tests/smoke/windows-paths.ps1 -Binary .build/windows/bin/whisper-transcribator.exe -Fixtures .build/fixtures -Output .build/windows-paths
+        run: |
+          $env:PATH = "$env:SystemRoot/System32;$env:SystemRoot"
+          ./tests/smoke/windows-paths.ps1 -Binary .build/archive/bin/whisper-transcribator.exe -Fixtures .build/fixtures -Output .build/windows-paths
       - name: Remove test firewall rule
         if: always()
         shell: pwsh

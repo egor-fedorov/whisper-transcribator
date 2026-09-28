@@ -21,22 +21,27 @@ git ls-tree -r --name-only HEAD -- "${inputs[@]}" | LC_ALL=C sort >"$temporary/e
 assets=()
 # Artifact directory, operating system, architecture and flavor of every published archive.
 targets=(cpu:linux:x86_64:cpu cuda:linux:x86_64:cuda cpu-aarch64:linux:aarch64:cpu
-    macos-arm64:macos:arm64:metal)
+    macos-arm64:macos:arm64:metal windows-x86_64:windows:x86_64:cpu)
+archive_read() {
+    if [[ $os == windows ]]; then unzip -p "$archive" "${1#./}"; else tar -xOzf "$archive" "$1"; fi
+}
 for target in "${targets[@]}"; do
     IFS=: read -r directory os arch flavor <<<"$target"
-    name="whisper-transcribator-$version-$os-$arch-$flavor.tar.gz"
+    extension=tar.gz
+    if [[ $os == windows ]]; then extension=zip; fi
+    name="whisper-transcribator-$version-$os-$arch-$flavor.$extension"
     archive="$root/$directory/$name"
     [[ -s $archive ]] || fail "Missing archive: $archive"
     digest=$(sha256sum <"$archive" | cut -d ' ' -f1)
     printf '%s  %s\n' "$digest" "$name" >"$temporary/$directory.sha"
     cmp "$temporary/$directory.sha" "$root/$directory/SHA256SUMS" || fail "Checksum mismatch: $directory"
-    tar -xOzf "$archive" ./share/build-metadata.env >"$temporary/metadata"
+    archive_read ./share/build-metadata.env >"$temporary/metadata"
     grep -Fxq "WT_PACKAGE_VERSION=$version" "$temporary/metadata" || fail "Refusing a development or mismatched archive: $directory"
     grep -Fxq "WT_SOURCE_REVISION=$commit" "$temporary/metadata" || fail "Archive revision differs from HEAD: $directory"
     grep -Fxq 'WT_SOURCE_DIRTY=false' "$temporary/metadata" || fail "Archive sources are dirty or unknown: $directory"
     grep -Fxq "WT_TARGET_OS=$os" "$temporary/metadata" || fail "Archive system differs from its name: $directory"
     grep -Fxq "WT_TARGET_ARCH=$arch" "$temporary/metadata" || fail "Archive architecture differs from its name: $directory"
-    tar -xOzf "$archive" "./sources/whisper-transcribator-$version.tar.gz" >"$temporary/source.tar.gz"
+    archive_read "./sources/whisper-transcribator-$version.tar.gz" >"$temporary/source.tar.gz"
     tar -tzf "$temporary/source.tar.gz" | sed '/\/$/d' | LC_ALL=C sort >"$temporary/actual"
     cmp "$temporary/expected" "$temporary/actual" || fail "Source file list differs from HEAD: $directory"
     while IFS= read -r file; do
@@ -47,7 +52,7 @@ for target in "${targets[@]}"; do
     assets+=("$archive")
     cat "$temporary/$directory.sha" >>"$temporary/SHA256SUMS"
 done
-echo "Linux x86_64 CPU/CUDA, Linux aarch64 CPU and macOS arm64 checksums and packaged sources match $commit"
+echo "All five Linux, macOS and Windows archive checksums and packaged sources match $commit"
 [[ $mode = --draft ]] || exit 0
 
 tag="v$version"

@@ -99,6 +99,11 @@ bash packaging/windows-ffmpeg.sh
 
 Back in developer PowerShell, `./packaging/windows-build.ps1` builds the application and runs CTest. It enables vcpkg's test feature for the local OpenSSL HTTPS server; production TLS uses Schannel and hashing uses CNG. Executables and their DLLs are in `.build/windows/bin`. All executable targets embed the UTF-8/long-path manifest. Keep `/MD` consistent across the build and dependencies. The script accepts explicit build, FFmpeg, vcpkg and pkg-config paths.
 
+`packaging/windows-bundle.ps1` packages that tested build without recompiling or running inference;
+`windows-sources.ps1` collects pinned third-party sources and notices, and `windows-common.ps1`
+holds PE-import/metadata helpers shared with `tests/packaging/windows.ps1`. The latter verifies
+the exact ZIP on a fresh runner. Short archive inference remains in the separate smoke job.
+
 Git Bash runs portable shell tests. `tests/support/process.*` owns native child processes, bounded waits and console interruption; Windows uses Ctrl+Break, not Bash `kill`, while POSIX uses signals. Set `WT_PROCESS_RUNNER` to the built `wt-process-runner` executable to use the same native-process smoke path locally. The test helper is not part of the distributed application. Existing POSIX-only syscall fallback tests remain on Linux/macOS; recovery, TLS, locking and bounded-memory scenarios also run on Windows.
 
 ## Layout
