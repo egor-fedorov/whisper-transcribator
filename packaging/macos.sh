@@ -132,7 +132,7 @@ tar -C "$build/_deps/cli11-src" -czf "$bundle/sources/CLI11-$WT_CLI11_VERSION.ta
 cp "$build/_deps/cli11-src/LICENSE" "$bundle/licenses/CLI11-BSD.txt"
 cp "$repo/LICENSE" "$bundle/licenses/whisper-transcribator-MIT.txt"
 (cd "$repo" && tar -czf "$bundle/sources/whisper-transcribator-$WT_PACKAGE_VERSION.tar.gz" \
-    CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE)
+    CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE)
 "$bundle/bin/whisper-transcribator" --version
 name="whisper-transcribator-$WT_PACKAGE_VERSION-$WT_TARGET_OS-$WT_TARGET_ARCH-metal.tar.gz"
 rm -f "$output/$name" "$output/SHA256SUMS"

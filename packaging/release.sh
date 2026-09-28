@@ -16,7 +16,7 @@ notes="docs/releases/$version.md"
 commit=$(git rev-parse HEAD)
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
-inputs=(CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE)
+inputs=(CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE)
 git ls-tree -r --name-only HEAD -- "${inputs[@]}" | LC_ALL=C sort >"$temporary/expected"
 assets=()
 # Artifact directory, operating system, architecture and flavor of every published archive.

@@ -1,4 +1,5 @@
 #include "app/cli.hpp"
+#include "platform/system.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include "support/report.hpp"
@@ -6,6 +7,7 @@
 
 int main(int argc, char** argv) {
     try {
+        wt::platform::prepare_console();
         wt::install_signal_handlers();
         auto status = wt::run_cli(argc, argv);
         wt::finish_progress();

@@ -2,16 +2,12 @@
 #include "support/cancel.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
+#include "support/socket.hpp"
 #include "support/test.hpp"
-#include <arpa/inet.h>
 #include <atomic>
-#include <fcntl.h>
 #include <iostream>
 #include <openssl/ssl.h>
-#include <poll.h>
-#include <sys/socket.h>
 #include <thread>
-#include <unistd.h>
 
 using namespace wt;
 using namespace wt::test;
@@ -20,16 +16,13 @@ const std::string payload = "abcdefghijklmnopqrstuvwxyz012345";
 class Server {
     std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> context{SSL_CTX_new(TLS_server_method()),
                                                               SSL_CTX_free};
-    int listener = -1;
+    Socket listener = invalid_socket;
     std::atomic<bool> stopping{false};
     std::thread worker;
     bool cut_once = false;
-    void serve(int fd) {
-        timeval timeout{3, 0};
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+    void serve(Socket fd) {
         std::unique_ptr<SSL, decltype(&SSL_free)> ssl(SSL_new(context.get()), SSL_free);
-        SSL_set_fd(ssl.get(), fd);
+        SSL_set_fd(ssl.get(), static_cast<int>(fd));
         if (SSL_accept(ssl.get()) != 1)
             return;
         std::string request;
@@ -75,7 +68,7 @@ class Server {
             written += static_cast<size_t>(n);
         }
         if (path == "/cancel")
-            raise(SIGINT);
+            stop_signal = SIGINT;
         SSL_shutdown(ssl.get());
     }
 
@@ -84,38 +77,29 @@ class Server {
     std::atomic<int> ranges{0};
     Server(const fs::path& cert, const fs::path& key) {
         require(bool(context));
-        require(SSL_CTX_use_certificate_file(context.get(), cert.c_str(), SSL_FILETYPE_PEM) == 1);
-        require(SSL_CTX_use_PrivateKey_file(context.get(), key.c_str(), SSL_FILETYPE_PEM) == 1);
-        // macOS has no SOCK_CLOEXEC.
-        listener = socket(AF_INET, SOCK_STREAM, 0);
-        require(listener >= 0 && fcntl(listener, F_SETFD, FD_CLOEXEC) == 0);
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        require(bind(listener, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
-        socklen_t size = sizeof(address);
-        require(getsockname(listener, reinterpret_cast<sockaddr*>(&address), &size) == 0);
-        require(listen(listener, 8) == 0);
-        url = "https://127.0.0.1:" + std::to_string(ntohs(address.sin_port));
+        require(SSL_CTX_use_certificate_file(context.get(), cert.u8string().c_str(),
+                                             SSL_FILETYPE_PEM) == 1);
+        require(SSL_CTX_use_PrivateKey_file(context.get(), key.u8string().c_str(),
+                                            SSL_FILETYPE_PEM) == 1);
+        uint16_t port = 0;
+        listener = listen_loopback(port);
+        url = "https://127.0.0.1:" + std::to_string(port);
         // shutdown() of a listening socket does not interrupt accept() on macOS, so the worker
         // waits for connections with a timeout and checks for the end of the test.
         worker = std::thread([&] {
             while (!stopping) {
-                pollfd ready{listener, POLLIN, 0};
-                if (poll(&ready, 1, 100) <= 0)
-                    continue;
-                auto fd = accept(listener, nullptr, nullptr);
-                if (fd < 0)
+                auto fd = accept_connection(listener);
+                if (fd == invalid_socket)
                     continue;
                 serve(fd);
-                close(fd);
+                close_socket(fd);
             }
         });
     }
     ~Server() {
         stopping = true;
         worker.join();
-        close(listener);
+        close_socket(listener);
     }
 };
 void prefix(const Model& model, const fs::path& root) {
@@ -184,7 +168,9 @@ void transfers(const fs::path& root, const fs::path& cert, const fs::path& key) 
 int main(int argc, char** argv) {
     if (argc != 3)
         return 2;
+#ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
+#endif
     install_signal_handlers();
     ScopedEnv cert("SSL_CERT_FILE", argv[1]);
     ScopedEnv proxy("NO_PROXY", "127.0.0.1");

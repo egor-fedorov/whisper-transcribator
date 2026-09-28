@@ -1,12 +1,19 @@
-add_library(wt_test_support STATIC support/test.cpp support/fixtures.cpp)
+add_library(wt_test_support STATIC support/test.cpp support/fixtures.cpp support/process.cpp support/socket.cpp)
 target_include_directories(wt_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(wt_test_support PUBLIC wt_core)
 wt_warnings(wt_test_support)
+if(WIN32)
+  target_link_libraries(wt_test_support PUBLIC psapi ws2_32)
+  find_program(WT_TEST_BASH bash PATHS "C:/Program Files/Git/bin" "C:/Program Files/Git/usr/bin" NO_DEFAULT_PATH REQUIRED)
+else()
+  find_program(WT_TEST_BASH bash REQUIRED)
+endif()
 
 function(wt_test_target name source)
   add_executable(wt-${name}-tests ${source})
   target_link_libraries(wt-${name}-tests PRIVATE wt_test_support)
   wt_warnings(wt-${name}-tests)
+  wt_manifest(wt-${name}-tests)
 endfunction()
 function(wt_test name label source)
   wt_test_target(${name} ${source})
@@ -47,6 +54,9 @@ wt_test(pipeline integration integration/pipeline.cpp)
 wt_test(publication integration integration/publication.cpp)
 wt_test(recovery integration integration/recovery.cpp)
 wt_test(permissionless integration integration/permissionless.cpp)
+if(WIN32)
+  wt_test(windows integration integration/windows.cpp)
+endif()
 wt_test(model-concurrency integration integration/model-concurrency.cpp)
 set_tests_properties(integration/model-concurrency PROPERTIES TIMEOUT 30)
 
@@ -64,7 +74,7 @@ get_filename_component(WT_OPENSSL_PREFIX "${OPENSSL_INCLUDE_DIR}" DIRECTORY)
 find_program(WT_TEST_OPENSSL openssl HINTS "${WT_OPENSSL_PREFIX}/bin" REQUIRED)
 wt_test_target(download integration/downloads.cpp)
 target_link_libraries(wt-download-tests PRIVATE OpenSSL::SSL Threads::Threads)
-add_test(NAME integration/downloads COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/downloads.sh"
+add_test(NAME integration/downloads COMMAND "${WT_TEST_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/downloads.sh"
   $<TARGET_FILE:wt-download-tests> "${WT_TEST_OPENSSL}")
 set_tests_properties(integration/downloads PROPERTIES LABELS integration TIMEOUT 45)
 
@@ -87,17 +97,17 @@ if(WT_TEST_FFMPEG)
   endif()
 endif()
 if(WT_TEST_FFMPEG_MATCHES)
-  add_test(NAME integration/audio-changes COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-changes.sh"
+  add_test(NAME integration/audio-changes COMMAND "${WT_TEST_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-changes.sh"
     $<TARGET_FILE:wt-audio-tests> "${WT_TEST_FFMPEG}")
   set_tests_properties(integration/audio-changes PROPERTIES LABELS integration TIMEOUT 60)
-  add_test(NAME integration/audio-timeline COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-timeline.sh"
+  add_test(NAME integration/audio-timeline COMMAND "${WT_TEST_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-timeline.sh"
     $<TARGET_FILE:wt-audio-tests> "${WT_TEST_FFMPEG}" $<TARGET_FILE:whisper-transcribator>)
   set_tests_properties(integration/audio-timeline PROPERTIES LABELS integration TIMEOUT 60)
-  add_test(NAME integration/audio-recovery COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-recovery.sh"
+  add_test(NAME integration/audio-recovery COMMAND "${WT_TEST_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/audio-recovery.sh"
     $<TARGET_FILE:wt-audio-tests> $<TARGET_FILE:wt-audio-recovery-tests> "${WT_TEST_FFMPEG}")
   set_tests_properties(integration/audio-recovery PROPERTIES LABELS integration TIMEOUT 60)
 endif()
-add_test(NAME integration/cli COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/integration/cli.sh"
+add_test(NAME integration/cli COMMAND "${WT_TEST_BASH}" "${CMAKE_CURRENT_SOURCE_DIR}/integration/cli.sh"
   $<TARGET_FILE:whisper-transcribator> "${CMAKE_CURRENT_BINARY_DIR}/cli" "${CMAKE_BINARY_DIR}/generated/package.env" "${WT_WHISPER_REVISION}")
 set_tests_properties(integration/cli PROPERTIES LABELS integration TIMEOUT 60)
 add_test(NAME integration/build-version COMMAND "${CMAKE_COMMAND}"
@@ -116,6 +126,11 @@ add_executable(wt-audio-fixture support/audio-fixture.cpp)
 target_include_directories(wt-audio-fixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(wt-audio-fixture PRIVATE wt_engine)
 wt_warnings(wt-audio-fixture)
+wt_manifest(wt-audio-fixture)
+add_executable(wt-process-runner support/process-runner.cpp)
+target_link_libraries(wt-process-runner PRIVATE wt_test_support)
+wt_warnings(wt-process-runner)
+wt_manifest(wt-process-runner)
 
 # Compile each project header alone, without backend or CLI include directories.
 set(WT_CHECK_HEADERS
@@ -131,7 +146,7 @@ set(WT_CHECK_HEADERS
   models/models.hpp
   platform/cpu.hpp
   platform/file.hpp
-  platform/posix.hpp
+  platform/sha256.hpp
   platform/system.hpp
   support/cancel.hpp
   support/error.hpp
@@ -148,6 +163,9 @@ set(WT_CHECK_HEADERS
   transcript/pipeline.hpp
   transcript/types.hpp
 )
+if(NOT WIN32)
+  list(APPEND WT_CHECK_HEADERS platform/posix.hpp)
+endif()
 set(WT_HEADER_SOURCES)
 foreach(header IN LISTS WT_CHECK_HEADERS)
   string(REPLACE "/" "_" name "${header}")

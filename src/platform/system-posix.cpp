@@ -1,6 +1,7 @@
 #include "platform/system.hpp"
 #include <csignal>
 #include <cstdint>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <string>
 #include <unistd.h>
@@ -18,7 +19,16 @@ bool handle_interrupts(void (*handler)(int signal)) {
     return !sigaction(SIGINT, &action, nullptr) && !sigaction(SIGTERM, &action, nullptr);
 }
 void exit_now(int status) { _exit(status); }
+void prepare_console() {}
 bool stderr_is_terminal() { return isatty(STDERR_FILENO); }
+fs::path home_directory() {
+    const char* home = std::getenv("HOME");
+    return home ? home : "";
+}
+fs::path cache_directory() {
+    auto home = home_directory();
+    return home.empty() ? home : home / ".cache";
+}
 fs::path executable_path() {
     std::error_code error;
 #ifdef __APPLE__

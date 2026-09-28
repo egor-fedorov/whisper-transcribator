@@ -3,12 +3,18 @@
 #include <cerrno>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
 #include <thread>
-#ifdef __APPLE__
+#if defined(__APPLE__)
 #include <sys/sysctl.h>
+#elif defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #else
 #include <sched.h>
 #endif
@@ -122,6 +128,39 @@ int automatic_cpu_threads() {
             return count;
     }
     return static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
+}
+#elif defined(_WIN32)
+int automatic_cpu_threads() {
+    // Physical cores the process may run on, preferring performance cores as on macOS: hybrid
+    // processors give them the highest efficiency class. A process confined to one processor
+    // group has an affinity mask there; one spanning groups may run on every processor.
+    DWORD_PTR process = 0, system = 0;
+    USHORT group = 0, groups = 1;
+    bool confined = GetProcessAffinityMask(GetCurrentProcess(), &process, &system) && process &&
+                    GetProcessGroupAffinity(GetCurrentProcess(), &groups, &group);
+    DWORD size = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &size);
+    std::vector<unsigned char> buffer(size);
+    std::map<int, int> cores;
+    if (size &&
+        GetLogicalProcessorInformationEx(
+            RelationProcessorCore,
+            reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data()), &size))
+        for (DWORD offset = 0; offset < size;) {
+            const auto& core =
+                *reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data() + offset);
+            offset += core.Size;
+            bool usable = !confined;
+            for (WORD i = 0; i < core.Processor.GroupCount; ++i)
+                usable |= core.Processor.GroupMask[i].Group == group &&
+                          (core.Processor.GroupMask[i].Mask & process);
+            // EfficiencyClass follows Flags; older headers, such as MinGW's, call it Reserved[0].
+            if (usable)
+                ++cores[reinterpret_cast<const BYTE*>(&core.Processor.Flags)[1]];
+        }
+    if (cores.empty())
+        return static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
+    return cores.rbegin()->second;
 }
 #else
 int automatic_cpu_threads() {

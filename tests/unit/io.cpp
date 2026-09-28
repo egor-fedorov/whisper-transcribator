@@ -1,15 +1,20 @@
 #include "support/io.hpp"
 #include "platform/file.hpp"
+#ifndef _WIN32
 #include "platform/posix.hpp"
+#endif
 #include "support/cancel.hpp"
 #include "support/test.hpp"
 #include <cerrno>
 
 using namespace wt;
 using namespace wt::test;
+#ifndef _WIN32
 using platform::NoReplaceSteps;
+#endif
 using platform::rename_noreplace;
 namespace {
+#ifndef _WIN32
 int exclusive_calls = 0, link_calls = 0;
 // Injected primitives fail like a kernel or filesystem without the corresponding support.
 template <int Error> int failed_exclusive(const char*, const char*) {
@@ -36,6 +41,7 @@ void expect_no_replace(const fs::path& from, const fs::path& to, const NoReplace
     require(!fs::exists(from) && read_text(to) == "new");
     fs::remove(to);
 }
+#endif
 void atomic_no_clobber_and_replacement(const fs::path& root) {
 
     auto path = root / "result";
@@ -62,12 +68,19 @@ void cancellation_preserves_output(const fs::path& root) {
     require(std::distance(fs::directory_iterator(root), fs::directory_iterator{}) == 1);
 }
 void rename_noreplace_keeps_existing_targets(const fs::path& root) {
-    expect_no_replace(root / "staged", root / "target", {});
+    atomic_write(root / "staged", "new");
+    atomic_write(root / "target", "old");
+    require(!rename_noreplace(root / "staged", root / "target") && errno == EEXIST);
+    require(read_text(root / "target") == "old");
+    fs::remove(root / "target");
+    require(rename_noreplace(root / "staged", root / "target"));
+    require(read_text(root / "target") == "new" && !fs::exists(root / "staged"));
     fs::create_directory(root / "directory");
     atomic_write(root / "staged", "new");
     require(!rename_noreplace(root / "staged", root / "directory") && errno == EEXIST);
     require(fs::is_empty(root / "directory") && read_text(root / "staged") == "new");
 }
+#ifndef _WIN32
 void rename_noreplace_falls_back_to_hard_links(const fs::path& root) {
     // ENOTSUP is how macOS reports a filesystem without RENAME_EXCL.
     for (auto exclusive :
@@ -114,6 +127,7 @@ void rename_noreplace_reports_other_errors(const fs::path& root) {
             errno == EXDEV);
     require(read_text(root / "staged") == "new" && !fs::exists(root / "target"));
 }
+#endif
 void stored_permissions_relax_only_missing_attributes(const fs::path& root) {
     platform::FileStatus own, foreign;
     own.owned = true;
@@ -132,10 +146,12 @@ int main() {
         {"atomic no clobber and replacement", atomic_no_clobber_and_replacement},
         {"cancellation preserves output", cancellation_preserves_output},
         {"no-replace rename keeps existing targets", rename_noreplace_keeps_existing_targets},
+#ifndef _WIN32
         {"no-replace rename falls back to hard links", rename_noreplace_falls_back_to_hard_links},
         {"no-replace rename falls back to a checked rename",
          rename_noreplace_falls_back_to_checked_rename},
         {"no-replace rename reports other errors", rename_noreplace_reports_other_errors},
+#endif
         {"stored permissions relax only missing attributes",
          stored_permissions_relax_only_missing_attributes},
     });

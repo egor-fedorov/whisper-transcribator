@@ -41,7 +41,7 @@ struct CheckpointPrivacy {
                     "Checkpoint privacy cannot be enforced on this filesystem because it "
                     "does not store POSIX owners and modes; saved transcript fragments in " +
                         (output_directory / ".whisper-transcribator").string() +
-                        " are protected only by its mount options");
+                        " are protected only by the volume's access settings");
         }
         return st.id.device == device && stored->accepts(st, owner_only);
     }

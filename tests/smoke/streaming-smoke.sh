@@ -27,6 +27,14 @@ done
 for mode in plain vad; do
     awk '/^Checkpoint:/ { if ($2 + 0 <= 0 || $2 + 0 >= 30) exit 1; found=1; exit } END { if (!found) exit 1 }' "$root/$mode.log"
 done
+if [[ -n ${WT_PROCESS_RUNNER:-} ]]; then
+    status=0
+    expected=143
+    if command -v cygpath >/dev/null; then expected=130; fi
+    "$WT_PROCESS_RUNNER" --interrupt-after "$root/interrupted.log" 'Checkpoint:' "$binary" \
+        "${common[@]}" --no-vad --output-dir "$root/resume" || status=$?
+    test "$status" = "$expected"
+else
 "$binary" "${common[@]}" --no-vad --output-dir "$root/resume" >"$root/interrupted.log" 2>&1 &
 pid=$!
 trap 'kill -TERM "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
@@ -48,6 +56,7 @@ status=0
 wait "$pid" || status=$?
 trap - EXIT
 test "$status" = 143
+fi
 test ! -e "$root/resume/windows.txt"
 manifest=$(find "$root/resume/.whisper-transcribator" -name manifest.json -type f)
 boundary=$(jq -r '.samples / 16000' "$manifest")

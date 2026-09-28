@@ -1,6 +1,8 @@
 *
 !CMakeLists.txt
 !CMakePresets.json
+!vcpkg.json
+!.gitattributes
 !LICENSE
 !cmake/**
 !src/**

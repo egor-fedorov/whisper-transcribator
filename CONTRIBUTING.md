@@ -87,6 +87,20 @@ The non-sanitized memory test decodes synthetic 120/3600-second WAV files with
 fake inference and large fake text, checking that peak RSS grows by no more than
 32 MiB. It does not transcribe hour-long recordings or measure model quality.
 
+## Windows
+
+Use an x64 Visual Studio 2022 (or later) developer PowerShell with the Windows SDK, CMake, Ninja, Git for Windows and MSYS2. The supported compiler is MSVC; MinGW/Wine checks are supplementary, not a native Windows CI substitute. Enable Windows long-path support and Developer Mode (or the symlink privilege) for the path and symlink tests.
+
+Clone vcpkg into `.build/vcpkg` and check out the `builtin-baseline` commit from `vcpkg.json`. Install MSYS2's `make`, `nasm`, `diffutils` and `mingw-w64-x86_64-pkgconf`. Start its MSYS shell from the developer shell with `msys2_shell.cmd -defterm -no-start -msys -use-full-path`; put the directory containing MSVC's `cl.exe` first in `PATH`, so Microsoft's `link.exe` wins over the unrelated MSYS utility. Then run:
+
+```bash
+bash packaging/windows-ffmpeg.sh
+```
+
+Back in developer PowerShell, `./packaging/windows-build.ps1` builds the application and runs CTest. It enables vcpkg's test feature for the local OpenSSL HTTPS server; production TLS uses Schannel and hashing uses CNG. Executables and their DLLs are in `.build/windows/bin`. All executable targets embed the UTF-8/long-path manifest. Keep `/MD` consistent across the build and dependencies. The script accepts explicit build, FFmpeg, vcpkg and pkg-config paths.
+
+Git Bash runs portable shell tests. `tests/support/process.*` owns native child processes, bounded waits and console interruption; Windows uses Ctrl+Break, not Bash `kill`, while POSIX uses signals. Set `WT_PROCESS_RUNNER` to the built `wt-process-runner` executable to use the same native-process smoke path locally. The test helper is not part of the distributed application. Existing POSIX-only syscall fallback tests remain on Linux/macOS; recovery, TLS, locking and bounded-memory scenarios also run on Windows.
+
 ## Layout
 
 - `src/app/`: CLI parsing, diagnostics and sequential job orchestration.
@@ -94,7 +108,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 - `src/inference/`: whisper.cpp device discovery, logging and a lazily initialized RAII session shared across files.
 - `src/models/`: pinned catalog, model cache, locking and HTTPS transfers.
 - `src/transcript/`: value types, job planning, windowing, metadata, checkpoint integrity and output rendering.
-- `src/platform/`: operating-system files, locks, renames, signals and CPU limits behind a small interface; the `-posix.cpp` files implement it for Linux and macOS, and a native Windows port would add its own implementation files.
+- `src/platform/`: operating-system files, locks, renames, signals, CPU limits and the system SHA-256 behind a small interface; the `-posix.cpp` files implement it for Linux and macOS and the `-win32.cpp` files for Windows. Native CI compiles and tests both implementations.
 - `src/support/`: plain options, atomic publication, hashing, cancellation and reporting.
 - `cmake/`: pinned dependencies and generated metadata.
 - `tests/unit/` and `tests/integration/`: focused component checks and cross-component recovery, audio, CLI and process scenarios.
@@ -102,7 +116,7 @@ fake inference and large fake text, checking that peak RSS grows by no more than
 - `tests/fixtures/`: reviewed synthetic checkpoint and output snapshots for cross-version compatibility.
 - `tests/smoke/`: public fixture preparation and short real-inference checks, separate from default CTest.
 - `tests/packaging/`: archive, release-helper and portable-loader checks; QEMU inference remains explicitly opt-in.
-- `tests/support/`: assertions, scoped fixtures, fake audio/inference and the separate `wt-audio-fixture` generator.
+- `tests/support/`: assertions, scoped fixtures, native process/socket helpers, fake audio/inference and the separate `wt-audio-fixture` and `wt-process-runner` executables.
 - `packaging/`: archive/container recipes and dependency collection.
 - `docs/`: usage, migration, distribution and design decisions.
 - `.build/`: all generated build, test and release artifacts.

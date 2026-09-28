@@ -18,6 +18,8 @@ GCC C++ runtime and without OpenMP; they bundle no LLVM runtime library.
 The macOS archive bundles FFmpeg, whisper.cpp/GGML and their notices like the Linux archives. It
 links the system libcurl, libc++ and Apple frameworks (Metal, Accelerate, Foundation), which are
 part of macOS and not redistributed, and computes SHA-256 with CommonCrypto instead of OpenSSL.
+
+Windows source builds use the same decoding-only FFmpeg recipe with MSVC. A pinned vcpkg manifest supplies libcurl with Schannel (Windows' certificate store); SHA-256 uses the system CNG library. OpenSSL is used only by the test HTTPS server, not by the Windows application. TLS certificate/hostname verification and Schannel revocation checks remain enabled; `SSL_CERT_FILE` is an explicit custom CA override, not a way to disable verification.
 CPU archives do not include CUDA libraries. CUDA archives include redistributable
 runtime libraries, but **not** the NVIDIA driver or glibc. The archive contains
 `licenses/`, `sources/` and `share/system-sources.tsv`; the packaging script fails

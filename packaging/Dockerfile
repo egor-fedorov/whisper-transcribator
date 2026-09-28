@@ -18,7 +18,7 @@ RUN mkdir -p /opt/cuda-stubs \
 ENV PKG_CONFIG_PATH=/opt/media/lib/pkgconfig LD_LIBRARY_PATH=/opt/media/lib:/opt/cuda-stubs
 FROM dependencies AS build
 WORKDIR /app
-COPY CMakeLists.txt CMakePresets.json LICENSE ./
+COPY CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes LICENSE ./
 COPY cmake/ cmake/
 COPY src/ src/
 COPY tests/ tests/
@@ -51,7 +51,7 @@ RUN . .build/release/generated/package.env \
     && tar -C .build/release/_deps/cli11-src -czf "/bundle/sources/CLI11-${WT_CLI11_VERSION}.tar.gz" . \
     && cp .build/release/_deps/cli11-src/LICENSE /bundle/licenses/CLI11-BSD.txt \
     && cp LICENSE /bundle/licenses/whisper-transcribator-MIT.txt \
-    && tar -czf "/bundle/sources/whisper-transcribator-${WT_PACKAGE_VERSION}.tar.gz" CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE
+    && tar -czf "/bundle/sources/whisper-transcribator-${WT_PACKAGE_VERSION}.tar.gz" CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE
 RUN . .build/release/generated/package.env && mkdir -p /export \
     && if [ "${WT_CUDA}" = ON ]; then flavor=cuda; else flavor=cpu; fi \
     && tar -C /bundle -czf "/export/whisper-transcribator-${WT_PACKAGE_VERSION}-linux-${WT_TARGET_ARCH}-${flavor}.tar.gz" . \

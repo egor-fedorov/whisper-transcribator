@@ -30,6 +30,8 @@ for directory in cmake tests packaging; do
 done
 printf 'project(whisper_transcribator VERSION 0.3.0 LANGUAGES C CXX)\n' >CMakeLists.txt
 printf '{}\n' >CMakePresets.json
+printf '{}\n' >vcpkg.json
+printf '* text=auto eol=lf\n' >.gitattributes
 printf 'fixture\n' >LICENSE
 printf 'source\n' >src/main.cpp
 printf '# Release\n' >docs/releases/0.3.0.md
@@ -63,7 +65,7 @@ build_assets() {
     mkdir -p "$root/bundle/sources" "$root/bundle/share"
     printf 'WT_PACKAGE_VERSION=0.3.0\nWT_SOURCE_REVISION=%s\nWT_SOURCE_DIRTY=false\n' \
         "$(git rev-parse HEAD)" >"$root/bundle/share/build-metadata.env"
-    git archive HEAD CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE \
+    git archive HEAD CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE \
         -o "$root/bundle/sources/whisper-transcribator-0.3.0.tar.gz"
     repack_assets
 }
@@ -85,7 +87,7 @@ repack_assets
 reject 'Refusing a development' 0.3.0 "$assets"
 build_assets
 printf 'tampered packaged source\n' >src/main.cpp
-tar -czf "$root/bundle/sources/whisper-transcribator-0.3.0.tar.gz" CMakeLists.txt CMakePresets.json cmake src tests packaging LICENSE
+tar -czf "$root/bundle/sources/whisper-transcribator-0.3.0.tar.gz" CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE
 git show HEAD:src/main.cpp >src/main.cpp
 repack_assets
 reject 'Source differs' 0.3.0 "$assets"

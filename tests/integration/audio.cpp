@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#include <sys/resource.h>
 
 using namespace wt;
 using namespace wt::test;
@@ -147,8 +146,7 @@ int main(int argc, char** argv) {
     }
     if (argc == 3 && std::string(argv[1]) == "--gap") {
         AudioReader reader(argv[2]);
-        rusage before{}, after{};
-        require(getrusage(RUSAGE_SELF, &before) == 0);
+        auto before = peak_rss_kib();
         auto prefix = reader.read(2 * 16000);
         require(prefix.size() == 2 * 16000);
         for (int i = 0; i < 10; ++i) {
@@ -156,9 +154,7 @@ int main(int argc, char** argv) {
             require(gap.size() == 65536);
             require(std::all_of(gap.begin(), gap.end(), [](float x) { return x == 0; }));
         }
-        require(getrusage(RUSAGE_SELF, &after) == 0);
-        require(peak_rss_kib(after) <= peak_rss_kib(before) + 32 * 1024,
-                "timestamp gap allocated more than 32 MiB");
+        require(peak_rss_kib() <= before + 32 * 1024, "timestamp gap allocated more than 32 MiB");
         return 0;
     }
     if (argc == 3 && std::string(argv[1]) == "--streams") {

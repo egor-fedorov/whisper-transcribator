@@ -40,13 +40,20 @@ test -s "$root/numbered/result_001.txt"
 test -s "$root/numbered/result_002.txt"
 jq -e 'length == 2 and .[0].outputs.text == "result_001.txt"' "$root/numbered/result_files.json"
 "$binary" "$sample" --output-dir "$root/plain" --format all --skip-existing --model /missing --local-files-only
-# SIGTERM must not publish a partial transcript or exit successfully.
-"$binary" "$sample" -o "$root/interrupted.txt" "${common[@]}" >"$root/interrupt.log" 2>&1 &
-pid=$!
-sleep 0.05
-kill -TERM "$pid"
+# Interrupts must not publish partial transcripts or exit successfully.
 status=0
-wait "$pid" || status=$?
-test "$status" = 143
+expected=143
+if [[ -n ${WT_PROCESS_RUNNER:-} ]]; then
+    if command -v cygpath >/dev/null; then expected=130; fi
+    "$WT_PROCESS_RUNNER" --interrupt-after "$root/interrupt.log" '' "$binary" \
+        "$sample" -o "$root/interrupted.txt" "${common[@]}" || status=$?
+else
+    "$binary" "$sample" -o "$root/interrupted.txt" "${common[@]}" >"$root/interrupt.log" 2>&1 &
+    pid=$!
+    sleep 0.05
+    kill -TERM "$pid"
+    wait "$pid" || status=$?
+fi
+test "$status" = "$expected"
 test ! -e "$root/interrupted.txt"
 echo "Offline $device smoke passed"

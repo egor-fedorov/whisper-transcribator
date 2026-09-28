@@ -1,6 +1,8 @@
 #include "audio/audio.hpp"
+#include "platform/system.hpp"
 #include "support/io.hpp"
 #include "support/options.hpp"
+#include "support/process.hpp"
 #include "support/test.hpp"
 #include "support/wav.hpp"
 #include "transcript/jobs.hpp"
@@ -10,9 +12,6 @@
 #include "transcript/pipeline.hpp"
 #include <algorithm>
 #include <iostream>
-#include <sys/resource.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 using namespace wt;
 using namespace wt::test;
@@ -69,29 +68,32 @@ void scenario(const fs::path& root, int seconds) {
     if (journal.samples() != expected || processed < expected || processed > expected * 2)
         throw std::runtime_error("Lost committed samples or excessive tail reprocessing");
     publish_outputs(job, options, journal);
-    fs::remove_all(root);
 }
-long measure(const fs::path& root, int seconds) {
-    auto child = fork();
-    if (child < 0)
-        throw std::runtime_error("fork failed");
-    if (!child) {
-        try {
-            scenario(root, seconds);
-            _exit(0);
-        } catch (const std::exception& error) {
-            std::cerr << error.what() << '\n';
-            _exit(1);
-        }
-    }
-    int status = 0;
-    rusage usage{};
-    if (wait4(child, &status, 0, &usage) != child || !WIFEXITED(status) || WEXITSTATUS(status))
-        throw std::runtime_error("Memory scenario failed");
-    return peak_rss_kib(usage);
+int64_t measure(const fs::path& root, int seconds) {
+    auto metrics = root.parent_path() / (root.filename().string() + "-rss");
+    auto log = root.parent_path() / (root.filename().string() + "-log");
+    Process child(platform::executable_path(),
+                  {"--measure", root.u8string(), std::to_string(seconds), metrics.u8string()}, log);
+    auto status = child.wait(150);
+    require(status == 0,
+            "Memory scenario failed (" + std::to_string(status) + "): " + read_text(log));
+    return std::stoll(read_text(metrics));
 }
 } // namespace
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 5 && std::string(argv[1]) == "--measure") {
+        try {
+            auto root = fs::u8path(argv[2]);
+            scenario(root, std::stoi(argv[3]));
+            // Windows cannot unlink the WAV until AudioReader has released its handle.
+            fs::remove_all(root);
+            atomic_write(fs::u8path(argv[4]), std::to_string(peak_rss_kib()));
+            return 0;
+        } catch (const std::exception& error) {
+            std::cerr << error.what() << '\n';
+            return 1;
+        }
+    }
     return run_tests(
         {{"bounded RSS with synthetic audio and fake inference", [](const fs::path& root) {
               auto short_rss = measure(root / "short", 120);

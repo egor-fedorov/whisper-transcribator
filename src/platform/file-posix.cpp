@@ -175,6 +175,9 @@ bool rename_noreplace(const fs::path& from, const fs::path& to, const NoReplaceS
 bool rename_noreplace(const fs::path& from, const fs::path& to) {
     return rename_noreplace(from, to, NoReplaceSteps{});
 }
+bool rename_replace(const fs::path& from, const fs::path& to) {
+    return !rename(from.c_str(), to.c_str());
+}
 bool ownership_ignored(const fs::path& path) {
 #ifdef __APPLE__
     struct statfs status {};

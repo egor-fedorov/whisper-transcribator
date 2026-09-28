@@ -32,7 +32,7 @@ std::string select_device(const std::string& requested) {
         if (library.empty())
             throw std::runtime_error("Cannot locate installed ggml backend directory");
         auto directory = fs::canonical(library).parent_path();
-        ggml_backend_load_all_from_path(directory.c_str());
+        ggml_backend_load_all_from_path(directory.u8string().c_str());
         return true;
     }();
     (void)loaded;

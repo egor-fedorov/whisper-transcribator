@@ -1,6 +1,7 @@
 #include "models/models.hpp"
 #include "catalog.hpp"
 #include "platform/file.hpp"
+#include "platform/system.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
 #include "support/hash.hpp"
@@ -26,13 +27,12 @@ fs::path model_root(const Options& options) {
         return resolve_path(options.download_root);
     if (!env("WHISPER_DOWNLOAD_ROOT").empty())
         return resolve_path(env("WHISPER_DOWNLOAD_ROOT"));
-    auto cache = env("XDG_CACHE_HOME");
-    if (cache.empty()) {
-        if (env("HOME").empty())
-            throw std::runtime_error("Set HOME or --download-root");
-        cache = (fs::path(env("HOME")) / ".cache").string();
-    }
-    return resolve_path(fs::path(cache) / "whisper-transcribator" / "models");
+    fs::path cache = env("XDG_CACHE_HOME");
+    if (cache.empty())
+        cache = platform::cache_directory();
+    if (cache.empty())
+        throw std::runtime_error("Set HOME or --download-root");
+    return resolve_path(cache / "whisper-transcribator" / "models");
 }
 fs::path partial_model_path(const Model& model, const fs::path& root) {
     return root / ("." + model.file + "." + model.hash + ".part");

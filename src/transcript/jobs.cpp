@@ -173,11 +173,12 @@ JobPlan plan_jobs(const Options& o) {
             throw std::runtime_error("Mapping would overwrite input");
         Json mapping = Json::array();
         for (size_t i = 0; i < jobs.size(); ++i) {
-            Json outputs = Json::object();
+            Json mapped_outputs = Json::object();
             for (const auto& [format, target] : jobs[i].outputs)
-                outputs[format] = target.filename().string();
-            mapping.push_back(
-                {{"index", i + 1}, {"source", jobs[i].source.string()}, {"outputs", outputs}});
+                mapped_outputs[format] = target.filename().string();
+            mapping.push_back({{"index", i + 1},
+                               {"source", jobs[i].source.string()},
+                               {"outputs", mapped_outputs}});
         }
         Mapping numbered{path, std::move(mapping)};
         if (fs::exists(path)) {

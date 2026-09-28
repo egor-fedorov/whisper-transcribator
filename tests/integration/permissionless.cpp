@@ -7,6 +7,7 @@
 #include "transcript/journal.hpp"
 #include <iostream>
 #include <sstream>
+#include <system_error>
 
 using namespace wt;
 using namespace wt::test;
@@ -34,10 +35,10 @@ class PermissionlessFilesystem {
     void expose(const fs::path& path) const {
         if (!simulated)
             return;
-        fs::permissions(path, fs::perms::all);
+        wt::test::permissions(path, fs::perms::all);
         if (fs::is_directory(path))
             for (const auto& entry : fs::recursive_directory_iterator(path))
-                fs::permissions(entry.path(), fs::perms::all);
+                wt::test::permissions(entry.path(), fs::perms::all);
     }
 };
 size_t occurrences(const std::string& text, const std::string& value) {
@@ -80,7 +81,8 @@ void checkpoints_resume_and_publish(const fs::path& root) {
     for (const auto& format : {"text", "srt", "vtt"})
         require(read_text(f.job.outputs.at(format)) == read_text(reference.job.outputs.at(format)));
     require(fs::file_size(f.job.outputs.at("json")) > 0 && !has_checkpoint(f.job));
-    rejects([&] { atomic_write(f.job.outputs.at("text"), "replacement"); }, "File exists");
+    rejects([&] { atomic_write(f.job.outputs.at("text"), "replacement"); },
+            std::make_error_code(std::errc::file_exists).message());
 }
 void interrupted_first_write_is_recovered(const fs::path& root) {
     PermissionlessFilesystem filesystem(root);
@@ -111,7 +113,7 @@ void link_protections_remain(const fs::path& root) {
     StreamCapture capture(std::cerr, log.rdbuf());
     Fixture links(root / "links");
     fs::create_directory(root / "elsewhere");
-    fs::permissions(root / "elsewhere", fs::perms::all);
+    wt::test::permissions(root / "elsewhere", fs::perms::all);
     fs::create_directory_symlink(root / "elsewhere", root / "links/.whisper-transcribator");
     rejects([&] { Journal journal(links.job, links.options, links.fingerprint()); },
             "Checkpoint directory must be owned by you");
@@ -127,7 +129,7 @@ void link_protections_remain(const fs::path& root) {
     auto partial = partial_model_path(model_fixture(), root / "models");
     fs::create_directories(partial.parent_path());
     fs::create_hard_link(root / "unrelated", partial);
-    fs::permissions(partial, fs::perms::all);
+    wt::test::permissions(partial, fs::perms::all);
     rejects([&] { open_partial_model(partial); }, "Unsafe partial model file");
 }
 void strict_checks_where_permissions_are_stored(const fs::path& root) {
@@ -139,8 +141,8 @@ void strict_checks_where_permissions_are_stored(const fs::path& root) {
     atomic_write(partial, "a");
     // A mount for another owner refuses chmod but already reports mode 0777.
     std::error_code refused;
-    fs::permissions(checkpoints, fs::perms::all, refused);
-    fs::permissions(partial, fs::perms::all, refused);
+    wt::test::permissions(checkpoints, fs::perms::all, refused);
+    wt::test::permissions(partial, fs::perms::all, refused);
     if (stores_permissions(root)) {
         rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
                 "Checkpoint directory must be owned by you with mode 0700");
