@@ -12,7 +12,7 @@ using namespace wt::test;
 namespace {
 void named_window_events(const fs::path& root) {
     Fixture f(root);
-    Journal journal(f.job, f.options, f.fingerprint());
+    Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
     Audio audio;
     int started = 0, committed = 0;
     run_chunks(
@@ -38,7 +38,7 @@ void bounded_windows_and_byte_identical_resume(const fs::path& root) {
     Fixture f(root / "roundtrip");
     auto fingerprint = f.fingerprint();
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         Audio audio;
         run(f, journal, audio);
         require(audio.recognized == 43 && audio.peak <= 16);
@@ -53,17 +53,25 @@ void bounded_windows_and_byte_identical_resume(const fs::path& root) {
     require(data.at("segments").size() == 9 && data.at("duration") == 35 / 16000.0);
     require(data.at("text").get<std::string>() + "\n" == expected.at("text"));
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         Audio audio;
         rejects([&] { run(f, journal, audio, 1); }, "injected inference failure");
         require(journal.samples() == 12);
-        rejects([&] { Journal busy(f.job, f.options, fingerprint); },
-                "Checkpoint is busy or lock is unsafe");
+        rejects(
+            [&] {
+                Journal busy(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
+            },
+            "Checkpoint is busy or lock is unsafe");
     }
-    rejects([&] { Journal needs_flag(f.job, f.options, fingerprint); }, "Saved progress exists");
-    f.options.resume = true;
+    rejects(
+        [&] {
+            Journal needs_flag(f.job, f.options.checkpoint, fingerprint,
+                               describe_output(f.options));
+        },
+        "Saved progress exists");
+    f.options.checkpoint.resume = true;
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         Audio audio;
         run(f, journal, audio);
         require(audio.cursor == 35 && audio.recognized == 27);
@@ -74,7 +82,7 @@ void bounded_windows_and_byte_identical_resume(const fs::path& root) {
 void digital_silence(const fs::path& root) {
     for (bool no_vad : {false, true}) {
         Fixture f(root / (no_vad ? "plain" : "vad"));
-        f.options.no_vad = no_vad;
+        f.options.inference.no_vad = no_vad;
         auto fingerprint = f.fingerprint();
         auto run_silence = [&](Journal& journal, bool interrupt = false) {
             size_t cursor = 0;
@@ -100,26 +108,36 @@ void digital_silence(const fs::path& root) {
         };
         std::string expected;
         {
-            Journal journal(f.job, f.options, fingerprint);
+            Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
             require(run_silence(journal) == 3);
             require(journal.languages().empty());
             journal.visit(
                 [](const Segment&) { throw std::runtime_error("unexpected silent text"); });
-            rejects([&] { publish_outputs(f.job, f.options, journal); }, "No transcript produced");
+            rejects(
+                [&] {
+                    publish_outputs(f.job, f.options.rendering, journal,
+                                    f.options.checkpoint.overwrite);
+                },
+                "No transcript produced");
             expected = read_text(checkpoint_path(f.job) / "manifest.json");
         }
-        f.options.overwrite = true;
+        f.options.checkpoint.overwrite = true;
         {
-            Journal journal(f.job, f.options, fingerprint);
+            Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
             rejects([&] { run_silence(journal, true); }, "interrupted after silent commit");
             require(journal.samples() == 16 && !journal.finished());
         }
-        f.options.overwrite = false;
-        f.options.resume = true;
+        f.options.checkpoint.overwrite = false;
+        f.options.checkpoint.resume = true;
         {
-            Journal journal(f.job, f.options, fingerprint);
+            Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
             require(run_silence(journal) == 2);
-            rejects([&] { publish_outputs(f.job, f.options, journal); }, "No transcript produced");
+            rejects(
+                [&] {
+                    publish_outputs(f.job, f.options.rendering, journal,
+                                    f.options.checkpoint.overwrite);
+                },
+                "No transcript produced");
             require(read_text(checkpoint_path(f.job) / "manifest.json") == expected,
                     "silent resume changed the completed journal");
         }
@@ -156,10 +174,10 @@ void silence_then_speech_resume(const fs::path& root) {
              }},
             0);
         require(recognized == 1 && journal.samples() == 48);
-        publish_outputs(f.job, f.options, journal);
+        publish_outputs(f.job, f.options.rendering, journal, f.options.checkpoint.overwrite);
     };
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         transcribe(journal);
     }
     std::map<std::string, std::string> expected;
@@ -168,12 +186,12 @@ void silence_then_speech_resume(const fs::path& root) {
         fs::remove(path);
     }
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         rejects([&] { transcribe(journal, true); }, "interrupted during leading silence");
     }
-    f.options.resume = true;
+    f.options.checkpoint.resume = true;
     {
-        Journal journal(f.job, f.options, fingerprint);
+        Journal journal(f.job, f.options.checkpoint, fingerprint, describe_output(f.options));
         transcribe(journal);
     }
     for (const auto& [format, path] : f.job.outputs)
@@ -184,7 +202,7 @@ void nonzero_windows(const fs::path& root) {
     for (float sample : {1e-12f, std::numeric_limits<float>::denorm_min(),
                          std::numeric_limits<float>::quiet_NaN()}) {
         Fixture f(root / std::to_string(index++));
-        Journal journal(f.job, f.options, f.fingerprint());
+        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
         bool read = false;
         int recognized = 0;
         run_chunks(

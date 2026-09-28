@@ -1,3 +1,4 @@
+#include "models/download.hpp"
 #include "models/models.hpp"
 #include "support/cancel.hpp"
 #include "support/hash.hpp"

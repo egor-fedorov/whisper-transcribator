@@ -1,4 +1,5 @@
 #include "models/models.hpp"
+#include "models/options.hpp"
 #include "platform/file.hpp"
 #include "platform/system.hpp"
 #include "support/cancel.hpp"
@@ -6,7 +7,6 @@
 #include "support/fixtures.hpp"
 #include "support/hash.hpp"
 #include "support/io.hpp"
-#include "support/options.hpp"
 #include "support/process.hpp"
 #include "support/test.hpp"
 #include <chrono>
@@ -40,7 +40,7 @@ void concurrency(const fs::path& root) {
 void names(const fs::path& root) {
     ScopedCurrentPath current(root);
     fs::create_directory("small");
-    Options options;
+    ModelCacheOptions options;
     options.download_root = (root / "cache").string();
     options.local_files_only = true;
     bool missing = false;

@@ -1,16 +1,17 @@
 #include "app/commands.hpp"
+#include "app/options.hpp"
 #include "audio/audio.hpp"
 #include "inference/runtime.hpp"
 #include "models/models.hpp"
 #include "platform/cpu.hpp"
-#include "support/options.hpp"
 #include "version.hpp"
 
 namespace wt {
-Json doctor(const Options& options) {
+Json doctor(const CliOptions& options) {
     configure_inference_logging();
     configure_audio_logging(options.verbose);
-    int threads = options.cpu_threads > 0 ? options.cpu_threads : platform::automatic_cpu_threads();
+    int threads = options.inference.cpu_threads > 0 ? options.inference.cpu_threads
+                                                    : platform::automatic_cpu_threads();
     Json result = {{"version", WT_VERSION},
                    {"source_revision", WT_SOURCE_REVISION},
                    {"source_dirty", Json::parse(WT_SOURCE_DIRTY_JSON)},
@@ -18,7 +19,7 @@ Json doctor(const Options& options) {
                    {"backend", "whisper.cpp"},
                    {"backend_version", inference_backend_version()},
                    {"backend_revision", WT_WHISPER_REVISION},
-                   {"model_cache", model_root(options).string()},
+                   {"model_cache", model_root(options.cache).string()},
                    {"cpu_threads", threads},
                    {"errors", Json::array()}};
     try {

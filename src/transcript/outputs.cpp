@@ -1,6 +1,4 @@
 #include "transcript/outputs.hpp"
-#include "support/options.hpp"
-#include "transcript/metadata.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -56,14 +54,14 @@ std::string cue_text(const std::string& text) {
     return result;
 }
 class Paragraphs {
-    const Options& options;
+    const RenderOptions& options;
     double previous_end = 0;
     size_t characters = 0;
     bool any = false, previous_sentence = false;
     std::string previous_language;
 
   public:
-    explicit Paragraphs(const Options& value) : options(value) {}
+    explicit Paragraphs(const RenderOptions& value) : options(value) {}
     std::string append(const Segment& segment) {
         auto text = normalized_text(segment.text);
         if (text.empty())
@@ -85,7 +83,7 @@ class Paragraphs {
         return separator + text;
     }
 };
-bool render_paragraphs(const TranscriptSource& source, const Options& options,
+bool render_paragraphs(const TranscriptSource& source, const RenderOptions& options,
                        const std::function<void(const std::string&)>& emit) {
     Paragraphs paragraphs(options);
     bool any = false;
@@ -98,7 +96,8 @@ bool render_paragraphs(const TranscriptSource& source, const Options& options,
     });
     return any;
 }
-bool render_text(std::ostream& stream, const Options& options, const TranscriptSource& source) {
+bool render_text(std::ostream& stream, const RenderOptions& options,
+                 const TranscriptSource& source) {
     bool any = render_paragraphs(source, options, [&](const auto& text) { stream << text; });
     stream << '\n';
     return any;
@@ -131,18 +130,19 @@ bool render_vtt(std::ostream& stream, const TranscriptSource& source) {
     });
     return index != 0;
 }
-bool render_json(std::ostream& stream, const Job& job, const Options& options,
+bool render_json(std::ostream& stream, const Job& job, const RenderOptions& options,
                  const TranscriptSource& source) {
     double duration = source.samples / double(sample_rate);
     Json header = {
         {"schema_version", 2},
         {"source", job.source.string()},
-        {"model", source.metadata.value("model", options.model)},
+        {"model", source.metadata.at("model")},
         {"language", source.languages.size() == 1 ? Json(source.languages.front()) : Json(nullptr)},
         {"languages", source.languages},
         {"language_probability", nullptr},
         {"duration", duration},
-        {"duration_after_vad", options.no_vad ? Json(duration) : Json(nullptr)}};
+        {"duration_after_vad",
+         source.metadata.at("run").at("vad").get<bool>() ? Json(nullptr) : Json(duration)}};
     auto text = header.dump();
     text.pop_back();
     stream << text << ",\"text\":\"";
@@ -166,12 +166,12 @@ bool render_json(std::ostream& stream, const Job& job, const Options& options,
                       .dump();
         ++index;
     });
-    stream << "],\"run\":" << source.metadata.value("run", run_metadata(options)).dump() << "}\n";
+    stream << "],\"run\":" << source.metadata.at("run").dump() << "}\n";
     return any || index != 0;
 }
 } // namespace
 void render_stream(std::ostream& stream, const std::string& format, const Job& job,
-                   const Options& options, const TranscriptSource& source) {
+                   const RenderOptions& options, const TranscriptSource& source) {
     bool any = false;
     if (format == "text")
         any = render_text(stream, options, source);

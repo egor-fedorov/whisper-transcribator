@@ -1,9 +1,8 @@
 #include "inference/whisper.hpp"
 #include "inference/runtime.hpp"
-#include "models/models.hpp"
+#include "models/types.hpp"
 #include "support/cancel.hpp"
 #include "support/io.hpp"
-#include "support/options.hpp"
 #include "support/report.hpp"
 #include "transcript/pipeline.hpp"
 #include "whisper.h"
@@ -12,7 +11,7 @@
 
 namespace wt {
 struct WhisperSession::Impl {
-    Options options;
+    InferenceOptions options;
     PreparedModel model, vad;
     DeviceSelection device;
     // whisper.cpp takes UTF-8 paths on every system and keeps the VAD path during inference.
@@ -20,15 +19,15 @@ struct WhisperSession::Impl {
     std::unique_ptr<whisper_context, decltype(&whisper_free)> context{nullptr, whisper_free};
     std::unique_ptr<whisper_vad_context, decltype(&whisper_vad_free)> splitter{nullptr,
                                                                                whisper_vad_free};
-    Impl(const Options& options, const PreparedModel& model, const PreparedModel& vad,
+    Impl(const InferenceOptions& options, const PreparedModel& model, const PreparedModel& vad,
          const DeviceSelection& device)
         : options(options), model(model), vad(vad), device(device) {}
 };
-WhisperSession::WhisperSession(const Options& options, const PreparedModel& model,
+WhisperSession::WhisperSession(const InferenceOptions& options, const PreparedModel& model,
                                const PreparedModel& vad, const DeviceSelection& device)
     : impl(std::make_unique<Impl>(options, model, vad, device)) {}
 WhisperSession::~WhisperSession() = default;
-size_t WhisperSession::choose_cut(const std::vector<float>& pcm) {
+size_t WhisperSession::choose_cut(const std::vector<float>& pcm, int minimum_silence_ms) {
     auto& options = impl->options;
     auto& splitter = impl->splitter;
     if (options.no_vad)
@@ -43,7 +42,7 @@ size_t WhisperSession::choose_cut(const std::vector<float>& pcm) {
             throw std::runtime_error("Cannot initialize VAD splitter");
     }
     auto params = whisper_vad_default_params();
-    params.min_silence_duration_ms = options.chunk_min_silence_ms;
+    params.min_silence_duration_ms = minimum_silence_ms;
     params.speech_pad_ms = 0;
     std::unique_ptr<whisper_vad_segments, decltype(&whisper_vad_free_segments)> segments(
         whisper_vad_segments_from_samples(splitter.get(), params, pcm.data(),
@@ -60,7 +59,7 @@ size_t WhisperSession::choose_cut(const std::vector<float>& pcm) {
         from = std::clamp<int64_t>(from, 0, pcm.size());
         speech.emplace_back(from, std::clamp<int64_t>(to, from, pcm.size()));
     }
-    return pause_cut(pcm.size(), speech, options.chunk_min_silence_ms);
+    return pause_cut(pcm.size(), speech, minimum_silence_ms);
 }
 Transcript WhisperSession::recognize(const std::vector<float>& pcm,
                                      const std::function<void()>& begin,

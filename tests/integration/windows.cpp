@@ -56,7 +56,8 @@ void unicode_and_long_paths(const fs::path& root) {
     atomic_write(path / "data", "abc");
     require(sha256(path / "data") == sha256_text("abc"));
     Fixture fixture(path);
-    Journal journal(fixture.job, fixture.options, fixture.fingerprint());
+    Journal journal(fixture.job, fixture.options.checkpoint, fixture.fingerprint(),
+                    describe_output(fixture.options));
     Audio audio;
     run(fixture, journal, audio);
     require(fs::file_size(fixture.job.outputs.at("text")) > 0);
@@ -110,8 +111,12 @@ void junction_checkpoint(const fs::path& root) {
     require(DeviceIoControl(reinterpret_cast<HANDLE>(handle.native()), FSCTL_SET_REPARSE_POINT,
                             &data, data.length + 8, nullptr, 0, &returned, nullptr) != 0);
     handle.close();
-    rejects([&] { Journal journal(fixture.job, fixture.options, fixture.fingerprint()); },
-            "Checkpoint directory must be owned by you");
+    rejects(
+        [&] {
+            Journal journal(fixture.job, fixture.options.checkpoint, fixture.fingerprint(),
+                            describe_output(fixture.options));
+        },
+        "Checkpoint directory must be owned by you");
     require(fs::is_empty(outside));
     fs::remove(link);
 }

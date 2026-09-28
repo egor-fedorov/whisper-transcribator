@@ -41,6 +41,9 @@ target_link_libraries(wt-decode-errors-tests PRIVATE wt_engine)
 add_test(NAME unit/platform-boundary COMMAND "${CMAKE_COMMAND}" "-DWT_SOURCE=${CMAKE_SOURCE_DIR}"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/unit/platform-boundary.cmake")
 set_tests_properties(unit/platform-boundary PROPERTIES LABELS unit TIMEOUT 60)
+add_test(NAME unit/module-boundary COMMAND "${CMAKE_COMMAND}" "-DWT_SOURCE=${CMAKE_SOURCE_DIR}"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/unit/module-boundary.cmake")
+set_tests_properties(unit/module-boundary PROPERTIES LABELS unit TIMEOUT 60)
 
 wt_test(audio integration integration/audio.cpp)
 target_link_libraries(wt-audio-tests PRIVATE wt_engine)
@@ -149,14 +152,20 @@ wt_manifest(wt-process-runner)
 set(WT_CHECK_HEADERS
   app/cli.hpp
   app/commands.hpp
+  app/options.hpp
+  app/configuration.hpp
   audio/audio.hpp
+  audio/options.hpp
   audio/resampler.hpp
   audio/recovery.hpp
   audio/timeline.hpp
   inference/runtime.hpp
   inference/whisper.hpp
+  inference/options.hpp
   models/download.hpp
   models/models.hpp
+  models/types.hpp
+  models/options.hpp
   platform/cpu.hpp
   platform/file.hpp
   platform/sha256.hpp
@@ -167,12 +176,12 @@ set(WT_CHECK_HEADERS
   support/hash.hpp
   support/io.hpp
   support/json.hpp
-  support/options.hpp
   support/report.hpp
   transcript/jobs.hpp
   transcript/journal.hpp
   transcript/metadata.hpp
   transcript/outputs.hpp
+  transcript/options.hpp
   transcript/pipeline.hpp
   transcript/types.hpp
 )

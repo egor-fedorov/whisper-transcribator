@@ -1,4 +1,5 @@
 #include "app/commands.hpp"
+#include "app/configuration.hpp"
 #include "audio/audio.hpp"
 #include "inference/runtime.hpp"
 #include "inference/whisper.hpp"
@@ -6,7 +7,6 @@
 #include "platform/cpu.hpp"
 #include "support/cancel.hpp"
 #include "support/error.hpp"
-#include "support/options.hpp"
 #include "support/report.hpp"
 #include "transcript/jobs.hpp"
 #include "transcript/journal.hpp"
@@ -16,25 +16,23 @@
 #include <chrono>
 
 namespace wt {
-int transcribe(Options options) {
+int transcribe(CliOptions options) {
     configure_inference_logging();
     configure_audio_logging(options.verbose);
-    validate_language(options.language);
-    auto gaps =
-        options.timestamp_gaps == "preserve" ? TimestampGaps::preserve : TimestampGaps::automatic;
-    DecodeErrorPolicy errors{options.decode_errors == "strict", options.decode_error_limit_seconds};
-    auto jobs = prepare_jobs(options);
+    validate_language(options.inference.language);
+    const auto& audio = options.audio;
+    auto jobs = prepare_jobs(options.jobs, options.checkpoint);
     if (jobs.empty()) {
         log_message(LogLevel::info, "No files to transcribe");
         return 0;
     }
     // Explicit stream selection is a command-wide usage constraint, not a model failure.
     bool failed = false;
-    if (options.audio_stream >= 0) {
+    if (options.audio.stream >= 0) {
         std::vector<Job> valid;
         for (const auto& job : jobs) {
             try {
-                AudioReader probe(job.source, options.audio_stream, gaps, errors);
+                AudioReader probe(job.source, audio.stream, audio.gaps, audio.errors);
                 valid.push_back(job);
             } catch (const UsageError& error) {
                 throw UsageError(job.source.string() + ": " + error.what());
@@ -53,22 +51,24 @@ int transcribe(Options options) {
     }
     auto device = select_device(options.device);
     options.device = device.backend;
-    if (!options.cpu_threads)
-        options.cpu_threads = platform::automatic_cpu_threads();
-    log_message(LogLevel::info, "CPU threads: " + std::to_string(options.cpu_threads));
-    auto model = prepare_model(options.model, options);
+    if (!options.inference.cpu_threads)
+        options.inference.cpu_threads = platform::automatic_cpu_threads();
+    log_message(LogLevel::info, "CPU threads: " + std::to_string(options.inference.cpu_threads));
+    auto model = prepare_model(options.model, options.cache);
     PreparedModel vad;
-    if (!options.no_vad)
-        vad =
-            prepare_model(options.vad_model.empty() ? "silero-v6.2.0" : options.vad_model, options);
+    if (!options.inference.no_vad)
+        vad = prepare_model(options.vad_model.empty() ? "silero-v6.2.0" : options.vad_model,
+                            options.cache);
     check_cancelled();
     log_message(LogLevel::info, "Model: " + model.path.string() + "; device: " + options.device +
                                     " (" + device.description + ")");
     Json backend = {{"model_sha256", model.hash},
                     {"vad_sha256", vad.hash},
                     {"ffmpeg", audio_backend_version()}};
-    WhisperSession session(options, model, vad, device);
-    auto cut = [&](const std::vector<float>& pcm) { return session.choose_cut(pcm); };
+    WhisperSession session(options.inference, model, vad, device);
+    auto cut = [&](const std::vector<float>& pcm) {
+        return session.choose_cut(pcm, options.chunking.chunk_min_silence_ms);
+    };
     size_t job_index = 0;
     PublishedOutputs published;
     for (const auto& job : jobs) {
@@ -81,12 +81,14 @@ int transcribe(Options options) {
             auto modified = fs::last_write_time(job.source);
             auto size = fs::file_size(job.source);
             report_progress("Reading audio streams", job.source.filename().string());
-            AudioReader reader(job.source, options.audio_stream, gaps, errors);
+            AudioReader reader(job.source, audio.stream, audio.gaps, audio.errors);
             auto job_options = options;
-            job_options.audio_stream = reader.stream_index();
+            job_options.audio.stream = reader.stream_index();
             log_message(LogLevel::info, "Audio stream: " + std::to_string(reader.stream_index()));
-            auto fingerprint = job_fingerprint(job, job_options, backend);
-            Journal journal(job, job_options, fingerprint);
+            auto output_metadata = describe_output(job_options);
+            auto fingerprint = job_fingerprint(job, output_metadata.at("run"),
+                                               options.inference.language, backend);
+            Journal journal(job, options.checkpoint, fingerprint, output_metadata);
             FileProgress progress(std::to_string(job_index) + "/" + std::to_string(jobs.size()),
                                   reader.duration());
             auto read = [&](size_t limit) {
@@ -100,12 +102,12 @@ int transcribe(Options options) {
                     pcm, [&] { progress.begin_window(journal.samples(), pcm.size()); },
                     [&](int value) { progress.update(value); });
             };
-            run_chunks(journal, size_t(options.chunk_seconds) * sample_rate, read, recognize, cut,
-                       {{}, [&](int64_t samples) { progress.commit(samples); }});
+            run_chunks(journal, size_t(options.chunking.chunk_seconds) * sample_rate, read,
+                       recognize, cut, {{}, [&](int64_t samples) { progress.commit(samples); }});
             if (size != fs::file_size(job.source) || modified != fs::last_write_time(job.source))
                 throw std::runtime_error("Input changed during transcription");
             report_progress("Publishing", job.source.filename().string());
-            publish_outputs(job, job_options, journal);
+            publish_outputs(job, options.rendering, journal, options.checkpoint.overwrite);
             published.record(job);
             log_message(LogLevel::info,
                         "Done: " + job.source.filename().string() + "; elapsed " +

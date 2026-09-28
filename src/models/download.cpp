@@ -1,5 +1,4 @@
 #include "models/download.hpp"
-#include "models/models.hpp"
 #include "platform/system.hpp"
 #include "support/cancel.hpp"
 #include "support/io.hpp"

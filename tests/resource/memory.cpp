@@ -1,7 +1,7 @@
+#include "app/configuration.hpp"
 #include "audio/audio.hpp"
 #include "platform/system.hpp"
 #include "support/io.hpp"
-#include "support/options.hpp"
 #include "support/process.hpp"
 #include "support/test.hpp"
 #include "support/wav.hpp"
@@ -40,19 +40,22 @@ void scenario(const fs::path& root, int seconds) {
         for (int i = 0; i < seconds; ++i)
             out << block;
     });
-    Options options;
-    options.inputs = {path.string()};
-    options.output_dir = root.string();
-    options.format = "all";
-    auto job = prepare_jobs(options).at(0);
-    Journal journal(job, options, job_fingerprint(job, options, Json::object()));
+    CliOptions options;
+    options.jobs.inputs = {path.string()};
+    options.jobs.output_dir = root.string();
+    options.jobs.format = "all";
+    auto job = prepare_jobs(options.jobs, options.checkpoint).at(0);
+    Journal journal(
+        job, options.checkpoint,
+        job_fingerprint(job, describe_run(options), options.inference.language, Json::object()),
+        describe_output(options));
     AudioReader reader(path);
     int64_t processed = 0;
     run_chunks(
-        journal, size_t(options.chunk_seconds) * sample_rate,
+        journal, size_t(options.chunking.chunk_seconds) * sample_rate,
         [&](size_t n) { return reader.read(n); },
         [&](const auto& pcm) {
-            if (pcm.size() > size_t(options.chunk_seconds) * sample_rate)
+            if (pcm.size() > size_t(options.chunking.chunk_seconds) * sample_rate)
                 throw std::runtime_error("Unbounded PCM window");
             processed += static_cast<int64_t>(pcm.size());
             double duration = pcm.size() / double(sample_rate);
@@ -67,7 +70,7 @@ void scenario(const fs::path& root, int seconds) {
     auto expected = int64_t(seconds) * sample_rate;
     if (journal.samples() != expected || processed < expected || processed > expected * 2)
         throw std::runtime_error("Lost committed samples or excessive tail reprocessing");
-    publish_outputs(job, options, journal);
+    publish_outputs(job, options.rendering, journal, options.checkpoint.overwrite);
 }
 int64_t measure(const fs::path& root, int seconds) {
     auto metrics = root.parent_path() / (root.filename().string() + "-rss");

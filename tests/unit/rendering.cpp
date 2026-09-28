@@ -1,5 +1,4 @@
 #include "support/json.hpp"
-#include "support/options.hpp"
 #include "support/test.hpp"
 #include "transcript/outputs.hpp"
 #include <algorithm>
@@ -9,7 +8,7 @@ using namespace wt;
 using namespace wt::test;
 namespace {
 std::string render(const std::string& format, const std::vector<Segment>& segments,
-                   const Options& options = {}) {
+                   const RenderOptions& options = {}) {
     TranscriptSource source{20 * sample_rate, {}, [&](const SegmentConsumer& consume) {
                                 for (const auto& segment : segments)
                                     consume(segment);
@@ -18,6 +17,7 @@ std::string render(const std::string& format, const std::vector<Segment>& segmen
         if (std::find(source.languages.begin(), source.languages.end(), segment.language) ==
             source.languages.end())
             source.languages.push_back(segment.language);
+    source.metadata = {{"model", "fixture"}, {"run", {{"vad", true}}}};
     std::ostringstream output;
     render_stream(output, format, {"/fixture/source.wav", {}}, options, source);
     return output.str();
@@ -43,7 +43,7 @@ void paragraphs_and_vtt(const fs::path&) {
     require(srt.find("New & <tag> --> cue.") != std::string::npos);
 }
 void single_line(const fs::path&) {
-    Options options;
+    RenderOptions options;
     options.text_layout = "single-line";
     std::vector<Segment> segments = {{0, 1, "One.", 0, "en"}, {8, 9, "Two.", 0, "en"}};
     require(render("text", segments, options) == "One. Two.\n");
@@ -74,8 +74,27 @@ void repeated_streaming_visit(const fs::path&) {
                                 consume({0, 1, "Streamed.", 0, "en"});
                             }};
     std::ostringstream output;
-    render_stream(output, "json", {"/nonexistent/input.wav", {}}, Options{}, source);
+    source.metadata = {{"model", "fixture"}, {"run", {{"vad", true}}}};
+    render_stream(output, "json", {"/nonexistent/input.wav", {}}, RenderOptions{}, source);
     require(visits == 2 && Json::parse(output.str())["text"] == "Streamed.");
+}
+void prepared_metadata_is_not_rebuilt(const fs::path&) {
+    TranscriptSource source{sample_rate, {"en"}, [](const SegmentConsumer& consume) {
+                                consume({0, 1, "Saved.", 0, "en"});
+                            }};
+    source.metadata = {{"model", "./original-weights.bin"},
+                       {"run", {{"vad", false}, {"cpu_threads", 8}, {"version", "saved-build"}}}};
+    std::ostringstream output;
+    render_stream(output, "json", {"/nonexistent/input.wav", {}}, {}, source);
+    auto result = Json::parse(output.str());
+    require(result.at("model") == source.metadata.at("model") &&
+                result.at("run") == source.metadata.at("run"),
+            "renderer reconstructed metadata");
+    require(result.at("duration_after_vad") == 1.0);
+    source.metadata["run"]["vad"] = true;
+    std::ostringstream with_vad;
+    render_stream(with_vad, "json", {"/nonexistent/input.wav", {}}, {}, source);
+    require(Json::parse(with_vad.str()).at("duration_after_vad").is_null());
 }
 } // namespace
 int main() {
@@ -84,5 +103,6 @@ int main() {
          {"single-line output", single_line},
          {"Unicode paragraph length", unicode_paragraph_limit},
          {"whitespace and JSON escaping", whitespace_and_escaping},
-         {"repeatable streaming source without filesystem access", repeated_streaming_visit}});
+         {"repeatable streaming source without filesystem access", repeated_streaming_visit},
+         {"prepared metadata is not rebuilt", prepared_metadata_is_not_rebuilt}});
 }

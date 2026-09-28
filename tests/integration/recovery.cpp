@@ -23,8 +23,8 @@ void signal_test(Fixture& f, int signal) {
         child.interrupt(signal);
     require(child.wait() == (signal ? 128 + signal : 137));
     require(!fs::exists(f.job.outputs.at("text")));
-    f.options.resume = true;
-    Journal journal(f.job, f.options, f.fingerprint());
+    f.options.checkpoint.resume = true;
+    Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
     require(journal.samples() == 16);
     Audio audio;
     run(f, journal, audio);
@@ -54,7 +54,8 @@ void first_record_kill(const fs::path& root) {
             Fixture f(root / (std::to_string(manifest_exists) + std::to_string(resume)));
             auto directory = checkpoint_path(f.job);
             if (manifest_exists) {
-                Journal journal(f.job, f.options, f.fingerprint());
+                Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
+                                describe_output(f.options));
                 journal.append(16, {"en", 0.001, {{0, 0.001, "orphan", 0}}});
             }
             fs::create_directories(directory);
@@ -77,8 +78,9 @@ void first_record_kill(const fs::path& root) {
             child.terminate();
             require(child.wait() == 137);
             fs::remove(directory / "ready");
-            f.options.resume = resume;
-            Journal journal(f.job, f.options, f.fingerprint());
+            f.options.checkpoint.resume = resume;
+            Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
+                            describe_output(f.options));
             require(journal.samples() == 0 && !has_checkpoint(f.job));
         }
     }
@@ -107,7 +109,8 @@ int worker(const std::string& mode, const fs::path& path) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
         } else {
             Fixture f(path, true);
-            Journal journal(f.job, f.options, f.fingerprint());
+            Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
+                            describe_output(f.options));
             Audio audio;
             int calls = 0;
             run_chunks(

@@ -52,7 +52,8 @@ void checkpoints_resume_and_publish(const fs::path& root) {
     Fixture reference(root / "reference"), f(root / "job");
     Audio complete;
     {
-        Journal journal(reference.job, reference.options, reference.fingerprint());
+        Journal journal(reference.job, reference.options.checkpoint, reference.fingerprint(),
+                        describe_output(reference.options));
         run(reference, journal, complete);
     }
     auto checkpoints = root / "job/.whisper-transcribator";
@@ -62,14 +63,15 @@ void checkpoints_resume_and_publish(const fs::path& root) {
     {
         StreamCapture capture(std::cerr, log.rdbuf());
         {
-            Journal journal(f.job, f.options, f.fingerprint());
+            Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
+                            describe_output(f.options));
             Audio audio;
             rejects([&] { run(f, journal, audio, 1); }, "injected inference failure");
         }
         require(fs::exists(checkpoint_path(f.job) / "chunk-0.json"));
         filesystem.expose(checkpoints);
-        f.options.resume = true;
-        Journal journal(f.job, f.options, f.fingerprint());
+        f.options.checkpoint.resume = true;
+        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
         require(journal.samples() > 0);
         Audio audio;
         run(f, journal, audio);
@@ -94,14 +96,18 @@ void interrupted_first_write_is_recovered(const fs::path& root) {
     {
         std::ostringstream log;
         StreamCapture capture(std::cerr, log.rdbuf());
-        Journal journal(f.job, f.options, f.fingerprint());
+        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
         require(journal.samples() == 0 && !has_checkpoint(f.job));
     }
     fs::create_directories(directory);
     atomic_write(directory / "unknown", "preserve");
     filesystem.expose(directory);
-    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
-            "Checkpoint manifest missing");
+    rejects(
+        [&] {
+            Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
+                            describe_output(f.options));
+        },
+        "Checkpoint manifest missing");
     require(read_text(directory / "unknown") == "preserve");
 }
 void link_protections_remain(const fs::path& root) {
@@ -115,16 +121,24 @@ void link_protections_remain(const fs::path& root) {
     fs::create_directory(root / "elsewhere");
     wt::test::permissions(root / "elsewhere", fs::perms::all);
     fs::create_directory_symlink(root / "elsewhere", root / "links/.whisper-transcribator");
-    rejects([&] { Journal journal(links.job, links.options, links.fingerprint()); },
-            "Checkpoint directory must be owned by you");
+    rejects(
+        [&] {
+            Journal journal(links.job, links.options.checkpoint, links.fingerprint(),
+                            describe_output(links.options));
+        },
+        "Checkpoint directory must be owned by you");
     Fixture f(root / "hardlink");
     auto directory = checkpoint_path(f.job);
     fs::create_directories(directory);
     atomic_write(root / "unrelated", "preserve");
     fs::create_hard_link(root / "unrelated", directory / ".whisper-output-Ab123Z");
     filesystem.expose(root / "hardlink/.whisper-transcribator");
-    rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
-            "Unsafe checkpoint temporary");
+    rejects(
+        [&] {
+            Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
+                            describe_output(f.options));
+        },
+        "Unsafe checkpoint temporary");
     require(read_text(root / "unrelated") == "preserve");
     auto partial = partial_model_path(model_fixture(), root / "models");
     fs::create_directories(partial.parent_path());
@@ -144,13 +158,17 @@ void strict_checks_where_permissions_are_stored(const fs::path& root) {
     wt::test::permissions(checkpoints, fs::perms::all, refused);
     wt::test::permissions(partial, fs::perms::all, refused);
     if (stores_permissions(root)) {
-        rejects([&] { Journal journal(f.job, f.options, f.fingerprint()); },
-                "Checkpoint directory must be owned by you with mode 0700");
+        rejects(
+            [&] {
+                Journal journal(f.job, f.options.checkpoint, f.fingerprint(),
+                                describe_output(f.options));
+            },
+            "Checkpoint directory must be owned by you with mode 0700");
         rejects([&] { open_partial_model(partial); }, "Unsafe partial model file");
     } else {
         std::ostringstream log;
         StreamCapture capture(std::cerr, log.rdbuf());
-        Journal journal(f.job, f.options, f.fingerprint());
+        Journal journal(f.job, f.options.checkpoint, f.fingerprint(), describe_output(f.options));
         open_partial_model(partial);
     }
     require(fs::exists(checkpoints) && read_text(partial) == "a");
