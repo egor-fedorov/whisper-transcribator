@@ -3,7 +3,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 foreach ($directory in @("$env:SystemRoot/System32", "$env:SystemRoot/SysWOW64")) {
     if (!(Test-Path $directory)) { continue }
-    $runtime = @(Get-ChildItem $directory -File | Where-Object { $_.Name -match '^(msvcp|vcruntime|concrt)140.*\.dll$' })
+    # .NET's private *_clr0400 DLLs have different import names and cannot supply our CRT.
+    $runtime = @(Get-ChildItem $directory -File | Where-Object {
+        $_.Name -match '^(msvcp|vcruntime|concrt)140.*\.dll$' -and $_.Name -notmatch '_clr0400\.dll$'
+    })
     if ($runtime.Count) { throw "Base image already has a VC++ runtime: $($runtime.Name -join ', ')" }
 }
 $env:PATH = "$env:SystemRoot/System32;$env:SystemRoot"
@@ -24,6 +27,7 @@ public static class ErrorMode {
 [ErrorMode]::SetErrorMode(0x8003) | Out-Null
 $process = Start-Process $binary -ArgumentList 'doctor --device cpu --json' -PassThru -NoNewWindow
 try {
+    $null = $process.Handle
     if (!$process.WaitForExit(10000)) { $process.Kill(); throw 'Missing-runtime control timed out' }
     if ($process.ExitCode -ne -1073741515) { throw "Expected STATUS_DLL_NOT_FOUND, got $($process.ExitCode)" }
 } finally { $process.Dispose() }

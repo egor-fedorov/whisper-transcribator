@@ -35,7 +35,11 @@ try {
         $compilerOptions = @('-DCMAKE_C_COMPILER=cl', '-DCMAKE_CXX_COMPILER=cl')
         if ($Compiler -eq 'clangcl') {
             $clang = (Get-Command clang-cl.exe -ErrorAction Stop).Source.Replace('\', '/')
-            $compilerOptions = @("-DCMAKE_C_COMPILER=$clang", "-DCMAKE_CXX_COMPILER=$clang")
+            # Use the same linker/SDK manifest merger as MSVC, not LLVM's XML merger.
+            $link = (Resolve-Path "$env:VCToolsInstallDir/bin/Hostx64/x64/link.exe").Path.Replace('\', '/')
+            $mt = (Resolve-Path "$env:WindowsSdkVerBinPath/x64/mt.exe").Path.Replace('\', '/')
+            $compilerOptions = @("-DCMAKE_C_COMPILER=$clang", "-DCMAKE_CXX_COMPILER=$clang",
+                "-DCMAKE_LINKER=$link", "-DCMAKE_MT=$mt")
         }
         Invoke-Checked cmake (@('-S', '.', '-B', $Build, '-G', 'Ninja',
             '-DCMAKE_BUILD_TYPE=Release', '-DWT_WERROR=ON',

@@ -31,6 +31,10 @@ not overriding CMake's compiler identity.
 For ClangCL, the Alder Lake plugin explicitly enables AVX-VNNI: pinned ggml
 defines its intrinsics but omits the compiler target flag. This flag is private
 to that plugin, never global or applied to the baseline loader.
+Both builds use Microsoft's linker and SDK manifest merger, keeping the runtime
+and manifest path constant while comparing compiler code generation. LLVM's
+[manifest-merging bugs](https://github.com/llvm/llvm-project/issues/120394) can
+otherwise prevent startup before any application code runs.
 
 ## Clean Runtime
 

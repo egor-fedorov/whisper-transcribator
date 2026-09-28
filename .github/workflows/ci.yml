@@ -209,6 +209,17 @@ jobs:
         shell: pwsh
         run: ./tests/benchmarks/windows.ps1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: failure() && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
+        with:
+          name: windows-clangcl-diagnostics
+          path: |
+            .build/windows-clangcl/CMakeCache.txt
+            .build/windows-clangcl/Testing/Temporary/LastTest.log
+            .build/windows-clangcl/bin/*.exe
+            .build/windows-clangcl/bin/*.dll
+          retention-days: 7
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always() && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
         with:
           name: windows-compiler-comparison
