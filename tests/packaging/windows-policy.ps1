@@ -1,5 +1,14 @@
 # Model-free tests, also runnable under PowerShell on Linux.
 . "$PSScriptRoot/../../packaging/windows-common.ps1"
+Assert-PeArchitecture '            AA64 machine (ARM64)' arm64 'fixture.dll'
+Assert-PeArchitecture '            8664 machine (x64)' x86_64 'fixture.dll'
+foreach ($case in @(@('8664', 'arm64'), @('AA64', 'x86_64'), @('A641', 'arm64'), @('14C', 'x86_64'))) {
+    $rejected = $false
+    try { Assert-PeArchitecture "    $($case[0]) machine (fixture)" $case[1] 'fixture.dll' }
+    catch { $rejected = $_.Exception.Message -match 'Not .* PE' }
+    if (!$rejected) { throw 'Wrong architecture silently accepted' }
+}
+if ((Get-WindowsTarget arm64).Baseline -ne 'ggml-cpu.dll') { throw 'Wrong ARM64 baseline' }
 $temporary = [IO.Directory]::CreateTempSubdirectory('wt-policy-').FullName
 try {
     $build = New-Item -ItemType Directory "$temporary/build"

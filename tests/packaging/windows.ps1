@@ -1,8 +1,12 @@
 # Verify the exact ZIP, not the development directory. No models or inference.
-param([Parameter(Mandatory)][string]$Artifacts)
+param(
+    [Parameter(Mandatory)][string]$Artifacts,
+    [ValidateSet('x86_64', 'arm64')][string]$Architecture = 'x86_64'
+)
 . "$PSScriptRoot/../../packaging/windows-common.ps1"
 $Artifacts = (Resolve-Path $Artifacts).Path
-$archives = @(Get-ChildItem $Artifacts -Filter '*-windows-x86_64-cpu.zip')
+$target = Get-WindowsTarget $Architecture
+$archives = @(Get-ChildItem $Artifacts -Filter "*-windows-$Architecture-cpu.zip")
 if ($archives.Count -ne 1) { throw 'Expected exactly one Windows ZIP' }
 $archive = $archives[0]
 $expected = "$((Get-FileHash $archive.FullName).Hash.ToLowerInvariant())  $($archive.Name)"
@@ -15,8 +19,8 @@ try {
     if ((Get-Content -Raw "$bundle/share/build-metadata.env").Contains("`r")) {
         throw 'Build metadata must use LF for the cross-platform release helper'
     }
-    if ($metadata.WT_TARGET_OS -ne 'windows' -or $metadata.WT_TARGET_ARCH -ne 'x86_64' -or
-        $archive.Name -ne "whisper-transcribator-$($metadata.WT_PACKAGE_VERSION)-windows-x86_64-cpu.zip") {
+    if ($metadata.WT_TARGET_OS -ne 'windows' -or $metadata.WT_TARGET_ARCH -ne $Architecture -or
+        $archive.Name -ne "whisper-transcribator-$($metadata.WT_PACKAGE_VERSION)-windows-$Architecture-cpu.zip") {
         throw 'ZIP target or version metadata mismatch'
     }
     $listed = @{}
@@ -42,15 +46,15 @@ try {
         if (@(Get-ChildItem "$bundle/sources/$source").Count -eq 0) { throw "Missing sources: $source" }
     }
     $backends = @(Get-Content "$bundle/share/backends.txt")
-    $plugins = @(Get-ChildItem "$bundle/bin/ggml-cpu-*.dll" | ForEach-Object Name)
-    if ('ggml-cpu-x64.dll' -notin $plugins -or @(Compare-Object $backends $plugins).Count) {
+    $plugins = @(Get-ChildItem "$bundle/bin/ggml-cpu*.dll" | ForEach-Object Name)
+    if ($target.Baseline -notin $plugins -or @(Compare-Object $backends $plugins).Count) {
         throw 'CPU plugin inventory mismatch'
     }
     foreach ($file in Get-ChildItem "$bundle/bin" -File) {
-        if ($file.Name -notmatch '^(whisper-transcribator\.exe|whisper\.dll|ggml(-base|-cpu-[a-z0-9]+)?\.dll|av(codec|format|util)-\d+\.dll|swresample-\d+\.dll|libcurl\.dll|z\.dll|(msvcp|vcruntime|concrt)140[^/]*\.dll)$') {
+        if ($file.Name -notmatch '^(whisper-transcribator\.exe|whisper\.dll|ggml(-base|-cpu(?:-[a-z0-9]+)?)?\.dll|av(codec|format|util)-\d+\.dll|swresample-\d+\.dll|libcurl\.dll|z\.dll|(msvcp|vcruntime|concrt)140[^/]*\.dll)$') {
             throw "Unwanted executable/library: $($file.Name)"
         }
-        foreach ($import in Get-Imports $file.FullName) {
+        foreach ($import in Get-Imports $file.FullName $Architecture) {
             if (!(Test-SystemLibrary $import) -and !(Test-Path "$bundle/bin/$import")) {
                 throw "Missing app-local dependency: $($file.Name) -> $import"
             }
@@ -78,12 +82,12 @@ try {
         $baseline = Join-Path $temporary 'baseline'
         New-Item -ItemType Directory "$baseline/bin" | Out-Null
         Copy-Item "$bundle/bin/*" "$baseline/bin"
-        Get-ChildItem "$baseline/bin/ggml-cpu-*.dll" | Where-Object Name -ne 'ggml-cpu-x64.dll' | Remove-Item
+        Get-ChildItem "$baseline/bin/ggml-cpu*.dll" | Where-Object Name -ne $target.Baseline | Remove-Item
         $doctor = (Invoke-Checked "$baseline/bin/whisper-transcribator.exe" @('doctor', '--device', 'cpu', '--json')) | ConvertFrom-Json
-        if ($doctor.errors.Count -or $doctor.cpu_backend -ne 'ggml-cpu-x64.dll') { throw 'Baseline CPU loader failed' }
+        if ($doctor.errors.Count -or $doctor.cpu_backend -ne $target.Baseline) { throw 'Baseline CPU loader failed' }
         $cwd = Join-Path $baseline 'cwd'
         New-Item -ItemType Directory $cwd | Out-Null
-        Move-Item "$baseline/bin/ggml-cpu-x64.dll" $cwd
+        Move-Item "$baseline/bin/$($target.Baseline)" $cwd
         Push-Location $cwd
         try {
             $doctor = & "$baseline/bin/whisper-transcribator.exe" doctor --device cpu --json | ConvertFrom-Json

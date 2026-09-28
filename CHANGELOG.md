@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Add native Windows ARM64 CPU builds with ClangCL and a portable ARMv8-A/NEON plugin. Build, verify and smoke-test a separate `windows-arm64-cpu.zip` on `windows-11-arm`; validate every PE dependency's architecture, preserve app-local runtime/source inventories and require the sixth archive when preparing a release. Windows x64 remains on MSVC; ARM64 GPU/NPU acceleration is not included.
 - Add experimental, source-build-only Vulkan on Linux/Windows through `WT_VULKAN` and explicit `--device vulkan`; leave automatic selection and release archives unchanged. Select the correct GPU ordinal in mixed-backend builds, report GPU diagnostics, and reject silent CPU fallback on GPU initialization failure. Add model-free Vulkan CI and short public-fixture validation/benchmark tooling.
 - Identify post-0.4.0 builds as 0.5.0-dev with source provenance. Document Windows Smart App Control restrictions and the pending signing setup.
 - Harden Windows packaging with retried source downloads, exclusive redist CRT lookup and inventory checks, normalized SDK metadata, repeatable temporary verification, and a Git source-blob comparison. Check the ZIP in Server Core without a preinstalled VC++ runtime and keep native artifacts for seven days.

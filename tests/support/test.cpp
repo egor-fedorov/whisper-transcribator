@@ -2,6 +2,7 @@
 #include "platform/file.hpp"
 #include "platform/system.hpp"
 #include "support/cancel.hpp"
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <random>
@@ -18,6 +19,35 @@
 #endif
 
 namespace wt::test {
+#ifdef _WIN32
+namespace {
+LONG WINAPI report_native_crash(EXCEPTION_POINTERS* exception) {
+    const auto* record = exception->ExceptionRecord;
+    if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
+        return EXCEPTION_CONTINUE_SEARCH;
+    std::fprintf(stderr, "Native access violation at %p\n", record->ExceptionAddress);
+    auto report_address = [](void* address) {
+        MEMORY_BASIC_INFORMATION region{};
+        char module[32768]{};
+        VirtualQuery(address, &region, sizeof(region));
+        GetModuleFileNameA(static_cast<HMODULE>(region.AllocationBase), module, sizeof(module));
+        auto offset = reinterpret_cast<uintptr_t>(address) -
+                      reinterpret_cast<uintptr_t>(region.AllocationBase);
+        std::fprintf(stderr, "  %s + 0x%llx\n", module, static_cast<unsigned long long>(offset));
+    };
+    report_address(record->ExceptionAddress);
+#ifdef _M_ARM64
+    report_address(reinterpret_cast<void*>(exception->ContextRecord->Lr));
+#endif
+    void* frames[16]{};
+    auto count = CaptureStackBackTrace(0, 16, frames, nullptr);
+    for (USHORT i = 0; i < count; ++i)
+        report_address(frames[i]);
+    std::fflush(stderr);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+} // namespace
+#endif
 TempDirectory::TempDirectory(const fs::path& parent) {
     fs::create_directories(parent);
     std::random_device random;
@@ -149,6 +179,10 @@ StreamCapture::StreamCapture(std::ostream& stream, std::streambuf* buffer)
     : stream(stream), previous(stream.rdbuf(buffer)) {}
 StreamCapture::~StreamCapture() { stream.rdbuf(previous); }
 int run_tests(std::initializer_list<TestCase> cases) {
+#ifdef _WIN32
+    // CTest otherwise sees only a signal number; retain the failing DLL and offset in CI logs.
+    const auto crash_handler = AddVectoredExceptionHandler(1, report_native_crash);
+#endif
     size_t failures = 0;
     for (const auto& item : cases) {
         fs::path fixtures;
@@ -173,6 +207,10 @@ int run_tests(std::initializer_list<TestCase> cases) {
         }
         stop_signal = signal;
     }
+#ifdef _WIN32
+    if (crash_handler)
+        RemoveVectoredExceptionHandler(crash_handler);
+#endif
     std::cout << cases.size() - failures << '/' << cases.size() << " scenarios passed\n";
     return failures ? 1 : 0;
 }

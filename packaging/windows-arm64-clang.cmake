@@ -1,0 +1,10 @@
+find_program(WT_CLANG_CL clang-cl HINTS "$ENV{ProgramFiles}/LLVM/bin" REQUIRED)
+set(CMAKE_C_COMPILER "${WT_CLANG_CL}")
+set(CMAKE_CXX_COMPILER "${WT_CLANG_CL}")
+set(CMAKE_C_COMPILER_TARGET aarch64-pc-windows-msvc)
+set(CMAKE_CXX_COMPILER_TARGET aarch64-pc-windows-msvc)
+file(TO_CMAKE_PATH "$ENV{VCToolsInstallDir}/bin/Host$ENV{VSCMD_ARG_HOST_ARCH}/arm64/link.exe" CMAKE_LINKER)
+file(TO_CMAKE_PATH "$ENV{WindowsSdkVerBinPath}/$ENV{VSCMD_ARG_HOST_ARCH}/mt.exe" CMAKE_MT)
+# The including vcpkg.cmake is available even when try_compile omits CMAKE_TOOLCHAIN_FILE.
+get_filename_component(WT_VCPKG_BUILDSYSTEMS "${CMAKE_PARENT_LIST_FILE}" DIRECTORY)
+include("${WT_VCPKG_BUILDSYSTEMS}/../toolchains/windows.cmake")
