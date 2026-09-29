@@ -78,7 +78,7 @@ jobs:
         run: |
           bash tests/packaging/release.sh
           bash tests/packaging/runtime-policy.sh
-          cmake -DWT_TEST_DIR=.build/source-contracts -P tests/packaging/sources.cmake
+          cmake "-DWT_TEST_DIR=.build/source-contracts" -P tests/packaging/sources.cmake
       - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         env:
           CC: ${{ matrix.cc }}
@@ -253,7 +253,8 @@ jobs:
       - name: Verify exact ZIP with restricted runtime PATH (no models or inference)
         shell: pwsh
         run: |
-          cmake -DWT_TEST_DIR=.build/source-contracts -P tests/packaging/sources.cmake
+          # PowerShell needs the complete -D argument quoted when its value starts with a dot.
+          cmake "-DWT_TEST_DIR=.build/source-contracts" -P tests/packaging/sources.cmake
           if ($LASTEXITCODE -ne 0) { throw 'Source archive contracts failed' }
           ./tests/packaging/windows-policy.ps1
           ./tests/packaging/windows.ps1 -Architecture '${{ matrix.arch }}' -Artifacts .build/artifacts/windows-${{ matrix.arch }}
@@ -506,7 +507,7 @@ jobs:
       - name: Install build and test tools (the archive bundles none of them)
         run: brew install ninja pkgconf ffmpeg-full openssl@3 jq
       - name: Verify common source archive contracts (no models)
-        run: cmake -DWT_TEST_DIR=.build/source-contracts -P tests/packaging/sources.cmake
+        run: cmake "-DWT_TEST_DIR=.build/source-contracts" -P tests/packaging/sources.cmake
       - name: Build FFmpeg and the archive, test its binaries and package them
         env:
           WT_SOURCE_REVISION: ${{ github.sha }}

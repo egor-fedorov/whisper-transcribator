@@ -1,7 +1,7 @@
 # Synthetic, model-free check of the common source collector; no compiler, Git or network needed.
 cmake_minimum_required(VERSION 3.22)
 get_filename_component(collector "${CMAKE_CURRENT_LIST_DIR}/../../packaging/cmake/sources.cmake" ABSOLUTE)
-if(NOT DEFINED WT_TEST_DIR)
+if(NOT DEFINED WT_TEST_DIR OR WT_TEST_DIR STREQUAL "")
     message(FATAL_ERROR "Pass a fresh WT_TEST_DIR")
 endif()
 get_filename_component(work "${WT_TEST_DIR}" ABSOLUTE)
