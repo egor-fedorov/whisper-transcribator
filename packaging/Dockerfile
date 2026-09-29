@@ -26,6 +26,7 @@ ARG WT_CUDA=OFF
 ARG CUDA_ARCHITECTURES=75;80;86;89;90
 ARG WT_SOURCE_REVISION=unknown
 ARG WT_SOURCE_DIRTY=unknown
+ARG BUILD_JOBS=4
 # Clang's OpenMP runtime would add libomp and the LLVM source package to the bundle;
 # arm64 uses ggml's own thread pool instead.
 RUN if [ "$(dpkg --print-architecture)" = arm64 ]; then \
@@ -36,7 +37,7 @@ RUN if [ "$(dpkg --print-architecture)" = arm64 ]; then \
     -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DGGML_CPU_ALL_VARIANTS=ON -DWT_WERROR=ON \
     -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
     -DWT_SOURCE_REVISION="${WT_SOURCE_REVISION}" -DWT_SOURCE_DIRTY="${WT_SOURCE_DIRTY}" "$@" \
-    && cmake --build .build/release -j4 \
+    && cmake --build .build/release --parallel "${BUILD_JOBS}" \
     && ctest --test-dir .build/release --output-on-failure
 COPY packaging/ packaging/
 RUN . .build/release/generated/package.env \
@@ -52,6 +53,11 @@ RUN . .build/release/generated/package.env && mkdir -p /export \
     && cd /export && sha256sum *.tar.gz > SHA256SUMS
 FROM scratch AS archive
 COPY --from=build /export/ /
+FROM scratch AS cuda-release
+# Test helpers travel separately; they are never part of the release archive.
+COPY --from=build /export/ /cuda/
+COPY --from=build /app/.build/release/tests/wt-audio-fixture /tools/wt-audio-fixture
+COPY --from=build /app/.build/release/tests/wt-process-runner /tools/wt-process-runner
 FROM ${RUNTIME_IMAGE} AS runtime-base
 RUN groupadd --gid 10001 whisper && useradd --uid 10001 --gid 10001 --no-create-home whisper \
     && mkdir -p /models /data && chown 10001:10001 /models /data

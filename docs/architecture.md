@@ -103,6 +103,7 @@ The documented entrypoints stay at `packaging/Dockerfile`, `package.sh`, `macos.
 | `packaging/windows-common.ps1` | Small PE, target, metadata and CRT-provenance policies shared with the independent verifier |
 | `packaging/windows-sources.ps1` | Pinned curl/zlib upstream sources, vcpkg recipes, notices and SPDX records |
 | `packaging/cmake/sources.cmake` | Common project/whisper.cpp/CLI11/JSON source archives and notices from explicit source/build/bundle paths, without Git, compilation or downloads |
+| `packaging/release` | Read-only tag/CI preflight, containerized exact-archive CUDA verification and hardware-evidence validation; publication remains in `packaging/release.sh` |
 | `.github/actions/windows-tools` | Native developer environment, pinned vcpkg checkout, MSYS2 and toolchain outputs; no build, cache, test or artifact decisions |
 | `.github/workflows` | Visible job dependencies, cache lifetimes, build/test stages, archive uploads and separate short inference gates |
 
@@ -111,3 +112,5 @@ Runtime helpers receive paths explicitly; they do not select models, infer archi
 The common source collector keeps the existing source allowlist and names, validates required metadata and notices before archiving, and works in Git-less Docker contexts. Platform recipes still own FFmpeg, distro/vcpkg source provenance and vendor runtime notices. The independent Git-based release/Windows source verifiers must not obtain their expected file lists from the collector: agreement between producer and verifier is not proof of coverage. Synthetic packaging tests exercise source bytes, missing inputs, CRLF/LF metadata, hidden files and runtime policies; native archive jobs still inspect real binaries and their actual dependencies.
 
 The Windows preparation action exposes `compiler`, `clang`, `vcpkg` and `pkgconfig`; it requires a matching native runner, a checked-out repository and `VCPKG_DEFAULT_BINARY_CACHE`. The workflows retain cache keys/save conditions and all required job/artifact names. Lightweight archive verification jobs need only the developer shell, not vcpkg/MSYS2 setup. Packaging never runs recognition; smoke jobs consume the exact packaged binaries.
+
+The release workflow adds an owner-dispatched path: hosted preflight, approved self-hosted CUDA build plus separate offline inference, then hosted draft creation. `tests/packaging` exercises preflight and evidence rejection with synthetic fixtures; `tests/smoke/cuda-release.sh` owns real short hardware inference inside the clean verification image. Helpers and fixture/model data stay outside release archives. Windows signing must stay in its separate hosted build chain.

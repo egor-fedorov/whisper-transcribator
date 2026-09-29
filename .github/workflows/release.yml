@@ -1,0 +1,127 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Reviewed release tag on main (vX.Y.Z); prepares a draft, does not publish
+        required: true
+        type: string
+      build_jobs:
+        description: CUDA compilation parallelism (1-32; choose according to available RAM)
+        default: '8'
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: >-
+      github.repository == 'egor-fedorov/whisper-transcribator' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      revision: ${{ steps.release.outputs.revision }}
+      version: ${{ steps.release.outputs.version }}
+      ci_run: ${{ steps.release.outputs.ci_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          BUILD_JOBS: ${{ inputs.build_jobs }}
+        run: |
+          [[ "$BUILD_JOBS" =~ ^([1-9]|[12][0-9]|3[0-2])$ ]] || { echo 'build_jobs must be 1-32' >&2; exit 1; }
+          bash packaging/release/preflight.sh "$GITHUB_REPOSITORY" "$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/release.json" >> "$GITHUB_OUTPUT"
+  cuda:
+    needs: preflight
+    # Environment approval and owner-only dispatch are gates, not a host sandbox.
+    environment: cuda-release
+    runs-on: [self-hosted, linux, x64, whisper-release-nvidia]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.preflight.outputs.revision }}
+          persist-credentials: false
+      - name: Check runner prerequisites
+        run: |
+          for command in docker nvidia-smi jq; do command -v "$command"; done
+          docker info
+          nvidia-smi
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: packaging/Dockerfile
+          target: cuda-release
+          outputs: type=local,dest=${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}
+          build-args: |
+            WT_CUDA=ON
+            BUILD_IMAGE=nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97
+            BUILD_JOBS=${{ inputs.build_jobs }}
+            WT_SOURCE_REVISION=${{ needs.preflight.outputs.revision }}
+            WT_SOURCE_DIRTY=false
+          cache-from: type=gha,version=2,scope=release-cuda
+          cache-to: type=gha,version=2,scope=release-cuda,mode=max,ignore-error=true,timeout=2m
+      - name: Verify exact archive offline on NVIDIA (11s fixture and 41s resume test)
+        env:
+          EXPORT_DIR: ${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash packaging/release/check-cuda.sh "$EXPORT_DIR"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-cuda-verified
+          path: ${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}/cuda/*
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: cuda-diagnostics
+          path: ${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics/
+          retention-days: 7
+          if-no-files-found: ignore
+  draft:
+    needs: [preflight, cuda]
+    runs-on: ubuntu-24.04
+    environment: release
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.preflight.outputs.revision }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download the five exact hosted CI archives (including unsigned Windows ZIPs)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ needs.preflight.outputs.ci_run }}
+        run: |
+          for pair in cpu:native-cpu cpu-aarch64:native-cpu-aarch64 macos-arm64:native-macos-arm64 \
+              windows-x86_64:native-windows-x86_64 windows-arm64:native-windows-arm64; do
+            gh run download "$CI_RUN" --repo "$GITHUB_REPOSITORY" --name "${pair#*:}" --dir ".build/artifacts/${pair%%:*}"
+          done
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-cuda-verified
+          path: .build/artifacts/cuda
+      - name: Verify all archives, sources and GPU evidence, then create a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: bash packaging/release.sh "$RELEASE_VERSION" .build/artifacts --draft

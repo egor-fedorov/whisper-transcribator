@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Validate local release assets; remote changes require the explicit --draft flag.
 set -euo pipefail
+scripts=$(cd "$(dirname "$0")" && pwd)
 fail() { echo "$*" >&2; exit 1; }
 [[ $# -ge 2 && $# -le 3 ]] || fail 'Usage: release.sh VERSION ARTIFACT_ROOT [--draft]'
 version=$1
@@ -53,6 +54,9 @@ for target in "${targets[@]}"; do
     cat "$temporary/$directory.sha" >>"$temporary/SHA256SUMS"
 done
 echo "All six Linux, macOS and Windows archive checksums and packaged sources match $commit"
+bash "$scripts/release/verify-cuda.sh" "$root/cuda/whisper-transcribator-$version-linux-x86_64-cuda.tar.gz" \
+    "$root/cuda/cuda-verification.json" "$commit"
+assets+=("$root/cuda/cuda-verification.json")
 [[ $mode = --draft ]] || exit 0
 
 tag="v$version"
@@ -69,4 +73,4 @@ printf '\nSource commit: `%s`. [Successful CI](https://github.com/%s/actions/run
     "$commit" "$repo" "$run" >>"$temporary/notes.md"
 gh release create "$tag" --repo "$repo" --verify-tag --target "$commit" --draft \
     --title "$tag" --notes-file "$temporary/notes.md" "${assets[@]}" "$temporary/SHA256SUMS"
-echo "Draft prepared. Review assets and GPU verification before explicitly publishing $tag."
+echo "Draft prepared with CUDA hardware evidence. Review assets before explicitly publishing $tag."
