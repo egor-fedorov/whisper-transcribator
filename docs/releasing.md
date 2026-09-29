@@ -178,6 +178,8 @@ with narrowly scoped mounts once device permissions are configured.
 
 ## Gates
 
+Packaging internals and their boundaries are documented in [Architecture](architecture.md#packaging-and-ci). All platforms use `packaging/cmake/sources.cmake` for project/whisper.cpp/CLI11/JSON archives and notices; it consumes `WT_SOURCE_DIR`, `WT_BUILD_DIR` and `WT_BUNDLE_DIR` with the build's generated `package.env`. It neither rebuilds dependencies nor downloads them. FFmpeg and platform runtime provenance stay in their respective recipes. The source allowlist and independent Git-based release verification are unchanged.
+
 1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks, and CTest on macOS arm64.
 2. Build Linux x86_64 CPU/CUDA, Linux aarch64 CPU, macOS arm64 and Windows x64/ARM64 CPU archives. Inspect bundled
    dependencies, source packages, vendor notices and SHA256SUMS. No glibc, host driver or

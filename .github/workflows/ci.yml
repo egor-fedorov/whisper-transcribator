@@ -75,7 +75,10 @@ jobs:
       - if: matrix.lint
         run: find tests packaging -type f -name '*.sh' -exec shellcheck {} +
       - if: matrix.lint
-        run: bash tests/packaging/release.sh
+        run: |
+          bash tests/packaging/release.sh
+          bash tests/packaging/runtime-policy.sh
+          cmake "-DWT_TEST_DIR=.build/source-contracts" -P tests/packaging/sources.cmake
       - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
         env:
           CC: ${{ matrix.cc }}
@@ -126,55 +129,30 @@ jobs:
       CCACHE_MAXSIZE: 500M
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+      - id: windows-tools
+        uses: ./.github/actions/windows-tools
         with:
-          arch: ${{ matrix.toolchain }}
-      - id: pins
-        shell: pwsh
-        run: |
-          $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
-          "vcpkg=$baseline" >> $env:GITHUB_OUTPUT
-          "compiler=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT
-          $clang = (& clang-cl --version | Select-Object -First 1) -replace '[^A-Za-z0-9.-]', '_'
-          "clang=$clang" >> $env:GITHUB_OUTPUT
-          if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant() -ne '${{ matrix.toolchain }}') {
-            throw 'Expected a native Windows runner for the target architecture'
-          }
-          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE
-          Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: microsoft/vcpkg
-          ref: ${{ steps.pins.outputs.vcpkg }}
-          path: .build/vcpkg
-      - id: msys
-        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
-        with:
-          msystem: MSYS
-          path-type: inherit
-          # The x64 paccache helper can crash under ARM emulation; build caches remain enabled.
-          cache: ${{ matrix.toolchain == 'x64' }}
-          install: make nasm diffutils mingw-w64-x86_64-pkgconf
+          architecture: ${{ matrix.toolchain }}
       - id: ffmpeg-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/windows-ffmpeg
-          key: ffmpeg-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ hashFiles('packaging/ffmpeg.sh', 'packaging/windows-ffmpeg.sh') }}
+          key: ffmpeg-windows-${{ matrix.toolchain }}-${{ steps.windows-tools.outputs.compiler }}-${{ hashFiles('packaging/ffmpeg.sh', 'packaging/windows-ffmpeg.sh') }}
       - id: vcpkg-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/vcpkg-cache
-          key: vcpkg-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ steps.pins.outputs.clang }}-${{ hashFiles('vcpkg.json', 'packaging/triplets/*.cmake', 'packaging/windows-arm64-clang.cmake') }}
+          key: vcpkg-windows-${{ matrix.toolchain }}-${{ steps.windows-tools.outputs.compiler }}-${{ steps.windows-tools.outputs.clang }}-${{ hashFiles('vcpkg.json', 'packaging/triplets/*.cmake', 'packaging/windows-arm64-clang.cmake') }}
           restore-keys: |
-            vcpkg-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ steps.pins.outputs.clang }}-
-            vcpkg-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-
+            vcpkg-windows-${{ matrix.toolchain }}-${{ steps.windows-tools.outputs.compiler }}-${{ steps.windows-tools.outputs.clang }}-
+            vcpkg-windows-${{ matrix.toolchain }}-${{ steps.windows-tools.outputs.compiler }}-
       - id: windows-ccache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/windows-ccache
-          key: ccache-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ steps.pins.outputs.clang }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'vcpkg.json') }}-${{ github.sha }}
+          key: ccache-windows-${{ matrix.toolchain }}-${{ steps.windows-tools.outputs.compiler }}-${{ steps.windows-tools.outputs.clang }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'vcpkg.json') }}-${{ github.sha }}
           restore-keys: |
-            ccache-windows-${{ matrix.toolchain }}-${{ steps.pins.outputs.compiler }}-${{ steps.pins.outputs.clang }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'vcpkg.json') }}-
+            ccache-windows-${{ matrix.toolchain }}-${{ steps.windows-tools.outputs.compiler }}-${{ steps.windows-tools.outputs.clang }}-${{ hashFiles('cmake/dependencies.cmake', 'CMakeLists.txt', 'vcpkg.json') }}-
       - name: Build pinned decoding-only FFmpeg with MSVC
         shell: msys2 {0}
         run: bash packaging/windows-ffmpeg.sh '${{ matrix.toolchain }}'
@@ -185,7 +163,7 @@ jobs:
           key: ${{ steps.ffmpeg-cache.outputs.cache-primary-key }}
       - name: Configure dependencies and application (ClangCL on ARM64)
         shell: pwsh
-        run: ./packaging/windows-build.ps1 -Architecture '${{ matrix.toolchain }}' -Stage Configure -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
+        run: ./packaging/windows-build.ps1 -Architecture '${{ matrix.toolchain }}' -Stage Configure -PkgConfig '${{ steps.windows-tools.outputs.pkgconfig }}'
       - id: windows-build
         name: Compile application and test executables
         shell: pwsh
@@ -225,7 +203,7 @@ jobs:
       - name: Build experimental ClangCL on the same VM (manual benchmark only)
         if: matrix.toolchain == 'x64' && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
         shell: pwsh
-        run: ./packaging/windows-build.ps1 -Compiler clangcl -Build .build/windows-clangcl -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
+        run: ./packaging/windows-build.ps1 -Compiler clangcl -Build .build/windows-clangcl -PkgConfig '${{ steps.windows-tools.outputs.pkgconfig }}'
       - name: Compare warmed MSVC and ClangCL runs (manual benchmark only)
         if: matrix.toolchain == 'x64' && github.event_name == 'workflow_dispatch' && inputs.run_windows_benchmark
         shell: pwsh
@@ -275,6 +253,9 @@ jobs:
       - name: Verify exact ZIP with restricted runtime PATH (no models or inference)
         shell: pwsh
         run: |
+          # PowerShell needs the complete -D argument quoted when its value starts with a dot.
+          cmake "-DWT_TEST_DIR=.build/source-contracts" -P tests/packaging/sources.cmake
+          if ($LASTEXITCODE -ne 0) { throw 'Source archive contracts failed' }
           ./tests/packaging/windows-policy.ps1
           ./tests/packaging/windows.ps1 -Architecture '${{ matrix.arch }}' -Artifacts .build/artifacts/windows-${{ matrix.arch }}
           ./tests/packaging/windows.ps1 -Architecture '${{ matrix.arch }}' -Artifacts .build/artifacts/windows-${{ matrix.arch }}
@@ -525,6 +506,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install build and test tools (the archive bundles none of them)
         run: brew install ninja pkgconf ffmpeg-full openssl@3 jq
+      - name: Verify common source archive contracts (no models)
+        run: cmake "-DWT_TEST_DIR=.build/source-contracts" -P tests/packaging/sources.cmake
       - name: Build FFmpeg and the archive, test its binaries and package them
         env:
           WT_SOURCE_REVISION: ${{ github.sha }}

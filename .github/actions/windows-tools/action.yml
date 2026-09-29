@@ -1,0 +1,53 @@
+name: Prepare native Windows build tools
+description: Set up the native developer shell, pinned vcpkg and MSYS2; no compilation, caching or tests.
+inputs:
+  architecture:
+    description: Native Visual Studio target (x64 or arm64)
+    required: true
+outputs:
+  vcpkg:
+    description: Pinned vcpkg baseline
+    value: ${{ steps.pins.outputs.vcpkg }}
+  compiler:
+    description: MSVC toolchain version for cache keys
+    value: ${{ steps.pins.outputs.compiler }}
+  clang:
+    description: Sanitized ClangCL version for cache keys
+    value: ${{ steps.pins.outputs.clang }}
+  pkgconfig:
+    description: Absolute path to pkgconf.exe
+    value: ${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe
+runs:
+  using: composite
+  steps:
+    - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+      with:
+        arch: ${{ inputs.architecture }}
+    - id: pins
+      shell: pwsh
+      env:
+        WT_WINDOWS_ARCH: ${{ inputs.architecture }}
+      run: |
+        $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+        "vcpkg=$baseline" >> $env:GITHUB_OUTPUT
+        "compiler=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT
+        $clang = (& clang-cl --version | Select-Object -First 1) -replace '[^A-Za-z0-9.-]', '_'
+        "clang=$clang" >> $env:GITHUB_OUTPUT
+        if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant() -ne $env:WT_WINDOWS_ARCH) {
+          throw 'Expected a native Windows runner for the target architecture'
+        }
+        New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE
+        Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: microsoft/vcpkg
+        ref: ${{ steps.pins.outputs.vcpkg }}
+        path: .build/vcpkg
+    - id: msys
+      uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+      with:
+        msystem: MSYS
+        path-type: inherit
+        # The x64 paccache helper can crash under ARM emulation; build caches remain enabled.
+        cache: ${{ inputs.architecture == 'x64' }}
+        install: make nasm diffutils mingw-w64-x86_64-pkgconf

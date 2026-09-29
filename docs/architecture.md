@@ -91,3 +91,23 @@ Integration fixtures may compose application settings to exercise the same metad
 `tests/CMakeLists.txt` composes `tests/cmake` through `include`, not nested build directories. `support.cmake` owns the shared library and registration functions; `unit.cmake`, `integration.cmake` and `resource.cmake` own checks and their existing dependency/platform conditions; `tools.cmake` owns auxiliary executables; `headers.cmake` lists standalone headers. Keep source lists explicit. Test names, labels, timeouts, native executable locations and the Windows manifest/link settings are part of the CI contract; moving sources must not create a new library or build target per directory.
 
 Build targets remain `wt_core` (model-free services), `wt_engine` (audio/inference adapters and command execution) and the CLI (parsing/entry point). `cmake` holds pinned dependencies and generated metadata. `packaging` owns archive/container construction; workflows orchestrate native validation and preserve separate model-free packaging and real-inference gates. All generated artifacts belong under `.build`; models, recordings and local benchmark results are not repository sources.
+
+## Packaging And CI
+The documented entrypoints stay at `packaging/Dockerfile`, `package.sh`, `macos.sh`, `windows-build.ps1`, `windows-bundle.ps1` and `release.sh`. Keep platform orchestration explicit rather than introducing a universal packaging framework.
+
+| Directory or file | Responsibility |
+| --- | --- |
+| `packaging/linux/runtime.sh` | ELF/plugin dependency closure, distro notices and sources, loader paths and CA bundle; called inside the Ubuntu builder only |
+| `packaging/macos/runtime.sh` | Mach-O dependency closure, system-library exclusion, relocation and ad-hoc signing; compatible with system Bash 3.2 |
+| `packaging/windows/runtime.ps1` | PE/plugin dependency closure and runtime inventories from an already tested build |
+| `packaging/windows-common.ps1` | Small PE, target, metadata and CRT-provenance policies shared with the independent verifier |
+| `packaging/windows-sources.ps1` | Pinned curl/zlib upstream sources, vcpkg recipes, notices and SPDX records |
+| `packaging/cmake/sources.cmake` | Common project/whisper.cpp/CLI11/JSON source archives and notices from explicit source/build/bundle paths, without Git, compilation or downloads |
+| `.github/actions/windows-tools` | Native developer environment, pinned vcpkg checkout, MSYS2 and toolchain outputs; no build, cache, test or artifact decisions |
+| `.github/workflows` | Visible job dependencies, cache lifetimes, build/test stages, archive uploads and separate short inference gates |
+
+Runtime helpers receive paths explicitly; they do not select models, infer architecture from the host instead of build metadata, or publish releases. Entrypoints retain platform-specific FFmpeg provenance, final archive naming and checksums. Shell helpers run under the entrypoint's `set -euo pipefail`; call staging functions directly, not in an `if`/`||` context that disables Bash errexit inside them.
+
+The common source collector keeps the existing source allowlist and names, validates required metadata and notices before archiving, and works in Git-less Docker contexts. Platform recipes still own FFmpeg, distro/vcpkg source provenance and vendor runtime notices. The independent Git-based release/Windows source verifiers must not obtain their expected file lists from the collector: agreement between producer and verifier is not proof of coverage. Synthetic packaging tests exercise source bytes, missing inputs, CRLF/LF metadata, hidden files and runtime policies; native archive jobs still inspect real binaries and their actual dependencies.
+
+The Windows preparation action exposes `compiler`, `clang`, `vcpkg` and `pkgconfig`; it requires a matching native runner, a checked-out repository and `VCPKG_DEFAULT_BINARY_CACHE`. The workflows retain cache keys/save conditions and all required job/artifact names. Lightweight archive verification jobs need only the developer shell, not vcpkg/MSYS2 setup. Packaging never runs recognition; smoke jobs consume the exact packaged binaries.

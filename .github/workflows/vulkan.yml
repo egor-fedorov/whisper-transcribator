@@ -48,45 +48,28 @@ jobs:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.build/vcpkg-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+      - id: windows-tools
+        uses: ./.github/actions/windows-tools
         with:
-          arch: x64
-      - id: pins
-        shell: pwsh
-        run: |
-          "vcpkg=$((Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline')" >> $env:GITHUB_OUTPUT
-          "compiler=$env:VCToolsVersion" >> $env:GITHUB_OUTPUT
-          New-Item -ItemType Directory -Force $env:VCPKG_DEFAULT_BINARY_CACHE
-          Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: microsoft/vcpkg
-          ref: ${{ steps.pins.outputs.vcpkg }}
-          path: .build/vcpkg
+          architecture: x64
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/vulkan-sdk-cache
           key: vulkan-sdk-windows-${{ hashFiles('packaging/vulkan-sdk.json') }}
       - shell: pwsh
         run: ./packaging/vulkan-sdk.ps1
-      - id: msys
-        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
-        with:
-          msystem: MSYS
-          path-type: inherit
-          install: make nasm diffutils mingw-w64-x86_64-pkgconf
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/windows-ffmpeg
-          key: ffmpeg-windows-x64-${{ steps.pins.outputs.compiler }}-${{ hashFiles('packaging/ffmpeg.sh', 'packaging/windows-ffmpeg.sh') }}
+          key: ffmpeg-windows-x64-${{ steps.windows-tools.outputs.compiler }}-${{ hashFiles('packaging/ffmpeg.sh', 'packaging/windows-ffmpeg.sh') }}
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .build/vcpkg-cache
-          key: vcpkg-windows-x64-${{ steps.pins.outputs.compiler }}-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-windows-x64-${{ steps.windows-tools.outputs.compiler }}-${{ hashFiles('vcpkg.json') }}
       - shell: msys2 {0}
         run: bash packaging/windows-ffmpeg.sh
       - shell: pwsh
-        run: ./packaging/windows-build.ps1 -Vulkan -Build .build/windows-vulkan -PkgConfig '${{ steps.msys.outputs.msys2-location }}/mingw64/bin/pkgconf.exe'
+        run: ./packaging/windows-build.ps1 -Vulkan -Build .build/windows-vulkan -PkgConfig '${{ steps.windows-tools.outputs.pkgconfig }}'
       - name: Verify GPU plugin was built, without requiring a GPU
         shell: pwsh
         run: |
