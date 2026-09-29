@@ -1,4 +1,9 @@
 # whisper-transcribator
+[![CI](https://github.com/egor-fedorov/whisper-transcribator/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/egor-fedorov/whisper-transcribator/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/egor-fedorov/whisper-transcribator)](https://github.com/egor-fedorov/whisper-transcribator/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Platforms: Linux, macOS, Windows](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-555)](CONTRIBUTING.md#build-and-test)
+
 A local C++17 CLI that turns the audio stream of a media file into TXT, SRT, WebVTT or JSON. One whisper.cpp backend, FFmpeg libraries for decoding, no Python runtime or external ffmpeg executable required.
 
 **0.4.0** adds bounded audio windows, resume, paragraphs, WebVTT and portable CPU plugins. See the [release notes](docs/releases/0.4.0.md) for upgrade guidance and known limitations.
