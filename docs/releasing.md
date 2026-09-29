@@ -204,10 +204,7 @@ Packaging internals and their boundaries are documented in [Architecture](archit
 CI runs on pushes to `main` and pull requests, without duplicate push runs for
 PR branches. The protected `main` requires the GCC, Clang/sanitizer, package, smoke and
 secret checks; no second reviewer is required for this single-maintainer project.
-CI runs CPU/compiler/sanitizer/package checks; optional manual dispatch builds
-the CUDA archive but does not certify GPU inference. It does not publish assets
-or expose a personal GPU runner to pull requests. The first remote checks passed;
-every release still needs a successful run for its exact source commit.
+CI runs CPU/compiler/sanitizer/package checks on GitHub-hosted machines. CUDA compilation and hardware verification belong to the separate, owner-dispatched [release workflow](#release-workflow), not pull-request or push CI. Every release needs a successful main CI run for its exact source commit; the release workflow creates a draft only after the exact CUDA archive passes hardware tests.
 The aarch64 legs run natively on `ubuntu-24.04-arm` as `test (gcc, g++, OFF, aarch64)`,
 `package (aarch64)` and `smoke (aarch64)`; existing x86_64 check names are unchanged.
 The aarch64 checks are required by branch protection, alongside native Windows test and smoke checks.
@@ -231,7 +228,7 @@ release with `gh workflow run ci.yml -f run_portable_inference=true`. It is not
 part of pull-request or push CI. The separate compiler jobs retain their short
 source-build integration and sanitizer checks.
 
-Compiler caches are keyed by toolchain, sanitizer configuration and dependency pins; tests always run. The extra clean rebuild/cache-hit check requires the manual `verify_ccache` input. Buildx additionally caches unchanged packaging layers in separate x86_64 CPU, aarch64 CPU and CUDA GHA v2 scopes. Source-layer changes still rebuild their dependents. Cache export has a two-minute limit and is nonessential; a missing cache never skips checks or changes correctness requirements.
+Compiler caches are keyed by toolchain, sanitizer configuration and dependency pins; tests always run. The extra clean rebuild/cache-hit check requires the manual `verify_ccache` input. Buildx additionally caches unchanged packaging layers in separate x86_64 CPU, aarch64 CPU and release CUDA GHA v2 scopes. Source-layer changes still rebuild their dependents. Cache export has a two-minute limit and is nonessential; a missing cache never skips checks or changes correctness requirements.
 CTest exercises interrupted HTTPS downloads using a loopback TLS server and a
 temporary trusted certificate; it does not download large model weights.
 Streaming tests repeat the public fixture into a short recording. Long-duration
@@ -240,6 +237,36 @@ memory tests use synthetic audio and fake inference, not full lecture recognitio
 ## Prepare And Publish
 
 The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Current development targets `0.5.0-dev`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
+
+### Release Workflow
+
+`.github/workflows/release.yml` is dispatched by the repository owner from `main`, with a pre-existing reviewed `vX.Y.Z` tag. Re-runs must also be initiated by the owner. A hosted preflight rejects development versions, tags outside `main`, missing release notes, failed/missing main CI and missing/expired CI artifacts before it queues GPU work. The five hosted archives are reused from that exact successful main CI run, not rebuilt from a later `main`.
+
+The `cuda` job runs on `[self-hosted, linux, x64, whisper-release-nvidia]` after approval of the `cuda-release` environment. Docker Buildx compiles the full SM75/80/86/89/90 matrix. `build_jobs` defaults to eight and accepts 1-32; CUDA compilation consumes host CPU/RAM, not GPU compute. Choose a lower value if compiler processes exhaust RAM. Developer Docker builds retain their default four jobs through `BUILD_JOBS`.
+
+The `cuda-release` export contains the normal archive plus separate test helpers; the helpers never enter a published archive. Verification builds a clean Ubuntu 22.04 test image from that exact archive, downloads only the pinned public JFK fixture and tiny/VAD models, then runs non-root with `--network none`, read-only weights/root filesystem and explicit `--device cuda`. The tests cover 11-second speech, 41-second windowing and interrupted resume, not full lectures. CPU fallback is a failure. The resulting `cuda-verification.json` binds hardware diagnostics and successful checks to the archive SHA-256 and source revision. Diagnostics are retained separately for seven days.
+
+Only then can the hosted `draft` job, gated by the `release` environment, validate all six archives and packaged sources and upload a draft. The GPU job has no release-write permission. Evidence comes from the successful dependent job in the same run, never an arbitrary artifact run supplied by the caller. The JSON is an audit record, not a cryptographic attestation of hardware execution. Publication remains an explicit owner action; the workflow does not change versions, create tags or overwrite existing assets.
+
+Windows packaging and future SignPath signing stay in their own GitHub-hosted build chain. This mixed-runner workflow consumes the already produced ZIPs and must not submit signing requests. Until signing is implemented, ZIPs remain unsigned with the documented Smart App Control limitations; signing is not silently claimed by the release gate.
+
+### Connect The GPU Runner
+
+Connect the runner only after this workflow is reviewed/merged and the environments are configured. Create `cuda-release` and `release` with the repository owner as the only required reviewer, select custom deployment branches with the single branch rule `main`, and allow self-review for this single-maintainer project. Preflight checks both environments through GitHub's API and refuses to queue GPU work if these rules are missing. A workflow referencing a new environment does not automatically configure protection rules. No private controller repository is needed.
+
+Use a Linux x86_64 machine with Docker/Buildx, Git, Bash, jq, a compatible NVIDIA driver, NVIDIA Container Toolkit and ample free disk space for CUDA builders, caches and archives (at least 40 GiB recommended). Register the repository runner with the additional label `whisper-release-nvidia`. Do not install the CUDA compiler on the host; it is in the pinned builder image. Verify GPU access from a non-root container before a release, including UVM device permissions as described above.
+
+Docker isolates build/test environments, not the runner's host steps or its Docker daemon. Labels, an environment approval and a release-only trigger are not a security boundary against another workflow targeting the runner. GitHub [warns against persistent self-hosted runners in public repositories](https://docs.github.com/en/actions/reference/security/secure-use#hardening-for-self-hosted-runners). Use a dedicated account/machine without personal credentials or unrelated mounts; keep the runner offline outside reviewed releases and never approve untrusted PR jobs for it. If that residual host risk is unacceptable, use a disposable isolated machine instead. This repository does not provision or pretend to provide VM isolation.
+
+After the release commit has passed main CI and its tag has been pushed:
+
+```bash
+gh workflow run release.yml --ref main -f tag=vX.Y.Z -f build_jobs=8
+```
+
+Approve `cuda-release`, bring the prepared runner online for that job, then approve the hosted draft after GPU verification. Review the draft and publish manually. Do not reuse a CUDA report after changing or rebuilding the archive; rerun verification.
+
+### Manual Preparation
 
 Keep the six archives and their original `SHA256SUMS` under
 `.build/artifacts/cpu/`, `.build/artifacts/cuda/`, `.build/artifacts/cpu-aarch64/` and
@@ -261,10 +288,9 @@ bash packaging/release.sh "$version" .build/artifacts --draft
 gh release view "v$version"
 ```
 
-The draft contains the six archives, combined checksums, release notes and the
-source commit/CI link. This validates artifact integrity and source correspondence,
-not that CUDA inference ran: the short hardware smoke gate above remains mandatory
-for the exact archive to be published. After reviewing the draft and the GPU check:
+For manual preparation, build the CUDA `cuda-release` target into `.build/cuda-export`, run `bash packaging/release/check-cuda.sh .build/cuda-export` on the trusted NVIDIA machine, and copy its `cuda/` directory into the artifact root. This produces the mandatory hardware report; an ordinary `archive` export alone is insufficient. Both `--check` and `--draft` reject a missing report, CPU fallback, failed checks or a report for a different archive/source revision.
+
+The draft contains the six archives, combined archive checksums, `cuda-verification.json`, release notes and the source commit/CI link. After reviewing the draft and GPU evidence:
 
 ```bash
 gh release edit "v$version" --draft=false --latest

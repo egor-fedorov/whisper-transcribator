@@ -13,10 +13,6 @@ on:
         description: Verify clean rebuild cache hits (extra build for each compiler)
         type: boolean
         default: false
-      build_cuda:
-        description: Build CUDA archive (hardware inference is a separate manual gate)
-        type: boolean
-        default: false
       run_portable_inference:
         description: Run slow baseline-CPU inference (x86_64 without AVX2, ARMv8.0) under QEMU before release
         type: boolean
@@ -77,6 +73,8 @@ jobs:
       - if: matrix.lint
         run: |
           bash tests/packaging/release.sh
+          bash tests/packaging/release-preflight.sh
+          bash tests/packaging/cuda-release.sh
           bash tests/packaging/runtime-policy.sh
           cmake "-DWT_TEST_DIR=.build/source-contracts" -P tests/packaging/sources.cmake
       - run: cmake -S . -B .build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DWT_WERROR=ON -DWT_SANITIZERS=${{ matrix.sanitize }} -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
@@ -638,32 +636,6 @@ jobs:
               cmake --build /build -j2
               ctest --test-dir /build --output-on-failure
             '
-  cuda:
-    if: github.event_name == 'workflow_dispatch' && inputs.build_cuda
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          file: packaging/Dockerfile
-          target: archive
-          outputs: type=local,dest=.build/artifacts/cuda
-          build-args: |
-            WT_CUDA=ON
-            BUILD_IMAGE=nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97
-            WT_SOURCE_REVISION=${{ github.sha }}
-            WT_SOURCE_DIRTY=false
-          cache-from: type=gha,version=2,scope=archive-cuda
-          cache-to: type=gha,version=2,scope=archive-cuda,mode=max,ignore-error=true,timeout=2m
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: native-cuda-unverified-hardware
-          path: .build/artifacts/cuda/*
-          retention-days: 7
-          if-no-files-found: error
   secrets:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

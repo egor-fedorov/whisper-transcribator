@@ -79,6 +79,13 @@ build_assets() {
     git archive HEAD CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE \
         -o "$root/bundle/sources/whisper-transcribator-0.3.0.tar.gz"
     repack_assets
+    jq -n --arg archive 'whisper-transcribator-0.3.0-linux-x86_64-cuda.tar.gz' \
+        --arg digest "$(sha256sum <"$assets/cuda/whisper-transcribator-0.3.0-linux-x86_64-cuda.tar.gz" | cut -d ' ' -f1)" \
+        --arg revision "$(git rev-parse HEAD)" \
+        '{schema_version: 1, archive: $archive, sha256: $digest, source_revision: $revision,
+          device: "cuda", checks: {smoke: true, streaming_resume: true, offline: true},
+          doctor: {device: "cuda", errors: [], source_revision: $revision, source_dirty: false,
+                   selected_device: {description: "Synthetic GPU (test only)"}}}' >"$assets/cuda/cuda-verification.json"
 }
 reject() {
     local message=$1
@@ -93,6 +100,16 @@ reject() {
 build_assets
 bash "$helper" 0.3.0 "$assets"
 test ! -e "$GH_TEST_LOG"
+cp "$assets/cuda/cuda-verification.json" "$root/evidence.json"
+rm "$assets/cuda/cuda-verification.json"
+reject 'Missing or incompatible CUDA hardware verification' 0.3.0 "$assets"
+for mutation in '.sha256 = "wrong"' '.source_revision = "wrong"' '.device = "cpu"' \
+    '.checks.streaming_resume = false' '.checks.offline = false' '.doctor.device = "cpu"' \
+    '.doctor.errors = ["No GPU"]' '.doctor.source_dirty = true'; do
+    jq "$mutation" "$root/evidence.json" >"$assets/cuda/cuda-verification.json"
+    reject 'Missing or incompatible CUDA hardware verification' 0.3.0 "$assets"
+done
+cp "$root/evidence.json" "$assets/cuda/cuda-verification.json"
 printf 'WT_PACKAGE_VERSION=0.3.0-dev\n' >"$root/bundle/share/build-metadata.env"
 repack_assets
 reject 'Refusing a development' 0.3.0 "$assets"
@@ -180,6 +197,7 @@ unset GH_TEST_NO_CI
 bash "$helper" 0.3.0 "$assets" --draft
 grep -Fxq -- '--draft' "$GH_TEST_LOG"
 grep -Fxq -- '--verify-tag' "$GH_TEST_LOG"
+grep -Fxq -- "$assets/cuda/cuda-verification.json" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cpu/whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cpu-aarch64/whisper-transcribator-0.3.0-linux-aarch64-cpu.tar.gz" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/macos-arm64/whisper-transcribator-0.3.0-macos-arm64-metal.tar.gz" "$GH_TEST_LOG"

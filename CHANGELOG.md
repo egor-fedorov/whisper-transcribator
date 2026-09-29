@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Move CUDA release builds to an owner-dispatched, environment-gated NVIDIA runner workflow. Require offline inference/resume on the exact archive and SHA-256-bound hardware evidence before hosted draft creation; reuse the five hosted main-CI archives from the same source commit and keep Windows signing separate. Ordinary CI no longer contains an opt-in, hardware-unverified CUDA build.
 - Isolate platform runtime collection in the Linux, macOS and Windows packagers, share source/notice staging through CMake, and reuse native Windows CI preparation. Preserve archive names, source coverage, dependency policies and separate model-free packaging/inference gates; add synthetic packaging contracts without changing the CLI.
 - Group unit/integration tests by subsystem, separate the assertion runner from scoped state, domain fixtures and native helpers, and split explicit CMake registration by responsibility. Preserve check names, labels, timeouts, binary paths and compatibility snapshots; compile test headers independently and enforce helper boundaries.
 - Split shared I/O into file utilities, atomic publication, permission probes and string helpers; isolate Windows handle, ACL and status internals and replace the global permission-probe hook with explicit per-consumer dependencies. Preserve CLI behavior, storage ordering and checkpoint/output compatibility.
