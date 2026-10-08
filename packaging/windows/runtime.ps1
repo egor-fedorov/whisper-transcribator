@@ -1,6 +1,6 @@
 # Private PE dependency closure; windows-common.ps1 supplies inspection and provenance policy.
 function Copy-WindowsRuntime([string]$Build, [string]$Media, [string]$Installed,
-    [string]$Bundle, [string]$Architecture, [string]$Redist) {
+    [string]$Bundle, [string]$Architecture, [string]$Redist, [string]$Flavor = 'cpu') {
     $arch = $Architecture
     $target = Get-WindowsTarget $arch
     $search = @("$Build/bin", "$Media/prefix/bin", "$installed/bin")
@@ -8,6 +8,12 @@ function Copy-WindowsRuntime([string]$Build, [string]$Media, [string]$Installed,
     $queue.Enqueue('whisper-transcribator.exe')
     $backends = @(Get-ChildItem "$Build/bin/ggml-cpu*.dll" | Sort-Object Name | ForEach-Object Name)
     if ($target.Baseline -notin $backends) { throw 'Missing baseline CPU plugin' }
+    if ($Flavor -eq 'vulkan') {
+        if ($Architecture -ne 'x86_64' -or !(Test-Path "$Build/bin/ggml-vulkan.dll")) {
+            throw 'Vulkan archives require the x86_64 Vulkan plugin'
+        }
+        $backends += 'ggml-vulkan.dll'
+    }
     foreach ($plugin in $backends) { $queue.Enqueue($plugin) }
     $copied = @{}
     $links = @()
@@ -26,6 +32,8 @@ function Copy-WindowsRuntime([string]$Build, [string]$Media, [string]$Installed,
         $links += "# $name"
         $links += $imports
         foreach ($dependency in $imports) {
+            # The loader is installed by the GPU driver, not an OS DLL or SDK redistributable.
+            if ($Flavor -eq 'vulkan' -and $name -eq 'ggml-vulkan.dll' -and $dependency -eq 'vulkan-1.dll') { continue }
             if (!(Test-SystemLibrary $dependency)) { $queue.Enqueue($dependency) }
         }
     }

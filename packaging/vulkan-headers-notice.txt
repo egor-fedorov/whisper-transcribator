@@ -1,0 +1,68 @@
+Vulkan SDK header sources used by the Vulkan backend
+
+Only include/vulkan, include/vk_video and include/spirv are redistributed.
+Individual copyright notices remain in the accompanying header source archive.
+SDK version, download URLs and SHA-256 hashes are in share/vulkan-sdk.json.
+Build tools and GPU drivers are not redistributed.
+
+Vulkan SDK utility headers under include/vulkan/utility and
+include/vulkan/vk_enum_string_helper.h use Apache-2.0 only.
+Copyright 2023 The Khronos Group Inc.
+Copyright 2023 Valve Corporation
+Copyright 2023 LunarG, Inc.
+See Apache-2.0.txt; additional individual notices are retained in the headers.
+
+Vulkan-Headers (the MIT alternative of Apache-2.0 OR MIT)
+https://github.com/KhronosGroup/Vulkan-Headers/tree/vulkan-sdk-1.4.357.0
+Copyright 2015-2026 The Khronos Group Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+SPIRV-Headers (include/spirv, excluding spir-v.xml)
+https://github.com/KhronosGroup/SPIRV-Headers/tree/vulkan-sdk-1.4.357.0
+Copyright (c) 2015-2024 The Khronos Group Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and/or associated documentation files (the
+"Materials"), to deal in the Materials without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Materials, and to
+permit persons to whom the Materials are furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Materials.
+
+MODIFICATIONS TO THIS FILE MAY MEAN IT NO LONGER ACCURATELY REFLECTS
+KHRONOS STANDARDS. THE UNMODIFIED, NORMATIVE VERSIONS OF KHRONOS
+SPECIFICATIONS AND HEADER INFORMATION ARE LOCATED AT
+   https://www.khronos.org/registry/
+
+THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
+
+SPIRV-Headers (include/spirv/spir-v.xml)
+Copyright (c) 2015-2024 The Khronos Group Inc.
+The same permission grant and disclaimer above apply without the paragraph
+beginning "MODIFICATIONS TO THIS FILE".

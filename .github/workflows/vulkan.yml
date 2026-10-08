@@ -13,33 +13,37 @@ jobs:
   linux:
     name: vulkan (linux, model-free)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y ccache ninja-build libvulkan-dev ffmpeg libavformat-dev libavcodec-dev libswresample-dev libcurl4-openssl-dev libssl-dev
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build portable archive and test helpers (no inference)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
-          path: .build/vulkan-sdk-cache
-          key: vulkan-sdk-linux-${{ hashFiles('packaging/vulkan-sdk.json') }}
-      - shell: pwsh
-        run: ./packaging/vulkan-sdk.ps1
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+          context: .
+          file: packaging/Dockerfile
+          target: vulkan-release
+          outputs: type=local,dest=.build/vulkan-export
+          build-args: |
+            WT_VULKAN=ON
+            BUILD_JOBS=2
+            WT_SOURCE_REVISION=${{ github.sha }}
+            WT_SOURCE_DIRTY=false
+          cache-from: type=gha,version=2,scope=archive-vulkan
+          cache-to: type=gha,version=2,scope=archive-vulkan,mode=max,ignore-error=true,timeout=2m
+      - name: Verify archive in clean Ubuntu 22.04 without SDK or GPU
+        run: |
+          docker run --rm -v "$PWD:/work:ro" --tmpfs /verify \
+            ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02 \
+            bash -euc 'apt-get update; apt-get install -y --no-install-recommends jq; \
+              cp /work/.build/vulkan-export/vulkan/* /verify/; \
+              bash /work/tests/packaging/vulkan.sh /verify'
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          path: .build/ccache
-          key: vulkan-ccache-linux-${{ hashFiles('cmake/dependencies.cmake', 'packaging/vulkan-sdk.json') }}-${{ github.sha }}
-          restore-keys: vulkan-ccache-linux-${{ hashFiles('cmake/dependencies.cmake', 'packaging/vulkan-sdk.json') }}-
-      - run: cmake --preset vulkan -DWT_WERROR=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-      - run: cmake --build --preset vulkan -j2
-        env:
-          CCACHE_DIR: ${{ github.workspace }}/.build/ccache
-          CCACHE_MAXSIZE: 500M
-      - run: ctest --preset vulkan
-      - name: Verify GPU plugin was built, without requiring a GPU
-        run: test -f .build/vulkan/bin/libggml-vulkan.so
-      - shell: pwsh
-        run: ./tests/integration/inference/vulkan-unavailable.ps1 -Binary .build/vulkan/whisper-transcribator
+          name: native-vulkan-export
+          path: .build/vulkan-export/
+          retention-days: 7
+          if-no-files-found: error
   windows:
     name: vulkan (windows, model-free)
     runs-on: windows-2025
@@ -76,3 +80,29 @@ jobs:
           if (!(Test-Path .build/windows-vulkan/bin/ggml-vulkan.dll)) { throw 'Vulkan plugin missing' }
       - shell: pwsh
         run: ./tests/integration/inference/vulkan-unavailable.ps1 -Binary .build/windows-vulkan/bin/whisper-transcribator.exe
+      - name: Package the tested build (no recompilation)
+        shell: pwsh
+        run: ./packaging/windows-bundle.ps1 -Build .build/windows-vulkan
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-windows-x86_64-vulkan
+          path: .build/artifacts/windows-x86_64-vulkan/*
+          retention-days: 7
+          if-no-files-found: error
+  package-windows:
+    name: vulkan (windows, archive)
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        with:
+          arch: x64
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-windows-x86_64-vulkan
+          path: .build/artifacts/windows-x86_64-vulkan
+      - name: Verify ZIP on a fresh runner with restricted PATH and no usable Vulkan ICD
+        shell: pwsh
+        run: ./tests/packaging/windows.ps1 -Flavor vulkan -Artifacts .build/artifacts/windows-x86_64-vulkan

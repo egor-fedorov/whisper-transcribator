@@ -31,6 +31,7 @@ jobs:
       revision: ${{ steps.release.outputs.revision }}
       version: ${{ steps.release.outputs.version }}
       ci_run: ${{ steps.release.outputs.ci_run }}
+      vulkan_run: ${{ steps.release.outputs.vulkan_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -46,11 +47,15 @@ jobs:
           bash packaging/release/preflight.sh "$GITHUB_REPOSITORY" "$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
           jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/release.json" >> "$GITHUB_OUTPUT"
   cuda:
+    name: CUDA build and CUDA/Vulkan hardware verification
     needs: preflight
     # Environment approval and owner-only dispatch are gates, not a host sandbox.
     environment: cuda-release
     runs-on: [self-hosted, linux, x64, whisper-release-nvidia]
     timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -93,6 +98,29 @@ jobs:
           path: ${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics/
           retention-days: 7
           if-no-files-found: ignore
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-vulkan-export
+          run-id: ${{ needs.preflight.outputs.vulkan_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify hosted Linux Vulkan archive offline on NVIDIA (no rebuild)
+        env:
+          EXPORT_DIR: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash packaging/release/check-gpu.sh vulkan "$EXPORT_DIR"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-vulkan-verified
+          path: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}/vulkan/*
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: vulkan-diagnostics
+          path: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics/
+          retention-days: 7
+          if-no-files-found: ignore
   draft:
     needs: [preflight, cuda]
     runs-on: ubuntu-24.04
@@ -120,6 +148,16 @@ jobs:
         with:
           name: native-cuda-verified
           path: .build/artifacts/cuda
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-vulkan-verified
+          path: .build/artifacts/vulkan
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: native-windows-x86_64-vulkan
+          run-id: ${{ needs.preflight.outputs.vulkan_run }}
+          github-token: ${{ github.token }}
+          path: .build/artifacts/windows-x86_64-vulkan
       - name: Verify all archives, sources and GPU evidence, then create a draft
         env:
           GH_TOKEN: ${{ github.token }}

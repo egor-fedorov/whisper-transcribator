@@ -20,6 +20,14 @@ artifacts=$(gh api "repos/$repo/actions/runs/$run/artifacts" --paginate \
 for name in native-cpu native-cpu-aarch64 native-macos-arm64 native-windows-x86_64 native-windows-arm64; do
     grep -Fxq "$name" <<<"$artifacts" || fail "Missing or expired CI artifact: $name; rerun CI for the release commit"
 done
+vulkan_run=$(gh run list --repo "$repo" --workflow vulkan.yml --branch main --event push \
+    --commit "$revision" --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+[[ $vulkan_run =~ ^[0-9]+$ ]] || fail 'No successful main Vulkan CI run for this release commit'
+vulkan_artifacts=$(gh api "repos/$repo/actions/runs/$vulkan_run/artifacts" --paginate \
+    --jq '.artifacts[] | select(.expired == false) | .name')
+for name in native-vulkan-export native-windows-x86_64-vulkan; do
+    grep -Fxq "$name" <<<"$vulkan_artifacts" || fail "Missing or expired Vulkan CI artifact: $name; rerun Vulkan CI for the release commit"
+done
 # Referencing an environment in YAML can create it without protection rules.
 for environment in cuda-release release; do
     settings=$(gh api "repos/$repo/environments/$environment")
@@ -32,5 +40,5 @@ for environment in cuda-release release; do
     jq -e '.total_count == 1 and .branch_policies[0].name == "main" and .branch_policies[0].type == "branch"' \
         <<<"$policies" >/dev/null || fail "Environment must allow only the main branch: $environment"
 done
-jq -n --arg version "$version" --arg revision "$revision" --arg ci_run "$run" \
-    '{version: $version, revision: $revision, ci_run: $ci_run}'
+jq -n --arg version "$version" --arg revision "$revision" --arg ci_run "$run" --arg vulkan_run "$vulkan_run" \
+    '{version: $version, revision: $revision, ci_run: $ci_run, vulkan_run: $vulkan_run}'

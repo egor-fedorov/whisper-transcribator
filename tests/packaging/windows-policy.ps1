@@ -73,5 +73,29 @@ try {
     try { Copy-WindowsRuntime $native "$temporary/media" "$temporary/installed" $bundle arm64 $redist.FullName }
     catch { $rejected = $_.Exception.Message -match 'Missing baseline CPU plugin' }
     if (!$rejected) { throw 'Missing baseline accepted' }
+    # Vulkan's driver loader is external only for the Vulkan plugin, never a general OS allowance.
+    if (Test-SystemLibrary 'vulkan-1.dll') { throw 'Vulkan loader incorrectly treated as an OS DLL' }
+    function Get-Imports([string]$Binary, [string]$Architecture) {
+        if ($Architecture -ne 'x86_64') { throw 'Wrong Vulkan architecture' }
+        switch ([IO.Path]::GetFileName($Binary)) {
+            'whisper-transcribator.exe' { return @('kernel32.dll', 'vcruntime140.dll') }
+            'ggml-cpu-x64.dll' { return @('kernel32.dll') }
+            'ggml-vulkan.dll' { return @('vulkan-1.dll', 'kernel32.dll') }
+            'vcruntime140.dll' { return @('kernel32.dll') }
+            default { throw "Unexpected image: $Binary" }
+        }
+    }
+    Remove-Item "$bundle/bin/*"
+    foreach ($name in @('ggml-cpu-x64.dll', 'ggml-vulkan.dll')) { Write-Utf8 "$native/bin/$name" @($name) }
+    Copy-WindowsRuntime $native "$temporary/media" "$temporary/installed" $bundle x86_64 $redist.FullName vulkan
+    if (@(Compare-Object @('ggml-cpu-x64.dll', 'ggml-vulkan.dll') @(Get-Content "$bundle/share/backends.txt")).Count) {
+        throw 'Vulkan plugin missing from inventory'
+    }
+    if (Test-Path "$bundle/bin/vulkan-1.dll") { throw 'Driver loader must not be bundled' }
+    Remove-Item "$native/bin/ggml-vulkan.dll"
+    $rejected = $false
+    try { Copy-WindowsRuntime $native "$temporary/media" "$temporary/installed" $bundle x86_64 $redist.FullName vulkan }
+    catch { $rejected = $_.Exception.Message -match 'require the x86_64 Vulkan plugin' }
+    if (!$rejected) { throw 'Missing Vulkan plugin accepted' }
     Write-Output 'Windows runtime provenance policy passed'
 } finally { Remove-Item -LiteralPath $temporary -Recurse -Force }
