@@ -33,7 +33,8 @@ jobs:
           cache-to: type=gha,version=2,scope=archive-vulkan,mode=max,ignore-error=true,timeout=2m
       - name: Verify archive in clean Ubuntu 22.04 without SDK or GPU
         run: |
-          docker run --rm -v "$PWD:/work:ro" --tmpfs /verify \
+          # Docker tmpfs defaults to noexec; this scratch directory runs the verified archive.
+          docker run --rm -v "$PWD:/work:ro" --tmpfs /verify:rw,exec,nosuid,nodev \
             ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02 \
             bash -euc 'apt-get update; apt-get install -y --no-install-recommends jq; \
               cp /work/.build/vulkan-export/vulkan/* /verify/; \
