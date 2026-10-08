@@ -1,4 +1,4 @@
-# Developer/CI toolchain only; no SDK components are added to release archives.
+# Developer/CI toolchain; packaging includes header sources/notices, not SDK binaries.
 param([string]$Root = '.build/vulkan-sdk', [string]$Cache = '.build/vulkan-sdk-cache')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest

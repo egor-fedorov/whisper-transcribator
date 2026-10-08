@@ -1,6 +1,6 @@
 # Build And Release
 
-The 0.4 release line is a native CLI. Build artifacts live under `.build/`; nothing is
+The project is a native CLI. Build artifacts live under `.build/`; nothing is
 published automatically. Do not move or delete local `models/`, `transcripts/`
 or `benchmark-results/` during release cleanup. The immutable `v0.2.0` tag is the
 historical Python implementation, not another active release line.
@@ -100,9 +100,7 @@ no `cacert.pem`, and SHA-256 uses CommonCrypto, so it contains no OpenSSL.
 Native Windows CPU builds use MSVC on x64 and ClangCL on ARM64, the same pinned minimal FFmpeg recipe and vcpkg's pinned libcurl with Schannel. Follow [the contributor build instructions](../CONTRIBUTING.md#windows). CNG supplies SHA-256; OpenSSL is only a test-server dependency. The DLL-filled development/test directory is not a distribution archive: it also contains test executables and test-only libraries.
 
 `test (windows-2025, x64)` builds and runs model-free CTest, including private ACLs, long and Unicode paths, junction rejection, locking, interruption and crash recovery. An additional standard-user check catches assumptions hidden by elevated CI.
-`test (windows-11-arm, arm64)` repeats these checks natively on Windows ARM64 with
-the `arm64-windows` vcpkg triplet and baseline ARMv8-A/NEON inference. It does not
-inherit Linux's ARM multi-variant plugins. See [ARM64 toolchain limitations](windows.md#arm64).
+`test (windows-11-arm, arm64)` repeats these checks natively on Windows ARM64 with the `arm64-windows` vcpkg triplet and four CPU plugins: baseline ARMv8-A/NEON, DOTPROD, DOTPROD+FP16 and DOTPROD+FP16+I8MM. Selection uses Windows processor-feature probes; SVE/SME variants remain Linux-only. See [ARM64 toolchain limitations](windows.md#arm64).
 
 After a successful source build, run in the same x64 developer PowerShell:
 
@@ -113,6 +111,7 @@ After a successful source build, run in the same x64 developer PowerShell:
 
 The bundle script reuses the build instead of compiling again. It traverses PE imports for the CLI
 and every CPU plugin; only an explicit Windows-system DLL allowlist may remain external.
+Experimental Vulkan ZIPs additionally carry `ggml-vulkan.dll`; only that plugin may depend on the external driver-installed `vulkan-1.dll`. It is not treated as a Windows-system DLL or copied from the SDK.
 Required MSVC runtime files come exclusively from `VCToolsRedistDir/<x64|arm64>/Microsoft.VC*.CRT`, never
 the build tree, System32 or debug directories. Every bundled CRT DLL must match its provenance
 inventory. The unsigned ZIP includes dependency sources/notices, build metadata, vcpkg
@@ -176,12 +175,22 @@ and that the chosen container UID has access. Do not silently switch to CPU or
 use `--privileged` to hide runtime configuration errors. Prefer non-root execution
 with narrowly scoped mounts once device permissions are configured.
 
+## Vulkan
+
+Experimental Vulkan archives are separate `linux-x86_64-vulkan` and `windows-x86_64-vulkan` bundles. CPU plugins remain available, but GPU inference requires explicit `--device vulkan`; `auto` is unchanged. [Vulkan documentation](vulkan.md) distinguishes distribution from validated hardware coverage.
+
+The Experimental Vulkan workflow builds on hosted runners. Linux uses the same Ubuntu 22.04 recipe with `WT_VULKAN=ON`, pinned SDK headers/shader compiler and Ubuntu's loader library, preserving glibc 2.35. Only the loader, not SDK runtime binaries or vendor ICDs, is bundled. SDK header sources, notices and toolchain hashes accompany the archive. Windows uses `windows-build.ps1 -Vulkan` followed by `windows-bundle.ps1 -Build .build/windows-vulkan`; it requires the GPU driver's `vulkan-1.dll` at runtime, not a user-installed SDK.
+
+Hosted checks require no GPU, model downloads or inference: CTest, archive dependency/provenance checks, CPU operation and explicit Vulkan rejection with all ICDs hidden. Linux archive checks run in a fresh Ubuntu 22.04 container, Windows ZIP checks on a separate runner with restricted PATH. Artifacts `native-vulkan-export` (Linux archive plus separate test helpers) and `native-windows-x86_64-vulkan` expire after seven days. The release workflow reuses them from the successful main Vulkan run for the exact release commit.
+
+Linux/NVIDIA inference and interrupted resume are automatic release gates. Native Windows GPU execution and AMD/Intel devices remain unvalidated and do not block these explicitly experimental archives. No additional local/manual Vulkan archive verification is required.
+
 ## Gates
 
-Packaging internals and their boundaries are documented in [Architecture](architecture.md#packaging-and-ci). All platforms use `packaging/cmake/sources.cmake` for project/whisper.cpp/CLI11/JSON archives and notices; it consumes `WT_SOURCE_DIR`, `WT_BUILD_DIR` and `WT_BUNDLE_DIR` with the build's generated `package.env`. It neither rebuilds dependencies nor downloads them. FFmpeg and platform runtime provenance stay in their respective recipes. The source allowlist and independent Git-based release verification are unchanged.
+Packaging internals and their boundaries are documented in [Architecture](architecture.md#packaging-and-ci). All platforms use `packaging/cmake/sources.cmake` for project/whisper.cpp/CLI11/JSON archives and notices; it consumes `WT_SOURCE_DIR`, `WT_BUILD_DIR` and `WT_BUNDLE_DIR` with the build's generated `package.env`. Vulkan packagers also pass `WT_VULKAN_SDK` to collect header sources and their component licenses, without assuming a common SDK root license file. It neither rebuilds dependencies nor downloads them. FFmpeg and platform runtime provenance stay in their respective recipes. The source allowlist and independent Git-based release verification are unchanged.
 
 1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks, and CTest on macOS arm64.
-2. Build Linux x86_64 CPU/CUDA, Linux aarch64 CPU, macOS arm64 and Windows x64/ARM64 CPU archives. Inspect bundled
+2. Build Linux x86_64 CPU/CUDA/Vulkan, Linux aarch64 CPU, macOS arm64, Windows x64/ARM64 CPU and Windows x64 Vulkan archives. Inspect bundled
    dependencies, source packages, vendor notices and SHA256SUMS. No glibc, host driver or
    macOS or Windows system library may be bundled.
 3. Run `tests/smoke/prepare-smoke.sh` once, then `tests/smoke/smoke.sh` with networking disabled
@@ -194,8 +203,7 @@ Packaging internals and their boundaries are documented in [Architecture](archit
    Check the macOS archive offline on clean macOS 14 and 15 runners with CPU and Metal.
    Check the Windows ZIP on a fresh native runner with restricted PATH, its app-local runtime,
    Unicode paths, baseline/missing-plugin diagnostics and offline interrupted resume.
-5. On a trusted GPU machine, repeat the offline smoke with the CUDA archive and
-   `cuda` as the last script argument; test the CUDA image with driver injection.
+5. The release workflow automatically checks the exact CUDA and Linux Vulkan archives offline on the approved NVIDIA runner, with driver injection and explicit backend selection.
    On an Apple silicon Mac, repeat it with the macOS archive and `metal`.
 6. Scan the entire Git history for secrets. Review the diff and ensure private
    data/weights and generated artifacts remain ignored. Update release notes.
@@ -204,7 +212,7 @@ Packaging internals and their boundaries are documented in [Architecture](archit
 CI runs on pushes to `main` and pull requests, without duplicate push runs for
 PR branches. The protected `main` requires the GCC, Clang/sanitizer, package, smoke and
 secret checks; no second reviewer is required for this single-maintainer project.
-CI runs CPU/compiler/sanitizer/package checks on GitHub-hosted machines. CUDA compilation and hardware verification belong to the separate, owner-dispatched [release workflow](#release-workflow), not pull-request or push CI. Every release needs a successful main CI run for its exact source commit; the release workflow creates a draft only after the exact CUDA archive passes hardware tests.
+CI runs CPU/compiler/sanitizer/package checks on GitHub-hosted machines. CUDA compilation and GPU hardware verification belong to the separate, owner-dispatched [release workflow](#release-workflow), not pull-request or push CI. Every release needs successful main CI and Experimental Vulkan runs for its exact source commit; the release workflow creates a draft only after the exact CUDA and Linux Vulkan archives pass hardware tests.
 The aarch64 legs run natively on `ubuntu-24.04-arm` as `test (gcc, g++, OFF, aarch64)`,
 `package (aarch64)` and `smoke (aarch64)`; existing x86_64 check names are unchanged.
 The aarch64 checks are required by branch protection, alongside native Windows test and smoke checks.
@@ -236,17 +244,19 @@ memory tests use synthetic audio and fake inference, not full lecture recognitio
 
 ## Prepare And Publish
 
-The 0.4.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.4.0`. Current development targets `0.5.0-dev`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
+The 0.5.0 release commit has an empty `WT_VERSION_SUFFIX` and reports `0.5.0`. Development versions use a `-dev+g<revision>` suffix, plus `.dirty` when applicable; source provenance also remains available in release metadata. Git-less builds without explicit provenance record `unknown`. Docker receives revision/dirty state through build arguments because `.git` is deliberately excluded. CMake refreshes metadata during every build, rewriting the generated files only when it changes. For each release, update the project version and clear the suffix in the reviewed release commit, then build from that clean commit. After publishing, advance the development version and restore `-dev` in a separate commit. Do not override the suffix just to rename a development archive: the release helper rejects mismatched versions, source revisions and dirty/unknown provenance. Publishing remains a separate approved operation.
 
 ### Release Workflow
 
-`.github/workflows/release.yml` is dispatched by the repository owner from `main`, with a pre-existing reviewed `vX.Y.Z` tag. Re-runs must also be initiated by the owner. A hosted preflight rejects development versions, tags outside `main`, missing release notes, failed/missing main CI and missing/expired CI artifacts before it queues GPU work. The five hosted archives are reused from that exact successful main CI run, not rebuilt from a later `main`.
+`.github/workflows/release.yml` is dispatched by the repository owner from `main`, with a pre-existing reviewed `vX.Y.Z` tag. Re-runs must also be initiated by the owner. A hosted preflight rejects development versions, tags outside `main`, missing release notes, failed/missing main CI or Vulkan CI and missing/expired artifacts before it queues GPU work. Five CPU/Metal archives and two experimental Vulkan archives are reused from those exact successful main runs, not rebuilt from a later `main`.
 
 The `cuda` job runs on `[self-hosted, linux, x64, whisper-release-nvidia]` after approval of the `cuda-release` environment. Docker Buildx compiles the full SM75/80/86/89/90 matrix. `build_jobs` defaults to eight and accepts 1-32; CUDA compilation consumes host CPU/RAM, not GPU compute. Choose a lower value if compiler processes exhaust RAM. Developer Docker builds retain their default four jobs through `BUILD_JOBS`.
 
 The `cuda-release` export contains the normal archive plus separate test helpers; the helpers never enter a published archive. Verification builds a clean Ubuntu 22.04 test image from that exact archive, downloads only the pinned public JFK fixture and tiny/VAD models, then runs non-root with `--network none`, read-only weights/root filesystem and explicit `--device cuda`. The tests cover 11-second speech, 41-second windowing and interrupted resume, not full lectures. CPU fallback is a failure. The resulting `cuda-verification.json` binds hardware diagnostics and successful checks to the archive SHA-256 and source revision. Diagnostics are retained separately for seven days.
 
-Only then can the hosted `draft` job, gated by the `release` environment, validate all six archives and packaged sources and upload a draft. The GPU job has no release-write permission. Evidence comes from the successful dependent job in the same run, never an arbitrary artifact run supplied by the caller. The JSON is an audit record, not a cryptographic attestation of hardware execution. Publication remains an explicit owner action; the workflow does not change versions, create tags or overwrite existing assets.
+The same approved job downloads `native-vulkan-export` from the exact successful hosted Vulkan run and repeats offline verification with explicit `--device vulkan`, without rebuilding the archive. It enables NVIDIA's `graphics,utility` driver capabilities for Vulkan, versus `compute,utility` for CUDA ([Container Toolkit documentation](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/docker-specialized.html)). The host needs a working Vulkan driver/ICD, but no SDK. This produces a separate `vulkan-verification.json`. The existing `cuda-release` environment is deliberately reused; no extra environment or runner registration is required.
+
+Only then can the hosted `draft` job, gated by the `release` environment, validate all eight archives and packaged sources and upload a draft. Both hardware reports are mandatory and backend-specific. The GPU job has no release-write permission. Evidence comes from the successful dependent job in the same run, never an arbitrary artifact run supplied by the caller. The JSON is an audit record, not a cryptographic attestation of hardware execution. Publication remains an explicit owner action; the workflow does not change versions, create tags or overwrite existing assets.
 
 Windows packaging and future SignPath signing stay in their own GitHub-hosted build chain. This mixed-runner workflow consumes the already produced ZIPs and must not submit signing requests. Until signing is implemented, ZIPs remain unsigned with the documented Smart App Control limitations; signing is not silently claimed by the release gate.
 
@@ -264,14 +274,14 @@ After the release commit has passed main CI and its tag has been pushed:
 gh workflow run release.yml --ref main -f tag=vX.Y.Z -f build_jobs=8
 ```
 
-Approve `cuda-release`, bring the prepared runner online for that job, then approve the hosted draft after GPU verification. Review the draft and publish manually. Do not reuse a CUDA report after changing or rebuilding the archive; rerun verification.
+Approve `cuda-release`, bring the prepared runner online for that job, then approve the hosted draft after both GPU verifications. Review the draft and publish manually. Do not reuse either hardware report after changing or rebuilding its archive; rerun verification.
 
 ### Manual Preparation
 
-Keep the six archives and their original `SHA256SUMS` under
+Keep the eight archives and their original `SHA256SUMS` under
 `.build/artifacts/cpu/`, `.build/artifacts/cuda/`, `.build/artifacts/cpu-aarch64/` and
 `.build/artifacts/macos-arm64/`, plus `.build/artifacts/windows-x86_64/` and
-`.build/artifacts/windows-arm64/` for the ZIPs
+`.build/artifacts/windows-arm64/` for the CPU ZIPs, plus `.build/artifacts/vulkan/` and `.build/artifacts/windows-x86_64-vulkan/`
 (the `native-cpu-aarch64`, `native-macos-arm64`, `native-windows-x86_64` and `native-windows-arm64` CI artifacts
 of the release commit). Prepare from a clean checkout
 of the release commit after its `main` CI has passed. The helper verifies every
@@ -280,7 +290,7 @@ for the Windows ZIP), then checks local and
 remote tag targets and CI. It never publishes automatically or overwrites assets.
 
 ```bash
-version=0.4.0 # only after the release commit and all gates above
+version=0.5.0 # only after the release commit and all gates above
 bash packaging/release.sh "$version" .build/artifacts
 git tag -a "v$version" -m "Release $version"
 git push origin "v$version"
@@ -290,7 +300,9 @@ gh release view "v$version"
 
 For manual preparation, build the CUDA `cuda-release` target into `.build/cuda-export`, run `bash packaging/release/check-cuda.sh .build/cuda-export` on the trusted NVIDIA machine, and copy its `cuda/` directory into the artifact root. This produces the mandatory hardware report; an ordinary `archive` export alone is insufficient. Both `--check` and `--draft` reject a missing report, CPU fallback, failed checks or a report for a different archive/source revision.
 
-The draft contains the six archives, combined archive checksums, `cuda-verification.json`, release notes and the source commit/CI link. After reviewing the draft and GPU evidence:
+For Vulkan, download `native-vulkan-export` from the exact successful main Vulkan run into `.build/vulkan-export`, run `bash packaging/release/check-gpu.sh vulkan .build/vulkan-export` on the trusted NVIDIA machine, and copy its `vulkan/` directory into the artifact root. Download the Windows Vulkan ZIP from the same run. These commands are an alternative to automation, not extra manual gates after it.
+
+The draft contains eight archives, combined archive checksums, `cuda-verification.json`, `vulkan-verification.json`, release notes and source commit/CI links. After reviewing the draft and GPU evidence:
 
 ```bash
 gh release edit "v$version" --draft=false --latest

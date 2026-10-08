@@ -22,7 +22,8 @@ git ls-tree -r --name-only HEAD -- "${inputs[@]}" | LC_ALL=C sort >"$temporary/e
 assets=()
 # Artifact directory, operating system, architecture and flavor of every published archive.
 targets=(cpu:linux:x86_64:cpu cuda:linux:x86_64:cuda cpu-aarch64:linux:aarch64:cpu
-    macos-arm64:macos:arm64:metal windows-arm64:windows:arm64:cpu windows-x86_64:windows:x86_64:cpu)
+    macos-arm64:macos:arm64:metal windows-arm64:windows:arm64:cpu windows-x86_64:windows:x86_64:cpu
+    vulkan:linux:x86_64:vulkan windows-x86_64-vulkan:windows:x86_64:vulkan)
 archive_read() {
     if [[ $os == windows ]]; then unzip -p "$archive" "${1#./}"; else tar -xOzf "$archive" "$1"; fi
 }
@@ -42,6 +43,7 @@ for target in "${targets[@]}"; do
     grep -Fxq 'WT_SOURCE_DIRTY=false' "$temporary/metadata" || fail "Archive sources are dirty or unknown: $directory"
     grep -Fxq "WT_TARGET_OS=$os" "$temporary/metadata" || fail "Archive system differs from its name: $directory"
     grep -Fxq "WT_TARGET_ARCH=$arch" "$temporary/metadata" || fail "Archive architecture differs from its name: $directory"
+    grep -Fxq "WT_PACKAGE_FLAVOR=$flavor" "$temporary/metadata" || fail "Archive flavor differs from its name: $directory"
     archive_read "./sources/whisper-transcribator-$version.tar.gz" >"$temporary/source.tar.gz"
     tar -tzf "$temporary/source.tar.gz" | sed '/\/$/d' | LC_ALL=C sort >"$temporary/actual"
     cmp "$temporary/expected" "$temporary/actual" || fail "Source file list differs from HEAD: $directory"
@@ -53,10 +55,12 @@ for target in "${targets[@]}"; do
     assets+=("$archive")
     cat "$temporary/$directory.sha" >>"$temporary/SHA256SUMS"
 done
-echo "All six Linux, macOS and Windows archive checksums and packaged sources match $commit"
-bash "$scripts/release/verify-cuda.sh" "$root/cuda/whisper-transcribator-$version-linux-x86_64-cuda.tar.gz" \
-    "$root/cuda/cuda-verification.json" "$commit"
-assets+=("$root/cuda/cuda-verification.json")
+echo "All eight Linux, macOS and Windows archive checksums and packaged sources match $commit"
+for device in cuda vulkan; do
+    bash "$scripts/release/verify-gpu.sh" "$device" "$root/$device/whisper-transcribator-$version-linux-x86_64-$device.tar.gz" \
+        "$root/$device/$device-verification.json" "$commit"
+    assets+=("$root/$device/$device-verification.json")
+done
 [[ $mode = --draft ]] || exit 0
 
 tag="v$version"
@@ -66,11 +70,16 @@ repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 run=$(gh run list --repo "$repo" --workflow ci.yml --branch main --event push \
     --commit "$commit" --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
 [[ $run =~ ^[0-9]+$ ]] || fail 'No successful main CI run for this commit'
+vulkan_run=$(gh run list --repo "$repo" --workflow vulkan.yml --branch main --event push \
+    --commit "$commit" --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+[[ $vulkan_run =~ ^[0-9]+$ ]] || fail 'No successful main Vulkan CI run for this commit'
 cp "$notes" "$temporary/notes.md"
 # Markdown backticks are literal, not shell command substitutions.
 # shellcheck disable=SC2016
 printf '\nSource commit: `%s`. [Successful CI](https://github.com/%s/actions/runs/%s).\n' \
     "$commit" "$repo" "$run" >>"$temporary/notes.md"
+printf '\n[Successful Vulkan CI](https://github.com/%s/actions/runs/%s).\n' \
+    "$repo" "$vulkan_run" >>"$temporary/notes.md"
 gh release create "$tag" --repo "$repo" --verify-tag --target "$commit" --draft \
     --title "$tag" --notes-file "$temporary/notes.md" "${assets[@]}" "$temporary/SHA256SUMS"
-echo "Draft prepared with CUDA hardware evidence. Review assets before explicitly publishing $tag."
+echo "Draft prepared with CUDA and Linux Vulkan hardware evidence. Review assets before explicitly publishing $tag."

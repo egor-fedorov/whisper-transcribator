@@ -1,12 +1,14 @@
 # Verify the exact ZIP, not the development directory. No models or inference.
 param(
     [Parameter(Mandatory)][string]$Artifacts,
-    [ValidateSet('x86_64', 'arm64')][string]$Architecture = 'x86_64'
+    [ValidateSet('x86_64', 'arm64')][string]$Architecture = 'x86_64',
+    [ValidateSet('cpu', 'vulkan')][string]$Flavor = 'cpu'
 )
 . "$PSScriptRoot/../../packaging/windows-common.ps1"
 $Artifacts = (Resolve-Path $Artifacts).Path
 $target = Get-WindowsTarget $Architecture
-$archives = @(Get-ChildItem $Artifacts -Filter "*-windows-$Architecture-cpu.zip")
+if ($Flavor -eq 'vulkan' -and $Architecture -ne 'x86_64') { throw 'Vulkan ZIPs are x86_64-only' }
+$archives = @(Get-ChildItem $Artifacts -Filter "*-windows-$Architecture-$Flavor.zip")
 if ($archives.Count -ne 1) { throw 'Expected exactly one Windows ZIP' }
 $archive = $archives[0]
 $expected = "$((Get-FileHash $archive.FullName).Hash.ToLowerInvariant())  $($archive.Name)"
@@ -20,7 +22,8 @@ try {
         throw 'Build metadata must use LF for the cross-platform release helper'
     }
     if ($metadata.WT_TARGET_OS -ne 'windows' -or $metadata.WT_TARGET_ARCH -ne $Architecture -or
-        $archive.Name -ne "whisper-transcribator-$($metadata.WT_PACKAGE_VERSION)-windows-$Architecture-cpu.zip") {
+        $metadata.WT_PACKAGE_FLAVOR -ne $Flavor -or
+        $archive.Name -ne "whisper-transcribator-$($metadata.WT_PACKAGE_VERSION)-windows-$Architecture-$Flavor.zip") {
         throw 'ZIP target or version metadata mismatch'
     }
     $listed = @{}
@@ -47,6 +50,14 @@ try {
     }
     $backends = @(Get-Content "$bundle/share/backends.txt")
     $plugins = @(Get-ChildItem "$bundle/bin/ggml-cpu*.dll" | ForEach-Object Name)
+    if ($Flavor -eq 'vulkan') {
+        if (!(Test-Path "$bundle/bin/ggml-vulkan.dll")) { throw 'Missing Vulkan plugin' }
+        $plugins += 'ggml-vulkan.dll'
+        foreach ($file in @('licenses/Vulkan-headers.txt', 'sources/vulkan-sdk-headers.tar.gz',
+                'share/vulkan-sdk.json', 'share/external-runtime.txt', 'licenses/Apache-2.0.txt')) {
+            if ((Get-Item "$bundle/$file").Length -eq 0) { throw "Missing Vulkan provenance: $file" }
+        }
+    }
     if ($target.Baseline -notin $plugins -or @(Compare-Object $backends $plugins).Count) {
         throw 'CPU plugin inventory mismatch'
     }
@@ -56,10 +67,12 @@ try {
         if (@(Compare-Object $expectedPlugins $plugins).Count) { throw 'ARM64 variant set mismatch' }
     }
     foreach ($file in Get-ChildItem "$bundle/bin" -File) {
-        if ($file.Name -notmatch '^(whisper-transcribator\.exe|whisper\.dll|ggml(-base|-cpu(?:-[a-z0-9._]+)?)?\.dll|av(codec|format|util)-\d+\.dll|swresample-\d+\.dll|libcurl\.dll|z\.dll|(msvcp|vcruntime|concrt)140[^/]*\.dll)$') {
+        $vulkanPlugin = $Flavor -eq 'vulkan' -and $file.Name -eq 'ggml-vulkan.dll'
+        if (!$vulkanPlugin -and $file.Name -notmatch '^(whisper-transcribator\.exe|whisper\.dll|ggml(-base|-cpu(?:-[a-z0-9._]+)?)?\.dll|av(codec|format|util)-\d+\.dll|swresample-\d+\.dll|libcurl\.dll|z\.dll|(msvcp|vcruntime|concrt)140[^/]*\.dll)$') {
             throw "Unwanted executable/library: $($file.Name)"
         }
         foreach ($import in Get-Imports $file.FullName $Architecture) {
+            if ($vulkanPlugin -and $import -eq 'vulkan-1.dll') { continue }
             if (!(Test-SystemLibrary $import) -and !(Test-Path "$bundle/bin/$import")) {
                 throw "Missing app-local dependency: $($file.Name) -> $import"
             }
@@ -84,6 +97,10 @@ try {
         if ((Invoke-Checked $binary @('--version')).Trim() -ne $metadata.WT_PACKAGE_VERSION) { throw 'Binary version mismatch' }
         $doctor = (Invoke-Checked $binary @('doctor', '--device', 'cpu', '--json')) | ConvertFrom-Json
         if ($doctor.device -ne 'cpu' -or $doctor.errors.Count -or !$doctor.cpu_backend) { throw 'Archive doctor failed' }
+        if ($Flavor -eq 'vulkan') {
+            & "$PSScriptRoot/../integration/inference/vulkan-unavailable.ps1" -Binary $binary
+            if ($LASTEXITCODE -ne 0) { throw 'Vulkan archive unavailable-device check failed' }
+        }
         if ($Architecture -eq 'arm64') {
             if (!('WhisperArmFeatures' -as [type])) {
                 Add-Type @'

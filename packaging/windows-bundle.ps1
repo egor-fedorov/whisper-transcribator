@@ -14,8 +14,13 @@ try {
     $metadata = Read-Metadata "$Build/generated/package.env"
     if ($metadata.WT_TARGET_OS -ne 'windows') { throw 'Expected a Windows build' }
     $arch = $metadata.WT_TARGET_ARCH
+    $flavor = $metadata.WT_PACKAGE_FLAVOR
+    if ($flavor -notin @('cpu', 'vulkan')) { throw 'Unsupported Windows archive flavor' }
     $target = Get-WindowsTarget $arch
-    if (!$Output) { $Output = ".build/artifacts/windows-$arch" }
+    if (!$Output) {
+        $Output = ".build/artifacts/windows-$arch"
+        if ($flavor -eq 'vulkan') { $Output += '-vulkan' }
+    }
     New-Item -ItemType Directory -Force $Output | Out-Null
     $Output = (Resolve-Path $Output).Path
     $bundle = Join-Path $Build 'bundle'
@@ -29,7 +34,11 @@ try {
     $crt = @(Get-ChildItem (Join-Path $env:VCToolsRedistDir $target.Toolchain) -Directory -Filter 'Microsoft.VC*.CRT')
     if ($crt.Count -ne 1) { throw "Expected one release $arch CRT redistributable directory" }
     $installed = Join-Path $Build "vcpkg_installed/$($target.Toolchain)-windows"
-    Copy-WindowsRuntime $Build $Media $installed $bundle $arch $crt[0].FullName
+    Copy-WindowsRuntime $Build $Media $installed $bundle $arch $crt[0].FullName $flavor
+    if ($flavor -eq 'vulkan') {
+        if (!$env:VULKAN_SDK) { throw 'VULKAN_SDK is required for header sources and notices' }
+        Write-Utf8 "$bundle/share/external-runtime.txt" @('vulkan-1.dll: install a Vulkan-capable GPU driver; do not install the SDK')
+    }
     Write-Utf8 "$bundle/share/windows-toolchain.txt" @(
         "VCPKG_BASELINE=$baseline", "MSVC_VERSION=$env:VCToolsVersion",
         "SDK_VERSION=$($env:WindowsSDKVersion.TrimEnd([char[]]'\/'))"
@@ -42,8 +51,9 @@ try {
     Copy-Item "$Media/ffmpeg.tar.xz" "$bundle/sources/$($ffmpeg[0].Name).tar.xz"
     Copy-Item "$($ffmpeg[0].FullName)/COPYING.LGPLv2.1" "$bundle/licenses/FFmpeg-LGPL-2.1.txt"
     Copy-Item "$($ffmpeg[0].FullName)/ffbuild/config.log" "$bundle/sources/ffmpeg-config.log"
-    Invoke-Checked cmake @("-DWT_SOURCE_DIR=$root", "-DWT_BUILD_DIR=$Build", "-DWT_BUNDLE_DIR=$bundle",
-        '-P', "$PSScriptRoot/cmake/sources.cmake")
+    $sourceArgs = @("-DWT_SOURCE_DIR=$root", "-DWT_BUILD_DIR=$Build", "-DWT_BUNDLE_DIR=$bundle")
+    if ($flavor -eq 'vulkan') { $sourceArgs += "-DWT_VULKAN_SDK=$env:VULKAN_SDK" }
+    Invoke-Checked cmake ($sourceArgs + @('-P', "$PSScriptRoot/cmake/sources.cmake"))
     & "$PSScriptRoot/windows-sources.ps1" -Vcpkg $Vcpkg -Installed $installed -Bundle $bundle
     $version = $metadata.WT_PACKAGE_VERSION
     $checksums = @(Get-ChildItem $bundle -File -Recurse | Sort-Object FullName | ForEach-Object {
@@ -51,7 +61,7 @@ try {
         "$((Get-FileHash $_.FullName).Hash.ToLowerInvariant())  $relative"
     })
     Write-Utf8 "$bundle/share/files.sha256" $checksums
-    $name = "whisper-transcribator-$version-windows-$arch-cpu.zip"
+    $name = "whisper-transcribator-$version-windows-$arch-$flavor.zip"
     $archive = Join-Path $Output $name
     if (Test-Path $archive) { Remove-Item $archive }
     # Retain every staged entry without Compress-Archive's hidden-file filtering.

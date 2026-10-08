@@ -7,10 +7,15 @@ mkdir -p "$root/repo" "$root/bin"
 # shellcheck disable=SC2016
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
     'case "$1 $2" in' \
-    '  "run list") if [[ ${NO_CI:-0} = 0 ]]; then echo 123; fi ;;' \
+    '  "run list") if [[ " $* " == *" vulkan.yml "* ]]; then' \
+    '    if [[ ${NO_VULKAN_CI:-0} = 0 ]]; then echo 456; fi' \
+    '    elif [[ ${NO_CI:-0} = 0 ]]; then echo 123; fi ;;' \
     '  "api repos/example/project/actions/runs/123/artifacts")' \
     '    echo native-cpu; echo native-cpu-aarch64; echo native-macos-arm64; echo native-windows-x86_64' \
     '    if [[ ${MISSING_ARTIFACT:-0} = 0 ]]; then echo native-windows-arm64; fi ;;' \
+    '  "api repos/example/project/actions/runs/456/artifacts")' \
+    '    echo native-vulkan-export' \
+    '    if [[ ${MISSING_VULKAN:-0} = 0 ]]; then echo native-windows-x86_64-vulkan; fi ;;' \
     '  "api "*/deployment-branch-policies)' \
     '    jq -n --arg branch "${ALLOW_BRANCH:-main}" '\''{total_count: 1, branch_policies: [{name: $branch, type: "branch"}]}'\'' ;;' \
     '  "api repos/example/project/environments/"*)' \
@@ -37,7 +42,7 @@ git tag v0.5.0
 git update-ref refs/remotes/origin/main HEAD
 bash "$helper" example/project v0.5.0 >"$root/result.json"
 jq -e --arg revision "$(git rev-parse HEAD)" \
-    '.version == "0.5.0" and .revision == $revision and .ci_run == "123"' "$root/result.json"
+    '.version == "0.5.0" and .revision == $revision and .ci_run == "123" and .vulkan_run == "456"' "$root/result.json"
 reject() {
     local message=$1
     shift
@@ -49,6 +54,8 @@ reject() {
 reject 'Expected a vX.Y.Z' '../v0.5.0'
 NO_CI=1 reject 'No successful main CI' v0.5.0
 MISSING_ARTIFACT=1 reject 'Missing or expired CI artifact' v0.5.0
+NO_VULKAN_CI=1 reject 'No successful main Vulkan CI' v0.5.0
+MISSING_VULKAN=1 reject 'Missing or expired Vulkan CI artifact' v0.5.0
 UNPROTECTED=true reject 'Configure owner approval' v0.5.0
 ALLOW_BRANCH='*' reject 'Environment must allow only the main branch' v0.5.0
 git tag v0.5.1

@@ -6,7 +6,7 @@ COPY bundle/ /opt/whisper-transcribator/
 COPY tools/ /tools/
 COPY checks/ /checks/
 ENV LD_LIBRARY_PATH=/opt/whisper-transcribator/lib \
-    NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    NVIDIA_VISIBLE_DEVICES=all \
     WT_PROCESS_RUNNER=/tools/wt-process-runner HOME=/tmp
 USER 10001:10001
 WORKDIR /tmp

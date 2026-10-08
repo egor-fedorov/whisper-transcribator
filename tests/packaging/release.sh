@@ -39,13 +39,15 @@ git add .
 git commit -qm 'Fixture'
 assets="$root/artifacts with spaces"
 targets=(cpu:linux:x86_64:cpu cuda:linux:x86_64:cuda cpu-aarch64:linux:aarch64:cpu
-    macos-arm64:macos:arm64:metal windows-arm64:windows:arm64:cpu windows-x86_64:windows:x86_64:cpu)
+    macos-arm64:macos:arm64:metal windows-arm64:windows:arm64:cpu windows-x86_64:windows:x86_64:cpu
+    vulkan:linux:x86_64:vulkan windows-x86_64-vulkan:windows:x86_64:vulkan)
 # Set to another architecture or system to mislabel the aarch64 or macOS archive's metadata.
 aarch64_metadata=aarch64
 macos_metadata=macos
 windows_metadata=windows
 windows_arch=x86_64
 windows_arm_arch=arm64
+vulkan_flavor=vulkan
 repack_assets() {
     local target directory os arch flavor metadata_os metadata_arch name
     for target in "${targets[@]}"; do
@@ -60,6 +62,11 @@ repack_assets() {
         cp -a "$root/bundle" "$root/staged"
         printf 'WT_TARGET_OS=%s\nWT_TARGET_ARCH=%s\n' "$metadata_os" "$metadata_arch" \
             >>"$root/staged/share/build-metadata.env"
+        if [[ $directory == vulkan ]]; then
+            printf 'WT_PACKAGE_FLAVOR=%s\n' "$vulkan_flavor" >>"$root/staged/share/build-metadata.env"
+        else
+            printf 'WT_PACKAGE_FLAVOR=%s\n' "$flavor" >>"$root/staged/share/build-metadata.env"
+        fi
         mkdir -p "$assets/$directory"
         if [[ $os == windows ]]; then
             name="whisper-transcribator-0.3.0-$os-$arch-$flavor.zip"
@@ -79,13 +86,17 @@ build_assets() {
     git archive HEAD CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE \
         -o "$root/bundle/sources/whisper-transcribator-0.3.0.tar.gz"
     repack_assets
-    jq -n --arg archive 'whisper-transcribator-0.3.0-linux-x86_64-cuda.tar.gz' \
-        --arg digest "$(sha256sum <"$assets/cuda/whisper-transcribator-0.3.0-linux-x86_64-cuda.tar.gz" | cut -d ' ' -f1)" \
-        --arg revision "$(git rev-parse HEAD)" \
-        '{schema_version: 1, archive: $archive, sha256: $digest, source_revision: $revision,
-          device: "cuda", checks: {smoke: true, streaming_resume: true, offline: true},
-          doctor: {device: "cuda", errors: [], source_revision: $revision, source_dirty: false,
-                   selected_device: {description: "Synthetic GPU (test only)"}}}' >"$assets/cuda/cuda-verification.json"
+    local device archive
+    for device in cuda vulkan; do
+        archive="whisper-transcribator-0.3.0-linux-x86_64-$device.tar.gz"
+        jq -n --arg device "$device" --arg archive "$archive" \
+            --arg digest "$(sha256sum <"$assets/$device/$archive" | cut -d ' ' -f1)" \
+            --arg revision "$(git rev-parse HEAD)" \
+            '{schema_version: 1, archive: $archive, sha256: $digest, source_revision: $revision,
+              device: $device, checks: {smoke: true, streaming_resume: true, offline: true},
+              doctor: {device: $device, errors: [], source_revision: $revision, source_dirty: false,
+                       selected_device: {description: "Synthetic GPU (test only)"}}}' >"$assets/$device/$device-verification.json"
+    done
 }
 reject() {
     local message=$1
@@ -100,16 +111,31 @@ reject() {
 build_assets
 bash "$helper" 0.3.0 "$assets"
 test ! -e "$GH_TEST_LOG"
-cp "$assets/cuda/cuda-verification.json" "$root/evidence.json"
-rm "$assets/cuda/cuda-verification.json"
-reject 'Missing or incompatible CUDA hardware verification' 0.3.0 "$assets"
-for mutation in '.sha256 = "wrong"' '.source_revision = "wrong"' '.device = "cpu"' \
-    '.checks.streaming_resume = false' '.checks.offline = false' '.doctor.device = "cpu"' \
-    '.doctor.errors = ["No GPU"]' '.doctor.source_dirty = true'; do
-    jq "$mutation" "$root/evidence.json" >"$assets/cuda/cuda-verification.json"
-    reject 'Missing or incompatible CUDA hardware verification' 0.3.0 "$assets"
+for device in cuda vulkan; do
+    cp "$assets/$device/$device-verification.json" "$root/evidence.json"
+    rm "$assets/$device/$device-verification.json"
+    reject "Missing or incompatible $device hardware verification" 0.3.0 "$assets"
+    for mutation in '.sha256 = "wrong"' '.source_revision = "wrong"' '.device = "cpu"' \
+        '.checks.streaming_resume = false' '.checks.offline = false' '.doctor.device = "cpu"' \
+        '.doctor.errors = ["No GPU"]' '.doctor.source_dirty = true'; do
+        jq "$mutation" "$root/evidence.json" >"$assets/$device/$device-verification.json"
+        reject "Missing or incompatible $device hardware verification" 0.3.0 "$assets"
+    done
+    cp "$root/evidence.json" "$assets/$device/$device-verification.json"
 done
-cp "$root/evidence.json" "$assets/cuda/cuda-verification.json"
+cp "$assets/cuda/cuda-verification.json" "$assets/vulkan/vulkan-verification.json"
+reject 'Missing or incompatible vulkan hardware verification' 0.3.0 "$assets"
+build_assets
+for directory in vulkan windows-x86_64-vulkan; do
+    rm -r "${assets:?}/${directory:?}"
+    reject "Missing archive:" 0.3.0 "$assets"
+    build_assets
+done
+vulkan_flavor=cpu
+build_assets
+reject 'Archive flavor differs from its name: vulkan' 0.3.0 "$assets"
+vulkan_flavor=vulkan
+build_assets
 printf 'WT_PACKAGE_VERSION=0.3.0-dev\n' >"$root/bundle/share/build-metadata.env"
 repack_assets
 reject 'Refusing a development' 0.3.0 "$assets"
@@ -166,6 +192,7 @@ printf 'WT_PACKAGE_VERSION=0.3.0\nWT_SOURCE_REVISION=%040d\nWT_SOURCE_DIRTY=fals
 reject 'Archive revision differs from HEAD: windows-x86_64' 0.3.0 "$assets"
 build_assets
 printf 'tampered Windows source\n' >src/main.cpp
+unzip -oq "$assets/windows-x86_64/whisper-transcribator-0.3.0-windows-x86_64-cpu.zip" -d "$root/staged"
 tar -czf "$root/staged/sources/whisper-transcribator-0.3.0.tar.gz" CMakeLists.txt CMakePresets.json vcpkg.json .gitattributes cmake src tests packaging LICENSE
 git show HEAD:src/main.cpp >src/main.cpp
 (cd "$root/staged" && cmake -E tar cf "$assets/windows-x86_64/whisper-transcribator-0.3.0-windows-x86_64-cpu.zip" --format=zip sources share)
@@ -198,6 +225,9 @@ bash "$helper" 0.3.0 "$assets" --draft
 grep -Fxq -- '--draft' "$GH_TEST_LOG"
 grep -Fxq -- '--verify-tag' "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cuda/cuda-verification.json" "$GH_TEST_LOG"
+grep -Fxq -- "$assets/vulkan/vulkan-verification.json" "$GH_TEST_LOG"
+grep -Fxq -- "$assets/vulkan/whisper-transcribator-0.3.0-linux-x86_64-vulkan.tar.gz" "$GH_TEST_LOG"
+grep -Fxq -- "$assets/windows-x86_64-vulkan/whisper-transcribator-0.3.0-windows-x86_64-vulkan.zip" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cpu/whisper-transcribator-0.3.0-linux-x86_64-cpu.tar.gz" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cpu-aarch64/whisper-transcribator-0.3.0-linux-aarch64-cpu.tar.gz" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/macos-arm64/whisper-transcribator-0.3.0-macos-arm64-metal.tar.gz" "$GH_TEST_LOG"
