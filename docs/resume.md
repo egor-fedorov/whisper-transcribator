@@ -1,5 +1,5 @@
 # Long Recordings And Resume
-This describes version 0.4.0. Older 0.3.0 archives do not provide windowing or resume.
+This describes version 0.5.0, which retains the 0.4.0 checkpoint and algorithm versions. Older 0.3.0 archives do not provide windowing or resume.
 
 ## Windows And Memory
 Audio is decoded incrementally into mono 16 kHz PCM and recognized in windows of at most 120 seconds. `--chunk-seconds` accepts 30-600. Smaller windows reduce recording-dependent buffers, but not model weights or backend workspaces: this is not a hard RAM/VRAM cap.

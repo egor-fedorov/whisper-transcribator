@@ -6,7 +6,7 @@
 
 A local C++17 CLI that turns the audio stream of a media file into TXT, SRT, WebVTT or JSON. One whisper.cpp backend, FFmpeg libraries for decoding, no Python runtime or external ffmpeg executable required.
 
-**0.4.0** adds bounded audio windows, resume, paragraphs, WebVTT and portable CPU plugins. See the [release notes](docs/releases/0.4.0.md) for upgrade guidance and known limitations.
+**0.5.0** adds native Windows x64/ARM64, macOS Apple silicon and Linux ARM64 archives, experimental Vulkan archives and removable-drive support. See the [release notes](docs/releases/0.5.0.md) for upgrade guidance and known limitations, including unsigned Windows binaries.
 
 ## Quick Start
 With an [extracted release archive](#install-a-published-archive), transcribe one file or a directory:
@@ -19,16 +19,18 @@ With an [extracted release archive](#install-a-published-archive), transcribe on
 
 Files run sequentially with one loaded model. A video track is neither required nor decoded. Directory discovery is non-recursive, case-insensitive by extension and sorted by filename bytes; explicit file arguments retain their order. Supported extensions include MP4/M4A, MKV/MKA, WAV/AIFF/AIF, MP3, FLAC, OGG/Opus, TS/MTS/M2TS, 3GP and ASF. Container support does not guarantee every possible embedded codec; packaged codecs are listed in [the recipe](packaging/ffmpeg.sh). Explicit paths are not extension-filtered.
 
-Defaults: `small`, Russian, TXT paragraphs, device `auto`, beam size 5, VAD enabled and 120-second windows. `--cpu-threads 0` selects physical cores within Linux process affinity and visible cgroup CPU quotas, or performance cores on macOS; explicit positive counts override it. `--language auto` detects language per window. `--device auto` prefers CUDA, then Metal on macOS, and reports CPU fallback; explicit GPU selection fails if unavailable. [Experimental Vulkan](docs/vulkan.md) is source-build-only and requires `--device vulkan`; `auto` does not select it.
+Defaults: `small`, Russian, TXT paragraphs, device `auto`, beam size 5, VAD enabled and 120-second windows. `--cpu-threads 0` selects physical cores within Linux process affinity and visible cgroup CPU quotas, or performance cores on macOS; explicit positive counts override it. `--language auto` detects language per window. `--device auto` prefers CUDA, then Metal on macOS, and reports CPU fallback; explicit GPU selection fails if unavailable. [Experimental Vulkan](docs/vulkan.md) archives for Linux/Windows x64 require `--device vulkan`; `auto` does not select it. Native Windows GPU and AMD/Intel hardware execution remain unvalidated.
 
 FFmpeg chooses the best audio stream. `--audio-stream N` selects an absolute container stream index, not an audio ordinal. Explicit selections are checked before model preparation. Captions follow the container timeline; `--timestamp-gaps auto` corrects large transport discontinuities, while `preserve` retains forward gaps. See [timeline rules](docs/resume.md#container-timeline).
 
 ## Install A Published Archive
-Download from [Releases](https://github.com/egor-fedorov/whisper-transcribator/releases). On Linux choose `cpu` or `cuda` for NVIDIA; CUDA runtime libraries are bundled, but a compatible driver is required. Releases after 0.4.0 also include a `linux-aarch64-cpu` archive for 64-bit ARM Linux (for example Raspberry Pi 4/5 with a 64-bit OS, AWS Graviton or Ampere) and a [macOS archive](#macos); until then, build them with the [same recipes](docs/releasing.md).
+Download from [Releases](https://github.com/egor-fedorov/whisper-transcribator/releases). On Linux x86_64 choose `cpu` or `cuda` for NVIDIA; CUDA runtime libraries are bundled, but a compatible driver is required. Choose `linux-aarch64-cpu` for 64-bit ARM Linux (for example Raspberry Pi 4/5 with a 64-bit OS, AWS Graviton or Ampere). Native [macOS](#macos) and [Windows](#windows) archives are also available starting with 0.5.0; the [same recipes](docs/releasing.md) support local builds.
+
+The experimental `linux-x86_64-vulkan` and `windows-x86_64-vulkan` archives use the installed GPU driver, not a CUDA toolkit or Vulkan SDK. See [Vulkan setup and validation limits](docs/vulkan.md#archives); they are optional alternatives, not replacements for CPU/CUDA builds.
 
 ```bash
-version=0.4.0
-arch=x86_64 # or aarch64 (CPU only, releases after 0.4.0)
+version=0.5.0
+arch=x86_64 # or aarch64 (CPU only)
 flavor=cpu
 archive="whisper-transcribator-${version}-linux-${arch}-${flavor}.tar.gz"
 url="https://github.com/egor-fedorov/whisper-transcribator/releases/download/v${version}"
@@ -43,10 +45,10 @@ tar -xzf "$archive" -C whisper-transcribator
 Keep `bin/`, `lib/` and `share/` together: these are not universal static binaries. Archives target Linux x86_64 or aarch64 with glibc 2.35+ (Ubuntu 22.04+, Debian 12+ and derivatives such as 64-bit Raspberry Pi OS) and select a compatible installed CPU plugin: from baseline x86_64 without AVX2, or from ARMv8.0 up to SVE2/SME. 32-bit ARM is not supported; CUDA archives are x86_64-only. Keep all bundled plugins. See [build and release instructions](docs/releasing.md).
 
 ## macOS
-Releases after 0.4.0 include `macos-arm64-metal` for Macs with Apple silicon and macOS 14 or later:
+Use `macos-arm64-metal` for Macs with Apple silicon and macOS 14 or later:
 
 ```bash
-version=X.Y.Z # a release after 0.4.0
+version=0.5.0
 archive="whisper-transcribator-${version}-macos-arm64-metal.tar.gz"
 url="https://github.com/egor-fedorov/whisper-transcribator/releases/download/v${version}"
 curl -fLO "$url/$archive"
@@ -72,10 +74,10 @@ cmake --build --preset cpu -j
 Archives and source builds include whisper.cpp's Metal backend, so `--device auto` runs on the GPU; `--device cpu` uses the CPU with Accelerate. A source build loads its whisper.cpp libraries from the build directory, so keep that directory. CI tests archives on macOS 14 and 15 and source builds on macOS 15, all on Apple silicon; Intel Macs are not supported by the archive and untested from source. The default APFS volume, like FAT and exFAT drives, ignores letter case: see [batch output names](docs/resume.md#batch-output-names).
 
 ## Windows
-Native Windows CPU builds support x64 (MSVC, Windows 10 version 1903+) and ARM64 (ClangCL, Windows 11). Releases after 0.4.0 include `windows-x86_64-cpu.zip` and `windows-arm64-cpu.zip`; the published 0.4.0 release has neither. Windows CUDA and ARM64 GPU/NPU acceleration are not supported. Download the ZIP for your processor and `SHA256SUMS` from the same release, then use PowerShell:
+Native Windows CPU builds support x64 (MSVC, Windows 10 version 1903+) and ARM64 (ClangCL, Windows 11). Choose `windows-x86_64-cpu.zip` or `windows-arm64-cpu.zip` for your processor. Windows CUDA and ARM64 GPU/NPU acceleration are not supported. Download the ZIP and `SHA256SUMS` from the same release, then use PowerShell:
 
 ```powershell
-$version = 'X.Y.Z' # a release after 0.4.0
+$version = '0.5.0'
 $arch = 'x86_64' # 'arm64' for Windows on ARM, without x64 emulation
 $archive = "whisper-transcribator-$version-windows-$arch-cpu.zip"
 $expected = (Get-Content SHA256SUMS | Where-Object { $_.EndsWith("  $archive") }).Split(' ')[0]
@@ -89,12 +91,12 @@ Keep the whole extracted directory. The ZIP includes FFmpeg decoding DLLs, CPU p
 
 After building, run `.\.build\windows\bin\whisper-transcribator.exe "C:\Lectures\lecture.mp4" --model small --language ru` from PowerShell in the repository. The default model cache is `%LOCALAPPDATA%\whisper-transcribator\models` (`XDG_CACHE_HOME` and `--download-root` can override it). Input, output and model paths support Unicode. Paths longer than 260 characters also require Windows' long-path policy to be enabled. Run as a normal user, not as administrator.
 
-Native binaries are not Authenticode-signed. SmartScreen may warn, and Windows 11 **Smart App Control can block the executable or DLLs**, not merely show a dismissible warning. It has [no per-app allow override](https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions). Checksums verify the download but do not bypass that policy. Do not disable system-wide protection for this tool; use [WSL](#windows-with-wsl-2) if permitted by your system policy, or wait for a signed distribution. See the [signing status](docs/windows.md#signing).
+Native binaries are not Authenticode-signed. SmartScreen may warn, and Windows 11 **Smart App Control can block the executable or DLLs**, not merely show a dismissible warning. It has [no per-app allow override](https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions). Checksums verify the download but do not bypass that policy. Do not disable system-wide protection for this tool; use [WSL](#wsl-2) if permitted by your system policy, or wait for a signed distribution. See the [signing status](docs/windows.md#signing).
 
 Ctrl+C or Ctrl+Break stops the current job with exit code 130 and retains committed progress; a second interrupt exits immediately. Closing the console or terminating the process can stop it abruptly: use `--resume` to recover committed windows, not the uncommitted tail. Checkpoints use private ACLs on NTFS; volumes without ACLs display the privacy warning. Replacing an output held open by another program may fail; close that program and retry with the original output preserved.
 
 ### WSL 2
-WSL 2 runs a real Linux kernel, so the Linux archives work unchanged inside a WSL distribution: x86_64 on most PCs, aarch64 (releases after 0.4.0) on Windows on Arm. In PowerShell run `wsl --install -d Ubuntu-24.04`, open Ubuntu and follow [Install A Published Archive](#install-a-published-archive) there.
+WSL 2 runs a real Linux kernel, so the Linux archives work unchanged inside a WSL distribution: x86_64 on most PCs, aarch64 on Windows on Arm. In PowerShell run `wsl --install -d Ubuntu-24.04`, open Ubuntu and follow [Install A Published Archive](#install-a-published-archive) there.
 
 - Windows drives appear under `/mnt/c` and so on; `wslpath 'C:\Users\me\lecture.mp4'` converts a path. Files there work but read and write more slowly than the Linux home directory. By default these drives store no POSIX permissions, so checkpoints next to outputs there print the [privacy warning](docs/resume.md#filesystems-without-posix-permissions), and folders created by Windows ignore letter case, as described for [batch output names](docs/resume.md#batch-output-names). The model cache stays in the Linux home directory by default.
 - For NVIDIA GPUs, install only the current Windows driver: WSL passes the GPU to Linux, where `nvidia-smi` should list it. Do not install an NVIDIA Linux driver inside WSL. Then use the `cuda` archive, which bundles the CUDA runtime.
