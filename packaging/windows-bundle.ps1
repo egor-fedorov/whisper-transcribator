@@ -37,14 +37,6 @@ try {
     Copy-WindowsRuntime $Build $Media $installed $bundle $arch $crt[0].FullName $flavor
     if ($flavor -eq 'vulkan') {
         if (!$env:VULKAN_SDK) { throw 'VULKAN_SDK is required for header sources and notices' }
-        Copy-Item "$env:VULKAN_SDK/LICENSE.txt" "$bundle/licenses/Vulkan-SDK.txt"
-        Copy-Item 'packaging/vulkan-headers-notice.txt' "$bundle/licenses/Vulkan-headers.txt"
-        Copy-Item 'packaging/licenses/Apache-2.0.txt' "$bundle/licenses/Apache-2.0.txt"
-        Copy-Item 'packaging/vulkan-sdk.json' "$bundle/share/vulkan-sdk.json"
-        Push-Location $env:VULKAN_SDK
-        try { Invoke-Checked cmake @('-E', 'tar', 'czf', "$bundle/sources/vulkan-sdk-headers.tar.gz",
-                'Include/vulkan', 'Include/vk_video', 'Include/spirv') }
-        finally { Pop-Location }
         Write-Utf8 "$bundle/share/external-runtime.txt" @('vulkan-1.dll: install a Vulkan-capable GPU driver; do not install the SDK')
     }
     Write-Utf8 "$bundle/share/windows-toolchain.txt" @(
@@ -59,8 +51,9 @@ try {
     Copy-Item "$Media/ffmpeg.tar.xz" "$bundle/sources/$($ffmpeg[0].Name).tar.xz"
     Copy-Item "$($ffmpeg[0].FullName)/COPYING.LGPLv2.1" "$bundle/licenses/FFmpeg-LGPL-2.1.txt"
     Copy-Item "$($ffmpeg[0].FullName)/ffbuild/config.log" "$bundle/sources/ffmpeg-config.log"
-    Invoke-Checked cmake @("-DWT_SOURCE_DIR=$root", "-DWT_BUILD_DIR=$Build", "-DWT_BUNDLE_DIR=$bundle",
-        '-P', "$PSScriptRoot/cmake/sources.cmake")
+    $sourceArgs = @("-DWT_SOURCE_DIR=$root", "-DWT_BUILD_DIR=$Build", "-DWT_BUNDLE_DIR=$bundle")
+    if ($flavor -eq 'vulkan') { $sourceArgs += "-DWT_VULKAN_SDK=$env:VULKAN_SDK" }
+    Invoke-Checked cmake ($sourceArgs + @('-P', "$PSScriptRoot/cmake/sources.cmake"))
     & "$PSScriptRoot/windows-sources.ps1" -Vcpkg $Vcpkg -Installed $installed -Bundle $bundle
     $version = $metadata.WT_PACKAGE_VERSION
     $checksums = @(Get-ChildItem $bundle -File -Recurse | Sort-Object FullName | ForEach-Object {

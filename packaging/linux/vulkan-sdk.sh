@@ -11,6 +11,5 @@ curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' "$url" 
 printf '%s  %s\n' "$digest" "$root/sdk.tar.xz" | sha256sum -c -
 tar -xJf "$root/sdk.tar.xz" -C "$root"
 mv "$root/$version/x86_64" "$root/sdk"
-cp "$root/$version/LICENSE.txt" "$root/LICENSE.txt"
 "$root/sdk/bin/glslc" --version
 rm "$root/sdk.tar.xz"

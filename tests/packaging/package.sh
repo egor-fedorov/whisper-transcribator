@@ -28,7 +28,6 @@ test -s "unpacked/lib/$baseline"
 if [[ $flavor == vulkan ]]; then
     test -s unpacked/lib/libggml-vulkan.so
     test -s unpacked/lib/libvulkan.so.1
-    test -s unpacked/licenses/Vulkan-SDK.txt
     test -s unpacked/licenses/Vulkan-headers.txt
     test -s unpacked/licenses/Apache-2.0.txt
     test -s unpacked/sources/vulkan-sdk-headers.tar.gz

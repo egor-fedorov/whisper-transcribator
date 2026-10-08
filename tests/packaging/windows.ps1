@@ -53,7 +53,7 @@ try {
     if ($Flavor -eq 'vulkan') {
         if (!(Test-Path "$bundle/bin/ggml-vulkan.dll")) { throw 'Missing Vulkan plugin' }
         $plugins += 'ggml-vulkan.dll'
-        foreach ($file in @('licenses/Vulkan-SDK.txt', 'licenses/Vulkan-headers.txt', 'sources/vulkan-sdk-headers.tar.gz',
+        foreach ($file in @('licenses/Vulkan-headers.txt', 'sources/vulkan-sdk-headers.tar.gz',
                 'share/vulkan-sdk.json', 'share/external-runtime.txt', 'licenses/Apache-2.0.txt')) {
             if ((Get-Item "$bundle/$file").Length -eq 0) { throw "Missing Vulkan provenance: $file" }
         }

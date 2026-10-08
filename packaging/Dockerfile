@@ -57,14 +57,9 @@ RUN . .build/release/generated/package.env \
     && cp /src/ffmpeg.tar.xz /bundle/sources/ffmpeg-8.0.1.tar.xz \
     && cp /src/ffmpeg-8.0.1/COPYING.LGPLv2.1 /bundle/licenses/FFmpeg-LGPL-2.1.txt \
     && cp /src/ffmpeg-8.0.1/ffbuild/config.log /bundle/sources/ffmpeg-config.log \
-    && cmake -DWT_SOURCE_DIR=/app -DWT_BUILD_DIR=/app/.build/release -DWT_BUNDLE_DIR=/bundle \
+    && if [ "${WT_VULKAN}" = ON ]; then set -- -DWT_VULKAN_SDK=/opt/vulkan/sdk; else set --; fi \
+    && cmake -DWT_SOURCE_DIR=/app -DWT_BUILD_DIR=/app/.build/release -DWT_BUNDLE_DIR=/bundle "$@" \
         -P packaging/cmake/sources.cmake
-RUN if [ "${WT_VULKAN}" = ON ]; then \
-        cp /opt/vulkan/LICENSE.txt /bundle/licenses/Vulkan-SDK.txt \
-        && cp packaging/vulkan-headers-notice.txt /bundle/licenses/Vulkan-headers.txt \
-        && cp packaging/licenses/Apache-2.0.txt /bundle/licenses/Apache-2.0.txt \
-        && cp packaging/vulkan-sdk.json /bundle/share/vulkan-sdk.json \
-        && tar -C /opt/vulkan/sdk -czf /bundle/sources/vulkan-sdk-headers.tar.gz include/vulkan include/vk_video include/spirv; fi
 RUN . .build/release/generated/package.env && mkdir -p /export \
     && tar -C /bundle -czf "/export/whisper-transcribator-${WT_PACKAGE_VERSION}-linux-${WT_TARGET_ARCH}-${WT_PACKAGE_FLAVOR}.tar.gz" . \
     && cd /export && sha256sum *.tar.gz > SHA256SUMS

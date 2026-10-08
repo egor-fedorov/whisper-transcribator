@@ -37,7 +37,7 @@ foreach(path IN ITEMS whisper-src/LICENSE cli11-src/LICENSE nlohmann_json-src/LI
     endif()
 endforeach()
 
-file(MAKE_DIRECTORY "${WT_BUNDLE_DIR}/sources" "${WT_BUNDLE_DIR}/licenses")
+file(MAKE_DIRECTORY "${WT_BUNDLE_DIR}/sources" "${WT_BUNDLE_DIR}/licenses" "${WT_BUNDLE_DIR}/share")
 # Avoid AppleDouble entries on macOS; CMake's tar also keeps dotfiles and LF source bytes on Windows.
 set(ENV{COPYFILE_DISABLE} 1)
 function(archive_sources directory name)
@@ -54,3 +54,29 @@ dependency(cli11 "CLI11-${metadata_WT_CLI11_VERSION}" LICENSE CLI11-BSD)
 dependency(nlohmann_json "nlohmann-json-${metadata_WT_JSON_VERSION}" LICENSE.MIT nlohmann-json-MIT)
 archive_sources("${WT_SOURCE_DIR}" "whisper-transcribator-${metadata_WT_PACKAGE_VERSION}" ${project_inputs})
 configure_file("${WT_SOURCE_DIR}/LICENSE" "${WT_BUNDLE_DIR}/licenses/whisper-transcribator-MIT.txt" COPYONLY)
+
+if(DEFINED WT_VULKAN_SDK AND NOT WT_VULKAN_SDK STREQUAL "")
+    # Windows and Linux SDKs differ in layout and do not share a root LICENSE.txt.
+    # Ship the licenses of the actual header components, not a generic SDK notice.
+    set(headers "${WT_VULKAN_SDK}/include")
+    if(NOT IS_DIRECTORY "${headers}")
+        set(headers "${WT_VULKAN_SDK}/Include")
+    endif()
+    foreach(header IN ITEMS vulkan/vulkan.hpp vk_video/vulkan_video_codec_h264std.h spirv/unified1/spirv.hpp)
+        if(NOT EXISTS "${headers}/${header}")
+            message(FATAL_ERROR "Missing Vulkan SDK header: ${header}")
+        endif()
+    endforeach()
+    foreach(notice IN ITEMS vulkan-headers-notice.txt licenses/Apache-2.0.txt vulkan-sdk.json)
+        if(NOT EXISTS "${WT_SOURCE_DIR}/packaging/${notice}")
+            message(FATAL_ERROR "Missing Vulkan provenance: ${notice}")
+        endif()
+    endforeach()
+    archive_sources("${headers}" vulkan-sdk-headers vulkan vk_video spirv)
+    configure_file("${WT_SOURCE_DIR}/packaging/vulkan-headers-notice.txt"
+        "${WT_BUNDLE_DIR}/licenses/Vulkan-headers.txt" COPYONLY)
+    configure_file("${WT_SOURCE_DIR}/packaging/licenses/Apache-2.0.txt"
+        "${WT_BUNDLE_DIR}/licenses/Apache-2.0.txt" COPYONLY)
+    configure_file("${WT_SOURCE_DIR}/packaging/vulkan-sdk.json"
+        "${WT_BUNDLE_DIR}/share/vulkan-sdk.json" COPYONLY)
+endif()

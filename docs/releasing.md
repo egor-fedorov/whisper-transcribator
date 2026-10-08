@@ -187,7 +187,7 @@ Linux/NVIDIA inference and interrupted resume are automatic release gates. Nativ
 
 ## Gates
 
-Packaging internals and their boundaries are documented in [Architecture](architecture.md#packaging-and-ci). All platforms use `packaging/cmake/sources.cmake` for project/whisper.cpp/CLI11/JSON archives and notices; it consumes `WT_SOURCE_DIR`, `WT_BUILD_DIR` and `WT_BUNDLE_DIR` with the build's generated `package.env`. It neither rebuilds dependencies nor downloads them. FFmpeg and platform runtime provenance stay in their respective recipes. The source allowlist and independent Git-based release verification are unchanged.
+Packaging internals and their boundaries are documented in [Architecture](architecture.md#packaging-and-ci). All platforms use `packaging/cmake/sources.cmake` for project/whisper.cpp/CLI11/JSON archives and notices; it consumes `WT_SOURCE_DIR`, `WT_BUILD_DIR` and `WT_BUNDLE_DIR` with the build's generated `package.env`. Vulkan packagers also pass `WT_VULKAN_SDK` to collect header sources and their component licenses, without assuming a common SDK root license file. It neither rebuilds dependencies nor downloads them. FFmpeg and platform runtime provenance stay in their respective recipes. The source allowlist and independent Git-based release verification are unchanged.
 
 1. Run GCC/Clang CTest, clang-format, ShellCheck and wrapper ASan/UBSan checks, and CTest on macOS arm64.
 2. Build Linux x86_64 CPU/CUDA/Vulkan, Linux aarch64 CPU, macOS arm64, Windows x64/ARM64 CPU and Windows x64 Vulkan archives. Inspect bundled

@@ -102,7 +102,7 @@ The documented entrypoints stay at `packaging/Dockerfile`, `package.sh`, `macos.
 | `packaging/windows/runtime.ps1` | PE/plugin dependency closure and runtime inventories from an already tested build |
 | `packaging/windows-common.ps1` | Small PE, target, metadata and CRT-provenance policies shared with the independent verifier |
 | `packaging/windows-sources.ps1` | Pinned curl/zlib upstream sources, vcpkg recipes, notices and SPDX records |
-| `packaging/cmake/sources.cmake` | Common project/whisper.cpp/CLI11/JSON source archives and notices from explicit source/build/bundle paths, without Git, compilation or downloads |
+| `packaging/cmake/sources.cmake` | Common project/whisper.cpp/CLI11/JSON sources and notices, plus optional Vulkan SDK header sources/component licenses, without Git, compilation or downloads |
 | `packaging/release` | Read-only tag/CI preflight, shared containerized exact-archive CUDA/Vulkan verification and hardware-evidence validation; publication remains in `packaging/release.sh` |
 | `.github/actions/windows-tools` | Native developer environment, pinned vcpkg checkout, MSYS2 and toolchain outputs; no build, cache, test or artifact decisions |
 | `.github/workflows` | Visible job dependencies, cache lifetimes, build/test stages, archive uploads and separate short inference gates |
