@@ -109,7 +109,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.preflight.outputs.revision }}
+          # Verification tooling follows the reviewed workflow, not the immutable release tag.
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Check GPU prerequisites
         run: |
@@ -127,7 +128,8 @@ jobs:
         timeout-minutes: 15
         env:
           EXPORT_DIR: ${{ runner.temp }}/cuda-check-${{ github.run_id }}-${{ github.run_attempt }}
-        run: bash packaging/release/check-cuda.sh "$EXPORT_DIR"
+          SOURCE_REVISION: ${{ needs.preflight.outputs.revision }}
+        run: bash packaging/release/check-cuda.sh "$EXPORT_DIR" "$SOURCE_REVISION"
       - name: Upload CUDA evidence only
         id: evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -159,7 +161,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ needs.preflight.outputs.revision }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Check GPU prerequisites
         run: |
@@ -177,7 +179,8 @@ jobs:
         timeout-minutes: 15
         env:
           EXPORT_DIR: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}
-        run: bash packaging/release/check-gpu.sh vulkan "$EXPORT_DIR"
+          SOURCE_REVISION: ${{ needs.preflight.outputs.revision }}
+        run: bash packaging/release/check-gpu.sh vulkan "$EXPORT_DIR" "$SOURCE_REVISION"
       - name: Upload Vulkan evidence only
         id: evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

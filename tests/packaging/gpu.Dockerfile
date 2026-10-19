@@ -1,6 +1,8 @@
 # Clean runtime verification of the exact exported archive, without rebuilding it.
 FROM ubuntu:22.04@sha256:b8b6ee6aa931ecd9d0d952abc34dc0e5f7c6a30c6bb71b079fe399fde0329c02
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl jq \
+# NVIDIA's Vulkan ICD needs X11 and dynamically loads EGL even for headless compute.
+# The host driver is injected by the container runtime, not bundled in the archive.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl jq libegl1 libx11-6 libxext6 \
     && rm -rf /var/lib/apt/lists/*
 COPY bundle/ /opt/whisper-transcribator/
 COPY tools/ /tools/
