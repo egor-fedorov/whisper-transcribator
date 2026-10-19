@@ -224,6 +224,12 @@ unset GH_TEST_NO_CI
 bash "$helper" 0.3.0 "$assets" --draft
 grep -Fxq -- '--draft' "$GH_TEST_LOG"
 grep -Fxq -- '--verify-tag' "$GH_TEST_LOG"
+# Existing tags must not request target_commitish permissions for an older workflow.
+if grep -Fxq -- '--target' "$GH_TEST_LOG"; then
+    echo 'An existing release tag must not specify --target' >&2
+    exit 1
+fi
+grep -Fxq -- 'v0.3.0' "$GH_TEST_LOG"
 grep -Fxq -- "$assets/cuda/cuda-verification.json" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/vulkan/vulkan-verification.json" "$GH_TEST_LOG"
 grep -Fxq -- "$assets/vulkan/whisper-transcribator-0.3.0-linux-x86_64-vulkan.tar.gz" "$GH_TEST_LOG"

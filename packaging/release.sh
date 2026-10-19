@@ -80,6 +80,8 @@ printf '\nSource commit: `%s`. [Successful CI](https://github.com/%s/actions/run
     "$commit" "$repo" "$run" >>"$temporary/notes.md"
 printf '\n[Successful Vulkan CI](https://github.com/%s/actions/runs/%s).\n' \
     "$repo" "$vulkan_run" >>"$temporary/notes.md"
-gh release create "$tag" --repo "$repo" --verify-tag --target "$commit" --draft \
+# The existing, verified tag selects the source. An explicit older --target can
+# require workflow-write permission even though no tag needs to be created.
+gh release create "$tag" --repo "$repo" --verify-tag --draft \
     --title "$tag" --notes-file "$temporary/notes.md" "${assets[@]}" "$temporary/SHA256SUMS"
 echo "Draft prepared with CUDA and Linux Vulkan hardware evidence. Review assets before explicitly publishing $tag."

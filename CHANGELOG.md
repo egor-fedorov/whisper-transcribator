@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Create release drafts from the already verified tag without an explicit target SHA, avoiding unnecessary workflow-write permissions after release tooling changes on main.
 - Supply X11/EGL dependencies in the headless NVIDIA verification image and retain GPU loader diagnostics. Pin verification tooling to the reviewed workflow commit while checking unchanged release archives against the explicit tagged source revision.
 - Split release CUDA compilation and CUDA/Vulkan hardware checks into independently retryable jobs. Keep CUDA build cache on the trusted runner instead of exporting it to GitHub; upload archives once and transfer hash-bound verification reports separately before hosted draft creation.
 
