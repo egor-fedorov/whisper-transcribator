@@ -4,7 +4,8 @@ set -euo pipefail
 [[ $# = 1 && $1 =~ ^(cuda|vulkan)$ ]]
 device=$1
 binary=/opt/whisper-transcribator/bin/whisper-transcribator
-"$binary" doctor --device "$device" --json >/results/doctor.json
+VK_LOADER_DEBUG=error,warn "$binary" doctor --device "$device" --verbose --json \
+    >/results/doctor.json 2> >(tee /results/doctor.log >&2)
 jq -e --arg device "$device" '.device == $device and .errors == []' /results/doctor.json
 bash /checks/smoke.sh "$binary" /fixtures/jfk.wav /fixtures/ggml-tiny.bin \
     /fixtures/ggml-silero-v6.2.0.bin /results/smoke "$device"

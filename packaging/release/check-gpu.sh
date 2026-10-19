@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Verify an exact GPU export using a fresh container and narrowly scoped bind mounts.
 set -euo pipefail
-[[ $# = 2 && $1 =~ ^(cuda|vulkan)$ ]] || { echo 'Usage: check-gpu.sh cuda|vulkan EXPORT_DIRECTORY' >&2; exit 1; }
+[[ ( $# = 2 || $# = 3 ) && $1 =~ ^(cuda|vulkan)$ ]] || {
+    echo 'Usage: check-gpu.sh cuda|vulkan EXPORT_DIRECTORY [SOURCE_REVISION]' >&2; exit 1;
+}
 device=$1
 root=$(realpath "$2")
 repo=$(git rev-parse --show-toplevel)
-revision=$(git rev-parse HEAD)
+verification_revision=$(git rev-parse HEAD)
+revision=${3:-$verification_revision}
+[[ $revision =~ ^[0-9a-f]{40}$ ]] || { echo 'Expected a full source commit SHA' >&2; exit 1; }
 temporary=$(mktemp -d)
 image="wt-$device-check:$(basename "$temporary" | tr '[:upper:]' '[:lower:]')"
 container=${image/:/-}
@@ -27,7 +31,9 @@ cmp "$temporary/checksum" "$root/$device/SHA256SUMS"
 mkdir -p "$temporary"/{bundle,checks,fixtures,results}
 tar -xzf "$archive" -C "$temporary/bundle"
 metadata="$temporary/bundle/share/build-metadata.env"
-grep -Fxq "WT_SOURCE_REVISION=$revision" "$metadata"
+grep -Fxq "WT_SOURCE_REVISION=$revision" "$metadata" || {
+    echo 'Archive source revision differs from expected commit' >&2; exit 1;
+}
 grep -Fxq 'WT_SOURCE_DIRTY=false' "$metadata"
 grep -Fxq 'WT_TARGET_OS=linux' "$metadata"
 grep -Fxq 'WT_TARGET_ARCH=x86_64' "$metadata"
@@ -47,9 +53,11 @@ docker run "${common[@]}" --gpus all --network none -e "NVIDIA_DRIVER_CAPABILITI
     -v "$temporary/fixtures:/fixtures:ro" -v "$temporary/results:/results" "$image" \
     bash /checks/gpu-release.sh "$device"
 jq -n --arg archive "$(basename "$archive")" --arg digest "$digest" --arg revision "$revision" \
+    --arg verification_revision "$verification_revision" \
     --arg device "$device" \
     --slurpfile doctor "$temporary/results/doctor.json" \
     '{schema_version: 1, archive: $archive, sha256: $digest, source_revision: $revision,
+      verification_revision: $verification_revision,
       device: $device, checks: {smoke: true, streaming_resume: true, offline: true}, doctor: $doctor[0]}' \
     >"$temporary/verification.json"
 bash "$repo/packaging/release/verify-gpu.sh" "$device" "$archive" "$temporary/verification.json" "$revision"
