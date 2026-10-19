@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-No unreleased changes.
+- Split release CUDA compilation and CUDA/Vulkan hardware checks into independently retryable jobs. Keep CUDA build cache on the trusted runner instead of exporting it to GitHub; upload archives once and transfer hash-bound verification reports separately before hosted draft creation.
 
 ## 0.5.0
 - Package experimental Linux x86_64 and Windows x64 Vulkan archives. Verify them without models on hosted CI and require offline NVIDIA inference/resume on the exact Linux Vulkan archive before release draft creation. Bind CUDA/Vulkan evidence to archive hashes and source revision; keep Windows GPU and AMD/Intel execution explicitly unvalidated.

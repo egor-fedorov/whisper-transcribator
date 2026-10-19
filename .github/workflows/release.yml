@@ -46,8 +46,8 @@ jobs:
           [[ "$BUILD_JOBS" =~ ^([1-9]|[12][0-9]|3[0-2])$ ]] || { echo 'build_jobs must be 1-32' >&2; exit 1; }
           bash packaging/release/preflight.sh "$GITHUB_REPOSITORY" "$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
           jq -r 'to_entries[] | "\(.key)=\(.value)"' "$RUNNER_TEMP/release.json" >> "$GITHUB_OUTPUT"
-  cuda:
-    name: CUDA build and CUDA/Vulkan hardware verification
+  cuda-build:
+    name: CUDA archive build
     needs: preflight
     # Environment approval and owner-only dispatch are gates, not a host sandbox.
     environment: cuda-release
@@ -56,6 +56,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      artifact_id: ${{ steps.archive.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -63,11 +65,15 @@ jobs:
           persist-credentials: false
       - name: Check runner prerequisites
         run: |
-          for command in docker nvidia-smi jq; do command -v "$command"; done
+          command -v docker
           docker info
-          nvidia-smi
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        with:
+          # Preserve only this trusted release builder's local cache, not a remote CUDA cache.
+          name: whisper-release-cuda
+          keep-state: true
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        timeout-minutes: 75
         with:
           context: .
           file: packaging/Dockerfile
@@ -79,53 +85,121 @@ jobs:
             BUILD_JOBS=${{ inputs.build_jobs }}
             WT_SOURCE_REVISION=${{ needs.preflight.outputs.revision }}
             WT_SOURCE_DIRTY=false
-          cache-from: type=gha,version=2,scope=release-cuda
-          cache-to: type=gha,version=2,scope=release-cuda,mode=max,ignore-error=true,timeout=2m
-      - name: Verify exact archive offline on NVIDIA (11s fixture and 41s resume test)
-        env:
-          EXPORT_DIR: ${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}
-        run: bash packaging/release/check-cuda.sh "$EXPORT_DIR"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - name: Upload CUDA archive and test helpers once (not yet GPU-verified)
+        id: archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        timeout-minutes: 30
         with:
-          name: native-cuda-verified
-          path: ${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}/cuda/*
+          name: native-cuda-export-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}/
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+  cuda-verify:
+    name: CUDA hardware verification
+    needs: [preflight, cuda-build]
+    environment: cuda-release
+    runs-on: [self-hosted, linux, x64, whisper-release-nvidia]
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact_id: ${{ steps.evidence.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.preflight.outputs.revision }}
+          persist-credentials: false
+      - name: Check GPU prerequisites
+        run: |
+          for command in docker nvidia-smi jq; do command -v "$command"; done
+          docker info
+          nvidia-smi
+      - name: Download the exact CUDA build output
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        timeout-minutes: 30
+        with:
+          artifact-ids: ${{ needs.cuda-build.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/cuda-check-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify exact archive offline on NVIDIA (11s fixture and 41s resume test)
+        timeout-minutes: 15
+        env:
+          EXPORT_DIR: ${{ runner.temp }}/cuda-check-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash packaging/release/check-cuda.sh "$EXPORT_DIR"
+      - name: Upload CUDA evidence only
+        id: evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        timeout-minutes: 5
+        with:
+          name: cuda-verification-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cuda-check-${{ github.run_id }}-${{ github.run_attempt }}/cuda/cuda-verification.json
           retention-days: 7
           if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
+        timeout-minutes: 5
         with:
-          name: cuda-diagnostics
-          path: ${{ runner.temp }}/cuda-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics/
+          name: cuda-diagnostics-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cuda-check-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics/
           retention-days: 7
           if-no-files-found: ignore
+  vulkan-verify:
+    name: Vulkan hardware verification
+    needs: preflight
+    environment: cuda-release
+    runs-on: [self-hosted, linux, x64, whisper-release-nvidia]
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact_id: ${{ steps.evidence.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.preflight.outputs.revision }}
+          persist-credentials: false
+      - name: Check GPU prerequisites
+        run: |
+          for command in docker nvidia-smi jq; do command -v "$command"; done
+          docker info
+          nvidia-smi
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        timeout-minutes: 30
         with:
           name: native-vulkan-export
           run-id: ${{ needs.preflight.outputs.vulkan_run }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Verify hosted Linux Vulkan archive offline on NVIDIA (no rebuild)
+        timeout-minutes: 15
         env:
           EXPORT_DIR: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash packaging/release/check-gpu.sh vulkan "$EXPORT_DIR"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - name: Upload Vulkan evidence only
+        id: evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        timeout-minutes: 5
         with:
-          name: native-vulkan-verified
-          path: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}/vulkan/*
+          name: vulkan-verification-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}/vulkan/vulkan-verification.json
           retention-days: 7
           if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
+        timeout-minutes: 5
         with:
-          name: vulkan-diagnostics
+          name: vulkan-diagnostics-${{ github.run_attempt }}
           path: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics/
           retention-days: 7
           if-no-files-found: ignore
   draft:
-    needs: [preflight, cuda]
+    needs: [preflight, cuda-build, cuda-verify, vulkan-verify]
     runs-on: ubuntu-24.04
     environment: release
-    timeout-minutes: 20
+    timeout-minutes: 45
     permissions:
       contents: write
       actions: read
@@ -144,13 +218,30 @@ jobs:
               windows-x86_64:native-windows-x86_64 windows-arm64:native-windows-arm64; do
             gh run download "$CI_RUN" --repo "$GITHUB_REPOSITORY" --name "${pair#*:}" --dir ".build/artifacts/${pair%%:*}"
           done
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - name: Download the original CUDA archive (no GPU-job re-upload)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: native-cuda-verified
+          artifact-ids: ${{ needs.cuda-build.outputs.artifact_id }}
+          merge-multiple: true
+          path: .build/cuda-export
+      - name: Download CUDA evidence from the successful verification job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ needs.cuda-verify.outputs.artifact_id }}
+          merge-multiple: true
           path: .build/artifacts/cuda
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - name: Download the original hosted Vulkan archive (no GPU-job re-upload)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: native-vulkan-verified
+          name: native-vulkan-export
+          run-id: ${{ needs.preflight.outputs.vulkan_run }}
+          github-token: ${{ github.token }}
+          path: .build/vulkan-export
+      - name: Download Vulkan evidence from the successful verification job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ needs.vulkan-verify.outputs.artifact_id }}
+          merge-multiple: true
           path: .build/artifacts/vulkan
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -158,6 +249,10 @@ jobs:
           run-id: ${{ needs.preflight.outputs.vulkan_run }}
           github-token: ${{ github.token }}
           path: .build/artifacts/windows-x86_64-vulkan
+      - name: Stage the unchanged archives alongside their separate hardware evidence
+        run: |
+          cp .build/cuda-export/cuda/*.tar.gz .build/cuda-export/cuda/SHA256SUMS .build/artifacts/cuda/
+          cp .build/vulkan-export/vulkan/*.tar.gz .build/vulkan-export/vulkan/SHA256SUMS .build/artifacts/vulkan/
       - name: Verify all archives, sources and GPU evidence, then create a draft
         env:
           GH_TOKEN: ${{ github.token }}

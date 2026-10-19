@@ -18,6 +18,8 @@ ctest --preset cpu
 find src tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -exec clang-format-18 --dry-run --Werror {} +
 find tests packaging -type f -name '*.sh' -exec shellcheck {} +
 bash tests/packaging/release.sh
+bash tests/packaging/release-preflight.sh
+bash tests/packaging/cuda-release.sh
 bash tests/packaging/runtime-policy.sh
 cmake -DWT_TEST_DIR=.build/source-contracts -P tests/packaging/sources.cmake
 cmake --preset asan
