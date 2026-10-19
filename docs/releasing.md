@@ -307,6 +307,11 @@ of the release commit after its `main` CI has passed. The helper verifies every
 checksum, target system and architecture and packaged project source against Git (using `unzip`
 for the Windows ZIP), then checks local and
 remote tag targets and CI. It never publishes automatically or overwrites assets.
+The create request uses `--verify-tag` without `--target`: the existing tag already
+selects the checked source commit. Passing an older SHA as `target_commitish` can
+require workflow-write permission when workflow files differ from the default
+branch, even with `contents: write`. Do not broaden the release token's permissions
+or move the tag to resolve this; see the [GitHub release API permissions](https://docs.github.com/en/rest/releases/releases#create-a-release).
 
 ```bash
 version=0.5.0 # only after the release commit and all gates above
