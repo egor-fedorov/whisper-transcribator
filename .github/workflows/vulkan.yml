@@ -39,7 +39,7 @@ jobs:
             bash -euc 'apt-get update; apt-get install -y --no-install-recommends jq; \
               cp /work/.build/vulkan-export/vulkan/* /verify/; \
               bash /work/tests/packaging/vulkan.sh /verify'
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: native-vulkan-export
           path: .build/vulkan-export/
@@ -84,7 +84,7 @@ jobs:
       - name: Package the tested build (no recompilation)
         shell: pwsh
         run: ./packaging/windows-bundle.ps1 -Build .build/windows-vulkan
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: native-windows-x86_64-vulkan
           path: .build/artifacts/windows-x86_64-vulkan/*
