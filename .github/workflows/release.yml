@@ -87,7 +87,7 @@ jobs:
             WT_SOURCE_DIRTY=false
       - name: Upload CUDA archive and test helpers once (not yet GPU-verified)
         id: archive
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         timeout-minutes: 30
         with:
           name: native-cuda-export-${{ github.run_attempt }}
@@ -132,14 +132,14 @@ jobs:
         run: bash packaging/release/check-cuda.sh "$EXPORT_DIR" "$SOURCE_REVISION"
       - name: Upload CUDA evidence only
         id: evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         timeout-minutes: 5
         with:
           name: cuda-verification-${{ github.run_attempt }}
           path: ${{ runner.temp }}/cuda-check-${{ github.run_id }}-${{ github.run_attempt }}/cuda/cuda-verification.json
           retention-days: 7
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         timeout-minutes: 5
         with:
@@ -183,14 +183,14 @@ jobs:
         run: bash packaging/release/check-gpu.sh vulkan "$EXPORT_DIR" "$SOURCE_REVISION"
       - name: Upload Vulkan evidence only
         id: evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         timeout-minutes: 5
         with:
           name: vulkan-verification-${{ github.run_attempt }}
           path: ${{ runner.temp }}/vulkan-${{ github.run_id }}-${{ github.run_attempt }}/vulkan/vulkan-verification.json
           retention-days: 7
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         timeout-minutes: 5
         with:
